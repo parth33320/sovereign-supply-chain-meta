@@ -8,6 +8,7 @@ from psycopg_pool import ConnectionPool
 from langgraph.checkpoint.postgres import PostgresSaver
 import os
 import tenacity
+from disruption_radar import fetch_disruption_alert
 
 # Ensure task logging function
 def log_task(request_id: str, status: str, payload: str):
@@ -47,10 +48,11 @@ class AgentState(TypedDict):
 def global_oracle(state: AgentState) -> Dict:
     messages = list(state.get("messages", []))
 
-    # Simulate a macroeconomic alert (20% chance)
-    if random.random() < 0.2:
-        alert = "WARNING: Port strike detected in Taiwan. Transit times may increase by 14 days."
-        messages.append(AIMessage(content=f"[GLOBAL ORACLE ALERT]: {alert}"))
+    disruption = fetch_disruption_alert()
+    if disruption.get("alert"):
+        severity = str(disruption.get("severity", "low")).upper()
+        summary = disruption.get("summary", "")
+        messages.append(AIMessage(content=f"[GLOBAL ORACLE ALERT] ({severity}): {summary}"))
 
     return {"messages": messages}
 
