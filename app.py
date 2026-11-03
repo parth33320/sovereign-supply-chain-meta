@@ -8,6 +8,7 @@ from guardrails import check_prompt_injection
 from voice_handler import process_voice_input
 from warehouse_vision import analyze_shelf_image
 from document_vision import extract_document_data, format_logistics_instruction
+from demand_forecaster import forecast_sku_stockouts
 
 # Load environment variables
 load_dotenv()
@@ -24,6 +25,12 @@ if 'chat_history' not in st.session_state:
     st.session_state.chat_history = []
 if 'waf_count' not in st.session_state:
     st.session_state.waf_count = 0
+if 'waf_history' not in st.session_state:
+    st.session_state.waf_history = []
+if 'disruption_history' not in st.session_state:
+    st.session_state.disruption_history = []
+if 'forecast_cache' not in st.session_state:
+    st.session_state.forecast_cache = None
 if 'shelf_context' not in st.session_state:
     st.session_state.shelf_context = None
 if 'extracted_document' not in st.session_state:
@@ -31,13 +38,13 @@ if 'extracted_document' not in st.session_state:
 if 'prefilled_prompt' not in st.session_state:
     st.session_state.prefilled_prompt = ""
 
-config = {"configurable": {"thread_id": st.session_state.thread_id}}
-
 st.set_page_config(page_title="Sovereign Supply Chain Orchestrator", layout="wide")
 
 # Header
 st.title("Sovereign Supply Chain Orchestrator (MVP)")
 tenant_id = st.selectbox("Select Active Tenant (Multi-Tenant Isolation)", ["Tenant_A", "Tenant_B"])
+
+config = {"configurable": {"thread_id": f"{tenant_id}_{st.session_state.thread_id}"}}
 
 # Sidebar
 with st.sidebar:
@@ -88,6 +95,92 @@ with st.sidebar:
         conn.close()
     except Exception as e:
         st.error(f"Error fetching SQL logs: {e}")
+
+    st.divider()
+
+    st.header("Analytics Dashboard")
+
+    # Section 1: WAF events over time
+    with st.expander("WAF Events Over Time", expanded=False):
+        if not st.session_state.waf_history:
+            st.info("No WAF events recorded yet.")
+        else:
+            waf_counts = {}
+            for ev in st.session_state.waf_history:
+                ts = ev.get("timestamp", "unknown")
+                waf_counts[ts] = waf_counts.get(ts, 0) + ev.get("count", 1)
+            st.bar_chart(waf_counts)
+
+    # Section 2: PO history table
+    with st.expander("PO History Table", expanded=False):
+        try:
+            conn = sqlite3.connect('mock_sap.db')
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, request_id, status, payload, created_at
+                FROM task_queue
+                WHERE status = 'EXECUTED'
+                ORDER BY id DESC
+                LIMIT 10
+            """)
+            po_rows = cursor.fetchall()
+            conn.close()
+            if not po_rows:
+                st.info("No executed purchase orders found in task queue.")
+            else:
+                table_data = []
+                for row in po_rows:
+                    table_data.append({
+                        "ID": row[0],
+                        "Request ID": row[1],
+                        "Status": row[2],
+                        "Payload": row[3],
+                        "Created At": row[4]
+                    })
+                st.dataframe(table_data, use_container_width=True)
+        except Exception as e:
+            st.error(f"Error loading PO history: {e}")
+
+    # Section 3: Disruption alert history
+    with st.expander("Disruption Alert History", expanded=False):
+        if not st.session_state.disruption_history:
+            st.info("No disruption alerts recorded yet.")
+        else:
+            for alert in reversed(st.session_state.disruption_history):
+                sev = alert.get("severity", "low").upper()
+                summary = alert.get("summary", "No details")
+                ts = alert.get("timestamp", "")
+                st.markdown(f"**[{ts}] ({sev})**: {summary}")
+
+    # Section 4: Forecast predictions display
+    with st.expander("Forecast Predictions", expanded=False):
+        if st.button("Refresh Forecast", key="refresh_forecast_btn"):
+            with st.spinner("Forecasting SKU stockouts with muse-spark-1.3..."):
+                st.session_state.forecast_cache = forecast_sku_stockouts()
+
+        if st.session_state.forecast_cache is None:
+            # Auto-populate cache if empty
+            with st.spinner("Loading initial stockout forecasts..."):
+                st.session_state.forecast_cache = forecast_sku_stockouts()
+
+        forecasts = st.session_state.forecast_cache
+        if not forecasts:
+            st.info("No stockout predictions at this time.")
+        else:
+            color_map = {
+                "high": "red",
+                "medium": "orange",
+                "low": "green"
+            }
+            for fc in forecasts:
+                sku = fc.get("sku", "Unknown SKU")
+                days = fc.get("days_until_stockout", 0)
+                conf = str(fc.get("confidence", "low")).lower()
+                color = color_map.get(conf, "gray")
+                st.markdown(
+                    f"- **{sku}**: Stockout in **{days}** days "
+                    f"(Confidence: :{color}[{conf.upper()}])"
+                )
 
 # Main Layout
 col1, col2 = st.columns([2, 1])
@@ -161,6 +254,7 @@ with col1:
                 st.session_state.prefilled_prompt = ""
                 if not check_prompt_injection(candidate_prompt):
                     st.session_state.waf_count += 1
+                    st.session_state.waf_history.append({"timestamp": time.strftime("%H:%M:%S"), "count": 1})
                     st.error("SECURITY ALERT: Malicious prompt detected and blocked by Semantic Bouncer.")
                 else:
                     st.session_state.chat_history.append({"role": "user", "content": candidate_prompt})
@@ -192,6 +286,7 @@ with col1:
                             # Auto-submit transcript into orchestrator pipeline
                             if not check_prompt_injection(transcript):
                                 st.session_state.waf_count += 1
+                                st.session_state.waf_history.append({"timestamp": time.strftime("%H:%M:%S"), "count": 1})
                                 st.error("SECURITY ALERT: Malicious prompt detected and blocked by Semantic Bouncer.")
                             else:
                                 st.session_state.chat_history.append({"role": "user", "content": transcript})
@@ -221,6 +316,7 @@ with col1:
             # Semantic Bouncer
             if not check_prompt_injection(prompt):
                 st.session_state.waf_count += 1
+                st.session_state.waf_history.append({"timestamp": time.strftime("%H:%M:%S"), "count": 1})
                 st.error("SECURITY ALERT: Malicious prompt detected and blocked by Semantic Bouncer.")
             else:
                 st.session_state.chat_history.append({"role": "user", "content": prompt})
@@ -264,7 +360,7 @@ if 'pending_task_id' in st.session_state:
         # Task finished or paused, we can read from Postgres
         st.success("Execution completed or paused.")
         graph = get_graph_with_postgres()
-        config = {"configurable": {"thread_id": st.session_state.pending_request_id}}
+        config = {"configurable": {"thread_id": f"{tenant_id}_{st.session_state.pending_request_id}"}}
         current_state = graph.get_state(config)
 
         if current_state and hasattr(current_state, 'values'):
@@ -275,6 +371,18 @@ if 'pending_task_id' in st.session_state:
                 if isinstance(m, AIMessage):
                     if not any(chat["content"] == m.content for chat in st.session_state.chat_history):
                         st.session_state.chat_history.append({"role": "assistant", "content": m.content})
+                    if "[GLOBAL ORACLE ALERT]" in m.content:
+                        import re
+                        match = re.search(r"\[GLOBAL ORACLE ALERT\]\s*\((.*?)\):\s*(.*)", m.content)
+                        if match:
+                            severity = match.group(1).lower()
+                            summary = match.group(2)
+                            if not any(d.get("summary") == summary for d in st.session_state.disruption_history):
+                                st.session_state.disruption_history.append({
+                                    "timestamp": time.strftime("%H:%M:%S"),
+                                    "severity": severity,
+                                    "summary": summary
+                                })
 
             st.session_state.pending_plan = drafted_plan
 
