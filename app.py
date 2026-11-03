@@ -6,6 +6,7 @@ import time
 from dotenv import load_dotenv
 from guardrails import check_prompt_injection
 from voice_handler import process_voice_input
+from warehouse_vision import analyze_shelf_image
 
 # Load environment variables
 load_dotenv()
@@ -22,6 +23,8 @@ if 'chat_history' not in st.session_state:
     st.session_state.chat_history = []
 if 'waf_count' not in st.session_state:
     st.session_state.waf_count = 0
+if 'shelf_context' not in st.session_state:
+    st.session_state.shelf_context = None
 
 config = {"configurable": {"thread_id": st.session_state.thread_id}}
 
@@ -33,6 +36,37 @@ tenant_id = st.selectbox("Select Active Tenant (Multi-Tenant Isolation)", ["Tena
 
 # Sidebar
 with st.sidebar:
+    st.header("Warehouse Vision")
+    uploaded_image = st.file_uploader("Upload Shelf Image", type=["png", "jpg", "jpeg", "webp"], key="shelf_image_uploader")
+    if uploaded_image is not None:
+        if uploaded_image.size > 1_000_000:
+            st.error("File too large. Please upload under 1MB.")
+            st.stop()
+
+        image_bytes = uploaded_image.read()
+        image_id = hash(image_bytes)
+        if st.session_state.get("last_uploaded_image_id") != image_id:
+            st.session_state.last_uploaded_image_id = image_id
+            with st.spinner("Analyzing shelf image with SAM 3.1..."):
+                analysis = analyze_shelf_image(image_bytes)
+                st.session_state.shelf_context = analysis
+
+    if st.session_state.get("shelf_context"):
+        ctx = st.session_state.shelf_context
+        st.subheader("Shelf Analysis")
+        st.write(f"**Summary:** {ctx.get('summary', '')}")
+        items = ctx.get("items", [])
+        if items:
+            for itm in items:
+                fill_pct = int(itm.get("fill_level", 0.0) * 100)
+                st.write(f"- **{itm.get('item')}**: {fill_pct}% fill ({itm.get('status', 'ok')})")
+        if st.button("Clear Shelf Context", key="clear_shelf_context_btn"):
+            st.session_state.shelf_context = None
+            st.session_state.last_uploaded_image_id = None
+            st.rerun()
+
+    st.divider()
+
     st.header("Security & Diagnostics")
     st.metric(label="WAF Rate-Limit Count", value=st.session_state.waf_count)
 
@@ -81,16 +115,21 @@ with col1:
                         else:
                             st.session_state.chat_history.append({"role": "user", "content": transcript})
                             request_id = str(uuid.uuid4())
+                            dispatched_prompt = transcript
+                            if st.session_state.get("shelf_context") and st.session_state["shelf_context"].get("summary"):
+                                summary_text = st.session_state["shelf_context"]["summary"]
+                                dispatched_prompt = f"[VISUAL SHELF ANALYSIS: {summary_text}]\n{transcript}"
+
                             state = {
-                                "messages": [HumanMessage(content=transcript)],
+                                "messages": [HumanMessage(content=dispatched_prompt)],
                                 "tenant_id": tenant_id,
                                 "request_id": request_id,
                                 "status": "init"
                             }
-                            task = process_agent_task.delay(tenant_id, request_id, transcript)
+                            task = process_agent_task.delay(tenant_id, request_id, dispatched_prompt)
                             st.session_state.pending_task_id = task.id
                             st.session_state.pending_request_id = request_id
-                            st.session_state.pending_prompt = transcript
+                            st.session_state.pending_prompt = dispatched_prompt
                             st.rerun()
                 else:
                     st.error(f"Voice processing error: {voice_result.get('intent', 'Unknown error')}")
@@ -111,18 +150,23 @@ with col1:
                 with st.spinner("Processing via LangGraph Orchestrator..."):
                     request_id = str(uuid.uuid4())
 
+                    dispatched_prompt = prompt
+                    if st.session_state.get("shelf_context") and st.session_state["shelf_context"].get("summary"):
+                        summary_text = st.session_state["shelf_context"]["summary"]
+                        dispatched_prompt = f"[VISUAL SHELF ANALYSIS: {summary_text}]\n{prompt}"
+
                     state = {
-                        "messages": [HumanMessage(content=prompt)],
+                        "messages": [HumanMessage(content=dispatched_prompt)],
                         "tenant_id": tenant_id,
                         "request_id": request_id,
                         "status": "init"
                     }
 
                     # Dispatch task to Celery
-                    task = process_agent_task.delay(tenant_id, request_id, prompt)
+                    task = process_agent_task.delay(tenant_id, request_id, dispatched_prompt)
                     st.session_state.pending_task_id = task.id
                     st.session_state.pending_request_id = request_id
-                    st.session_state.pending_prompt = prompt
+                    st.session_state.pending_prompt = dispatched_prompt
                     st.rerun()
 
 
