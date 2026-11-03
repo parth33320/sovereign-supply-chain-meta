@@ -147,8 +147,9 @@ def execute_plan(state: AgentState) -> Dict:
 import asyncio
 async def a2a_negotiate(state: AgentState) -> Dict:
     """
-    Simulates an external Supplier-Agent handshake and returns a JSON quote.
-    The LLM call is wrapped with asyncio.to_thread() so we never block the
+    Simulates a multi-agent handshake between a Buyer Agent and a Supplier Agent
+    using two distinct Meta model personas.
+    The LLM calls are wrapped with asyncio.to_thread() so we never block the
     event loop.
     """
     from langchain_openai import ChatOpenAI
@@ -163,36 +164,61 @@ async def a2a_negotiate(state: AgentState) -> Dict:
     if not stockouts:
         return {}            # nothing to negotiate
 
-    # Build Supplier-Agent prompt
-    prompt_tmpl = ChatPromptTemplate.from_template("""
-You are a Supplier Agent. Provide a quote ONLY as valid JSON with the keys:
-"restock_quantity", "price_per_unit", "lead_time_days".
-SKUs needing restock:
-{stockouts}
-""")
+    stockouts_str = json.dumps(stockouts, indent=2)
+
     llm = ChatOpenAI(
         model=os.environ.get("META_MODEL_NAME", "muse-spark-1.3"),
         api_key=os.environ.get("META_API_KEY"),
         base_url=os.environ.get("META_API_BASE_URL"),
         temperature=0
     )
-    chain = prompt_tmpl | llm
-    stockouts_str = json.dumps(stockouts, indent=2)
 
-    # Long-running external call – run in thread
+    # Step 1: Buyer Agent persona generates formal RFQ
+    buyer_prompt_tmpl = ChatPromptTemplate.from_messages([
+        ("system", "You are a procurement buyer. Given these stockouts, write a formal RFQ specifying items, quantities needed, and maximum acceptable lead time."),
+        ("human", "Stockout items:\n{stockouts}")
+    ])
+    buyer_chain = buyer_prompt_tmpl | llm
+
+    rfq_str = await asyncio.to_thread(
+        lambda: buyer_chain.invoke({"stockouts": stockouts_str}).content
+    )
+
+    a2a_transcript.append({
+        "role": "buyer_agent",
+        "request": stockouts,
+        "response": rfq_str
+    })
+    messages.append(AIMessage(content=f"Buyer Agent RFQ drafted:\n{rfq_str}"))
+
+    # Step 2: Supplier Agent persona responds with structured quote JSON
+    supplier_prompt_tmpl = ChatPromptTemplate.from_messages([
+        ("system", "You are a supplier agent. Given this RFQ, respond with ONLY valid JSON: {{\"restock_quantity\": <number>, \"price_per_unit\": <number>, \"lead_time_days\": <number>}}"),
+        ("human", "Request for Quotation:\n{rfq}")
+    ])
+    supplier_chain = supplier_prompt_tmpl | llm
+
     quote_str = await asyncio.to_thread(
-        lambda: chain.invoke({"stockouts": stockouts_str}).content
+        lambda: supplier_chain.invoke({"rfq": rfq_str}).content
     )
 
     try:
         quote_json = json.loads(quote_str)
     except Exception:
-        quote_json = {}
+        import re
+        match = re.search(r"\{.*?\}", quote_str, re.DOTALL)
+        if match:
+            try:
+                quote_json = json.loads(match.group(0))
+            except Exception:
+                quote_json = {}
+        else:
+            quote_json = {}
 
-    # Record the exchange
+    # Record the supplier exchange
     a2a_transcript.append({
         "role":      "supplier_agent",
-        "request":   stockouts,
+        "request":   rfq_str,
         "response":  quote_json
     })
     messages.append(AIMessage(content=f"Supplier Agent quote received: {quote_json}"))
