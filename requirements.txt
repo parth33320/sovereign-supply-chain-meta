@@ -12,3 +12,6 @@ redis
 celery
 psycopg-binary
 psycopg-pool
+gtts
+moviepy
+playwright

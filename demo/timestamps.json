@@ -1,0 +1,41 @@
+{
+  "phases": [
+    {
+      "phase": 1,
+      "name": "logistics_command",
+      "start_sec": 3.27,
+      "end_sec": 11.94
+    },
+    {
+      "phase": 2,
+      "name": "chaos_load_test",
+      "start_sec": 11.94,
+      "end_sec": 16.99
+    },
+    {
+      "phase": 3,
+      "name": "sam_shelf_analysis",
+      "start_sec": 16.99,
+      "end_sec": 23.01
+    },
+    {
+      "phase": 4,
+      "name": "a2a_negotiation",
+      "start_sec": 23.01,
+      "end_sec": 29.05
+    },
+    {
+      "phase": 5,
+      "name": "hitl_approve_flow",
+      "start_sec": 29.05,
+      "end_sec": 34.09
+    },
+    {
+      "phase": 6,
+      "name": "waf_prompt_injection_block",
+      "start_sec": 34.09,
+      "end_sec": 39.14
+    }
+  ],
+  "total_duration_sec": 39.14
+}

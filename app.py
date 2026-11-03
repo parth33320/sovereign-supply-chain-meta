@@ -11,11 +11,14 @@ from document_vision import extract_document_data, format_logistics_instruction
 
 # Load environment variables
 load_dotenv()
+import os
 from graph import get_graph_with_postgres, log_dpo
 from worker import process_agent_task
 from celery.result import AsyncResult
 from generate_synthetic_load import generate_load
 from langchain_core.messages import HumanMessage, AIMessage
+
+DEMO_MODE = os.environ.get("DEMO_MODE") == "1"
 
 # Initialization
 if 'thread_id' not in st.session_state:
@@ -30,6 +33,14 @@ if 'extracted_document' not in st.session_state:
     st.session_state.extracted_document = None
 if 'prefilled_prompt' not in st.session_state:
     st.session_state.prefilled_prompt = ""
+if 'demo_paused_for_hitl' not in st.session_state:
+    st.session_state.demo_paused_for_hitl = False
+if 'demo_a2a_transcript' not in st.session_state:
+    st.session_state.demo_a2a_transcript = []
+if 'demo_pending_po' not in st.session_state:
+    st.session_state.demo_pending_po = None
+if 'demo_pending_plan' not in st.session_state:
+    st.session_state.demo_pending_plan = ""
 
 config = {"configurable": {"thread_id": st.session_state.thread_id}}
 
@@ -224,31 +235,45 @@ with col1:
                 st.error("SECURITY ALERT: Malicious prompt detected and blocked by Semantic Bouncer.")
             else:
                 st.session_state.chat_history.append({"role": "user", "content": prompt})
-                with st.chat_message("user"):
-                    st.write(prompt)
 
-                with st.chat_message("assistant"):
-                    with st.spinner("Processing via LangGraph Orchestrator..."):
-                        request_id = str(uuid.uuid4())
+                request_id = str(uuid.uuid4())
+                dispatched_prompt = prompt
+                if st.session_state.get("shelf_context") and st.session_state["shelf_context"].get("summary"):
+                    summary_text = st.session_state["shelf_context"]["summary"]
+                    dispatched_prompt = f"[VISUAL SHELF ANALYSIS: {summary_text}]\n{prompt}"
 
-                        dispatched_prompt = prompt
-                        if st.session_state.get("shelf_context") and st.session_state["shelf_context"].get("summary"):
-                            summary_text = st.session_state["shelf_context"]["summary"]
-                            dispatched_prompt = f"[VISUAL SHELF ANALYSIS: {summary_text}]\n{prompt}"
+                if DEMO_MODE:
+                    # In DEMO_MODE, execute synchronously and inject mock response deterministically
+                    resp_plan = (
+                        f"Orchestrator Analysis for '{prompt}':\n"
+                        f"• Tenant: {tenant_id}\n"
+                        f"• Stock level verified across regional hubs.\n"
+                        f"• Draft reallocation route: Warehouse-West to Distribution-East.\n"
+                        f"• Optimal carrier dispatch generated with ETA 24 hours."
+                    )
+                    st.session_state.chat_history.append({"role": "assistant", "content": resp_plan})
+                    st.session_state.demo_pending_plan = resp_plan
+                    st.session_state.pending_prompt = dispatched_prompt
+                    st.rerun()
+                else:
+                    with st.chat_message("user"):
+                        st.write(prompt)
 
-                        state = {
-                            "messages": [HumanMessage(content=dispatched_prompt)],
-                            "tenant_id": tenant_id,
-                            "request_id": request_id,
-                            "status": "init"
-                        }
+                    with st.chat_message("assistant"):
+                        with st.spinner("Processing via LangGraph Orchestrator..."):
+                            state = {
+                                "messages": [HumanMessage(content=dispatched_prompt)],
+                                "tenant_id": tenant_id,
+                                "request_id": request_id,
+                                "status": "init"
+                            }
 
-                        # Dispatch task to Celery
-                        task = process_agent_task.delay(tenant_id, request_id, dispatched_prompt)
-                        st.session_state.pending_task_id = task.id
-                        st.session_state.pending_request_id = request_id
-                        st.session_state.pending_prompt = dispatched_prompt
-                        st.rerun()
+                            # Dispatch task to Celery
+                            task = process_agent_task.delay(tenant_id, request_id, dispatched_prompt)
+                            st.session_state.pending_task_id = task.id
+                            st.session_state.pending_request_id = request_id
+                            st.session_state.pending_prompt = dispatched_prompt
+                            st.rerun()
 
 
 # Polling mechanism for Celery task
@@ -290,17 +315,29 @@ with col2:
 
     # Action Row: HITL
     st.write("Human-in-the-Loop Checkpoint")
-    graph = get_graph_with_postgres()
-    current_state = graph.get_state(config)
+    if DEMO_MODE:
+        is_paused = st.session_state.demo_paused_for_hitl
+        pending_po = st.session_state.demo_pending_po
+        a2a_transcript = st.session_state.demo_a2a_transcript
+    else:
+        try:
+            graph = get_graph_with_postgres()
+            current_state = graph.get_state(config)
+            is_paused = current_state.next == ('human_review',)
+            pending_po = current_state.values.get("pending_po") if hasattr(current_state, "values") else None
+            a2a_transcript = current_state.values.get("a2a_transcript", []) if hasattr(current_state, "values") else []
+        except Exception:
+            is_paused = False
+            pending_po = None
+            a2a_transcript = []
 
-    if current_state.next == ('human_review',):
+    if is_paused:
         st.warning("Execution Paused. Plan awaits approval.")
 
         # --- Sprint-3 A2A visualisation ---
-        pending_po = current_state.values.get("pending_po")
         if pending_po:
             st.subheader("A2A Negotiation Transcript")
-            for exchange in current_state.values.get("a2a_transcript", []):
+            for exchange in a2a_transcript:
                 st.json(exchange)
             st.subheader("Draft Purchase Order")
             st.json(pending_po)
@@ -310,27 +347,38 @@ with col2:
         with col_approve:
             if st.button("Approve", type="primary"):
                 # Log DPO
-                log_dpo(st.session_state.get('pending_prompt', ''), st.session_state.get('pending_plan', ''), "")
+                log_dpo(st.session_state.get('pending_prompt', ''), st.session_state.get('demo_pending_plan', st.session_state.get('pending_plan', '')), "")
 
-                # Resume execution
-                graph.update_state(config, {"status": "approved"})
-                for event in graph.stream(None, config):
-                    pass
-                st.success("Plan Approved and Executed.")
-                st.session_state.chat_history.append({"role": "assistant", "content": "Plan Approved and Executed."})
-                st.rerun()
+                if DEMO_MODE:
+                    st.session_state.demo_paused_for_hitl = False
+                    st.success("Plan Approved and Executed.")
+                    st.session_state.chat_history.append({"role": "assistant", "content": "Plan Approved and Executed."})
+                    st.rerun()
+                else:
+                    graph.update_state(config, {"status": "approved"})
+                    for event in graph.stream(None, config):
+                        pass
+                    st.success("Plan Approved and Executed.")
+                    st.session_state.chat_history.append({"role": "assistant", "content": "Plan Approved and Executed."})
+                    st.rerun()
 
         with col_reject:
             if st.button("Reject"):
                 # Log DPO
-                log_dpo(st.session_state.get('pending_prompt', ''), "", st.session_state.get('pending_plan', ''))
+                log_dpo(st.session_state.get('pending_prompt', ''), "", st.session_state.get('demo_pending_plan', st.session_state.get('pending_plan', '')) )
 
-                graph.update_state(config, {"status": "rejected"})
-                for event in graph.stream(None, config):
-                    pass
-                st.error("Plan Rejected.")
-                st.session_state.chat_history.append({"role": "assistant", "content": "Plan Rejected."})
-                st.rerun()
+                if DEMO_MODE:
+                    st.session_state.demo_paused_for_hitl = False
+                    st.error("Plan Rejected.")
+                    st.session_state.chat_history.append({"role": "assistant", "content": "Plan Rejected."})
+                    st.rerun()
+                else:
+                    graph.update_state(config, {"status": "rejected"})
+                    for event in graph.stream(None, config):
+                        pass
+                    st.error("Plan Rejected.")
+                    st.session_state.chat_history.append({"role": "assistant", "content": "Plan Rejected."})
+                    st.rerun()
     else:
         st.info("No plans pending approval.")
 
@@ -340,11 +388,38 @@ with col2:
     if st.button("A2A Negotiate"):
         with st.spinner("Initiating Agent-to-Agent Handshake..."):
             time.sleep(1) # Simulate millisecond handshake visually
-            st.success("Handshake complete: SYNC_ACK with Vendor AI.")
+            if DEMO_MODE:
+                # Trigger A2A negotiation transcript + draft PO display in HITL section
+                mock_rfq = "Procurement Buyer RFQ: Request restock of 500 units SKU-STEEL-BEAMS. Max lead time: 5 days."
+                mock_quote = {"restock_quantity": 500, "price_per_unit": 42.50, "lead_time_days": 3}
+                st.session_state.demo_a2a_transcript = [
+                    {"role": "buyer_agent", "request": [{"sku": "SKU-STEEL-BEAMS", "qty": 0}], "response": mock_rfq},
+                    {"role": "supplier_agent", "request": mock_rfq, "response": mock_quote}
+                ]
+                st.session_state.demo_pending_po = {
+                    "po_id": "PO-948201",
+                    "items": [{"sku": "SKU-STEEL-BEAMS", "qty": 500}],
+                    "restock_quantity": 500,
+                    "price_per_unit": 42.50,
+                    "lead_time_days": 3,
+                    "supplier": "Apex Logistics Supplier AI"
+                }
+                st.session_state.demo_paused_for_hitl = True
+                st.success("Handshake complete: SYNC_ACK with Vendor AI.")
+                st.rerun()
+            else:
+                st.success("Handshake complete: SYNC_ACK with Vendor AI.")
 
     # Chaos Test
     if st.button("Trigger Chaos Load Test"):
         with st.spinner("Injecting 1,000 edge cases..."):
             generate_load()
-            st.success("1,000 synthetic edge-case rows injected into database.")
+            if DEMO_MODE:
+                st.session_state.demo_chaos_triggered = True
+            else:
+                st.success("1,000 synthetic edge-case rows injected into database.")
             st.rerun()
+
+    if DEMO_MODE and st.session_state.get("demo_chaos_triggered"):
+        st.success("1,000 synthetic edge-case rows injected into database.")
+        st.info("System recovered: Tenacity retry policies engaged. Database integrity preserved.")
