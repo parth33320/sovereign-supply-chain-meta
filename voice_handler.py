@@ -1,0 +1,163 @@
+"""
+Voice Handler Module (S4)
+=========================
+Provides voice ingestion, speech-to-text transcription, and logistics intent
+extraction for the Sovereign Supply Chain Orchestrator.
+
+Architecture:
+- transcribe_audio: Transcribes raw audio bytes using the muse-voice-transcribe-1.0 model.
+- extract_logistics_intent: Extracts structured logistics intent from transcripts using
+  the Meta LLM (default: muse-spark-1.3) via ChatOpenAI.
+- process_voice_input: Orchestrates transcription and intent extraction.
+
+Inputs and Outputs:
+- Input: audio_bytes (bytes)
+- Output: dict with keys:
+    - 'transcription': str
+    - 'intent': str
+    - 'status': 'ok' | 'error'
+"""
+
+import io
+import os
+import logging
+from typing import Dict, Any
+import openai
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate
+
+logger = logging.getLogger(__name__)
+
+
+def transcribe_audio(audio_bytes: bytes) -> str:
+    """
+    Transcribes audio bytes to text using the muse-voice-transcribe-1.0 model.
+
+    Inputs:
+        audio_bytes (bytes): Raw audio bytes (e.g. WAV format).
+
+    Outputs:
+        str: Transcribed text string.
+
+    Raises:
+        ValueError: If audio_bytes is empty or invalid.
+        Exception: If the transcription API call fails.
+    """
+    if not audio_bytes or not isinstance(audio_bytes, (bytes, bytearray)):
+        raise ValueError("Invalid or empty audio bytes provided for transcription.")
+
+    api_key = os.environ.get("META_API_KEY")
+    base_url = os.environ.get("META_API_BASE_URL", "https://api.meta.ai/v1")
+
+    client = openai.OpenAI(
+        api_key=api_key,
+        base_url=base_url
+    )
+
+    audio_file = io.BytesIO(audio_bytes)
+    audio_file.name = "audio.wav"
+
+    response = client.audio.transcriptions.create(
+        model="muse-voice-transcribe-1.0",
+        file=audio_file
+    )
+
+    # OpenAI client returns either an object with .text or a string
+    if hasattr(response, "text"):
+        return response.text
+    elif isinstance(response, dict) and "text" in response:
+        return response["text"]
+    return str(response)
+
+
+def extract_logistics_intent(transcription: str) -> str:
+    """
+    Extracts logistics intent from a transcript using Meta LLM.
+
+    Inputs:
+        transcription (str): Transcribed user voice speech.
+
+    Outputs:
+        str: Extracted intent or actionable logistics command representation.
+
+    Raises:
+        ValueError: If transcription is empty.
+        Exception: If LLM call fails.
+    """
+    if not transcription or not isinstance(transcription, str) or not transcription.strip():
+        raise ValueError("Empty or invalid transcription text provided for intent extraction.")
+
+    model_name = os.environ.get("META_MODEL_NAME", "muse-spark-1.3")
+    api_key = os.environ.get("META_API_KEY")
+    base_url = os.environ.get("META_API_BASE_URL", "https://api.meta.ai/v1")
+
+    llm = ChatOpenAI(
+        model=model_name,
+        api_key=api_key,
+        base_url=base_url,
+        temperature=0
+    )
+
+    system_prompt = (
+        "You are an intelligent Logistics Voice Assistant for a Sovereign Supply Chain Orchestrator.\n"
+        "Analyze the following transcribed user instruction and extract the logistics intent, "
+        "including action, quantities, items/SKUs, origin, and destination if mentioned.\n"
+        "Return the intent clearly, concisely, and actionably.\n\n"
+        "User Transcribed Instruction:\n{transcription}\n\n"
+        "Logistics Intent:"
+    )
+
+    prompt = ChatPromptTemplate.from_template(system_prompt)
+    chain = prompt | llm
+
+    response = chain.invoke({"transcription": transcription})
+    return response.content.strip()
+
+
+def process_voice_input(audio_bytes: bytes) -> Dict[str, str]:
+    """
+    Processes voice input end-to-end: audio bytes -> transcription -> intent extraction.
+
+    Inputs:
+        audio_bytes (bytes): Raw audio bytes.
+
+    Outputs:
+        dict:
+            {
+                "transcription": str,
+                "intent": str,
+                "status": "ok" | "error"
+            }
+    """
+    if not audio_bytes or not isinstance(audio_bytes, (bytes, bytearray)):
+        return {
+            "transcription": "",
+            "intent": "Error: empty or invalid audio input provided.",
+            "status": "error"
+        }
+
+    try:
+        transcription = transcribe_audio(audio_bytes)
+    except Exception as e:
+        logger.error(f"Error during audio transcription: {e}")
+        return {
+            "transcription": "",
+            "intent": f"Transcription error: {str(e)}",
+            "status": "error"
+        }
+
+    try:
+        intent = extract_logistics_intent(transcription)
+    except Exception as e:
+        logger.error(f"Error during intent extraction: {e}")
+        return {
+            "transcription": transcription,
+            "intent": f"Intent extraction error: {str(e)}",
+            "status": "error"
+        }
+
+    return {
+        "transcription": transcription,
+        "intent": intent,
+        "status": "ok"
+    }
