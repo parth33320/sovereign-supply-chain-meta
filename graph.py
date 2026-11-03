@@ -23,8 +23,12 @@ def log_task(request_id: str, status: str, payload: str):
     conn.commit()
     conn.close()
 
+import time
+from agent_tracer import record_trace
+from learning_log import log_dpo_feedback
+
 # DPO Logger
-def log_dpo(prompt: str, chosen: str, rejected: str):
+def log_dpo(prompt: str, chosen: str, rejected: str, tenant_id: str = "default", intent: str = "general"):
     data = {
         "prompt": prompt,
         "chosen": chosen,
@@ -32,6 +36,11 @@ def log_dpo(prompt: str, chosen: str, rejected: str):
     }
     with open("dpo_training_data.json", "a") as f:
         f.write(json.dumps(data) + "\n")
+
+    # Also log to SQLite dpo_log.db
+    feedback = 1 if chosen and not rejected else (-1 if rejected else 1)
+    response = chosen if chosen else rejected
+    log_dpo_feedback(prompt=prompt, response=response, feedback=feedback, tenant_id=tenant_id, intent=intent, rejected_response=rejected)
 
 # State definition
 class AgentState(TypedDict):
@@ -45,26 +54,55 @@ class AgentState(TypedDict):
     a2a_transcript: List[Dict[str, Any]] # running negotiation log
     pending_po: Dict[str, Any] # final Purchase Order
 
+# Helper for node input summary
+def _get_node_input_summary(state: AgentState) -> str:
+    messages = state.get("messages", [])
+    if messages:
+        return str(messages[-1].content if hasattr(messages[-1], "content") else messages[-1])[:200]
+    return ""
+
 # Node 1: Global Oracle (Prescriptive Analytics Stub)
-def global_oracle(state: AgentState) -> Dict:
+def _global_oracle_impl(state: AgentState) -> Dict:
     messages = list(state.get("messages", []))
 
     disruption = fetch_disruption_alert()
+    decision = "PROCEED"
     if disruption.get("alert"):
         severity = str(disruption.get("severity", "low")).upper()
         summary = disruption.get("summary", "")
         messages.append(AIMessage(content=f"[GLOBAL ORACLE ALERT] ({severity}): {summary}"))
+        if severity in ["HIGH", "CRITICAL"]:
+            decision = "ESCALATE"
 
-    return {"messages": messages}
+    return {"messages": messages, "_decision": decision}
+
+def global_oracle(state: AgentState) -> Dict:
+    t0 = time.time()
+    result = _global_oracle_impl(state)
+    decision = result.pop("_decision", "PROCEED")
+    latency_ms = int((time.time() - t0) * 1000)
+    saving = float(state.get("last_saving", 0.0))
+    record_trace(
+        "global_oracle",
+        state.get("tenant_id", "default"),
+        _get_node_input_summary(state),
+        str(result)[:200],
+        decision=decision,
+        saving_usd=saving,
+        latency_ms=latency_ms
+    )
+    return result
 
 # Node 1.5: Demand Forecaster Node
-def forecast_demand(state: AgentState) -> Dict:
+def _forecast_demand_impl(state: AgentState) -> Dict:
     messages = list(state.get("messages", []))
     forecasts = forecast_sku_stockouts()
+    has_high = False
 
     for item in forecasts:
         confidence = str(item.get("confidence", "low")).lower()
         if confidence == "high":
+            has_high = True
             sku = item.get("sku")
             days = item.get("days_until_stockout")
             messages.append(
@@ -73,7 +111,25 @@ def forecast_demand(state: AgentState) -> Dict:
                 )
             )
 
-    return {"messages": messages}
+    decision = "ESCALATE" if has_high else "PROCEED"
+    return {"messages": messages, "_decision": decision}
+
+def forecast_demand(state: AgentState) -> Dict:
+    t0 = time.time()
+    result = _forecast_demand_impl(state)
+    decision = result.pop("_decision", "PROCEED")
+    latency_ms = int((time.time() - t0) * 1000)
+    saving = float(state.get("last_saving", 0.0))
+    record_trace(
+        "forecast_demand",
+        state.get("tenant_id", "default"),
+        _get_node_input_summary(state),
+        str(result)[:200],
+        decision=decision,
+        saving_usd=saving,
+        latency_ms=latency_ms
+    )
+    return result
 
 # Node 2: MCP Inventory Query (with Exponential Backoff)
 @tenacity.retry(
@@ -81,11 +137,9 @@ def forecast_demand(state: AgentState) -> Dict:
     stop=tenacity.stop_after_attempt(3),
     retry=tenacity.retry_if_exception_type(Exception)
 )
-def fetch_inventory(state: AgentState) -> Dict:
+def _fetch_inventory_impl(state: AgentState) -> Dict:
     from mcp_server import read_inventory
-    import time
 
-    import os
     if os.environ.get("CHAOS_DROP_CONNECTION") == "1":
         if random.random() < 0.7:
             raise ConnectionError("MCP Connection unexpectedly dropped! (Chaos Test)")
@@ -100,21 +154,35 @@ def fetch_inventory(state: AgentState) -> Dict:
     messages.append(AIMessage(content=f"Fetched inventory for {state['tenant_id']}: {len(inventory)} items found."))
     return {"inventory_data": inventory, "messages": messages}
 
+def fetch_inventory(state: AgentState) -> Dict:
+    t0 = time.time()
+    result = _fetch_inventory_impl(state)
+    latency_ms = int((time.time() - t0) * 1000)
+    saving = float(state.get("last_saving", 0.0))
+    record_trace(
+        "fetch_inventory",
+        state.get("tenant_id", "default"),
+        _get_node_input_summary(state),
+        str(result)[:200],
+        decision="PROCEED",
+        saving_usd=saving,
+        latency_ms=latency_ms
+    )
+    return result
+
 # Node 3: Plan Drafter
-def draft_plan(state: AgentState) -> Dict:
+def _draft_plan_impl(state: AgentState) -> Dict:
     from langchain_openai import ChatOpenAI
     from langchain_core.prompts import ChatPromptTemplate
 
     inventory = state.get("inventory_data", [])
     messages = list(state.get("messages", []))
 
-    # Extract the user's specific request
     user_request = next((m.content for m in messages if isinstance(m, HumanMessage)), "")
 
     if not inventory:
         plan = "No inventory found to process."
     else:
-        # Instantiate ChatModel
         llm = ChatOpenAI(
             model=os.environ.get("META_MODEL_NAME", "muse-spark-1.3"),
             api_key=os.environ.get("META_API_KEY"),
@@ -122,7 +190,6 @@ def draft_plan(state: AgentState) -> Dict:
             temperature=0
         )
 
-        # Construct dynamic system prompt
         system_prompt = """You are an intelligent Supply Chain Orchestrator.
 Your goal is to draft a logistics reallocation plan based on the provided inventory data and the user's specific request.
 
@@ -152,25 +219,51 @@ Based on this, draft a specific, actionable, and logical reallocation plan. Only
 
     return {"drafted_plan": plan, "messages": messages, "status": "drafted"}
 
+def draft_plan(state: AgentState) -> Dict:
+    t0 = time.time()
+    result = _draft_plan_impl(state)
+    latency_ms = int((time.time() - t0) * 1000)
+    saving = float(state.get("last_saving", 0.0))
+    record_trace(
+        "draft_plan",
+        state.get("tenant_id", "default"),
+        _get_node_input_summary(state),
+        str(result)[:200],
+        decision="PROCEED",
+        saving_usd=saving,
+        latency_ms=latency_ms
+    )
+    return result
+
 # HITL Dummy Node
 def human_review(state: AgentState) -> Dict:
     return {}
 
 # Node 4: Executor (Post-HITL)
-def execute_plan(state: AgentState) -> Dict:
+def _execute_plan_impl(state: AgentState) -> Dict:
     messages = list(state.get("messages", []))
     messages.append(AIMessage(content="Plan executed successfully."))
     log_task(state["request_id"], "EXECUTED", "Plan executed.")
     return {"messages": messages, "status": "executed"}
 
+def execute_plan(state: AgentState) -> Dict:
+    t0 = time.time()
+    result = _execute_plan_impl(state)
+    latency_ms = int((time.time() - t0) * 1000)
+    saving = float(state.get("last_saving", 0.0))
+    record_trace(
+        "execute_plan",
+        state.get("tenant_id", "default"),
+        _get_node_input_summary(state),
+        str(result)[:200],
+        decision="PROCEED",
+        saving_usd=saving,
+        latency_ms=latency_ms
+    )
+    return result
+
 import asyncio
-async def a2a_negotiate(state: AgentState) -> Dict:
-    """
-    Simulates a multi-agent handshake between a Buyer Agent and a Supplier Agent
-    using two distinct Meta model personas.
-    The LLM calls are wrapped with asyncio.to_thread() so we never block the
-    event loop.
-    """
+async def _a2a_negotiate_impl(state: AgentState) -> Dict:
     from langchain_openai import ChatOpenAI
     from langchain_core.prompts import ChatPromptTemplate
 
@@ -178,10 +271,9 @@ async def a2a_negotiate(state: AgentState) -> Dict:
     messages       = list(state.get("messages", []))
     a2a_transcript = list(state.get("a2a_transcript", []))
 
-    # Identify SKUs that are stocked-out
     stockouts = [item for item in inventory if item.get("quantity", 0) == 0]
     if not stockouts:
-        return {}            # nothing to negotiate
+        return {}
 
     stockouts_str = json.dumps(stockouts, indent=2)
 
@@ -192,7 +284,6 @@ async def a2a_negotiate(state: AgentState) -> Dict:
         temperature=0
     )
 
-    # Step 1: Buyer Agent persona generates formal RFQ
     buyer_prompt_tmpl = ChatPromptTemplate.from_messages([
         ("system", "You are a procurement buyer. Given these stockouts, write a formal RFQ specifying items, quantities needed, and maximum acceptable lead time."),
         ("human", "Stockout items:\n{stockouts}")
@@ -210,7 +301,6 @@ async def a2a_negotiate(state: AgentState) -> Dict:
     })
     messages.append(AIMessage(content=f"Buyer Agent RFQ drafted:\n{rfq_str}"))
 
-    # Step 2: Supplier Agent persona responds with structured quote JSON
     supplier_prompt_tmpl = ChatPromptTemplate.from_messages([
         ("system", "You are a supplier agent. Given this RFQ, respond with ONLY valid JSON: {{\"restock_quantity\": <number>, \"price_per_unit\": <number>, \"lead_time_days\": <number>}}"),
         ("human", "Request for Quotation:\n{rfq}")
@@ -234,7 +324,6 @@ async def a2a_negotiate(state: AgentState) -> Dict:
         else:
             quote_json = {}
 
-    # Record the supplier exchange
     a2a_transcript.append({
         "role":      "supplier_agent",
         "request":   rfq_str,
@@ -243,10 +332,23 @@ async def a2a_negotiate(state: AgentState) -> Dict:
     messages.append(AIMessage(content=f"Supplier Agent quote received: {quote_json}"))
     return {"a2a_transcript": a2a_transcript, "messages": messages}
 
-def draft_po(state: AgentState) -> Dict:
-    """
-    Converts the Supplier quote into a formal PO dictionary and stores it.
-    """
+async def a2a_negotiate(state: AgentState) -> Dict:
+    t0 = time.time()
+    result = await _a2a_negotiate_impl(state)
+    latency_ms = int((time.time() - t0) * 1000)
+    saving = float(state.get("last_saving", 0.0))
+    record_trace(
+        "a2a_negotiate",
+        state.get("tenant_id", "default"),
+        _get_node_input_summary(state),
+        str(result)[:200],
+        decision="PROCEED",
+        saving_usd=saving,
+        latency_ms=latency_ms
+    )
+    return result
+
+def _draft_po_impl(state: AgentState) -> Dict:
     import random
     a2a_transcript = state.get("a2a_transcript", [])
     if not a2a_transcript:
@@ -266,6 +368,22 @@ def draft_po(state: AgentState) -> Dict:
     messages = list(state.get("messages", []))
     messages.append(AIMessage(content=f"Drafted Purchase Order: {json.dumps(po)}"))
     return {"pending_po": po, "messages": messages, "status": "drafted"}
+
+def draft_po(state: AgentState) -> Dict:
+    t0 = time.time()
+    result = _draft_po_impl(state)
+    latency_ms = int((time.time() - t0) * 1000)
+    saving = float(state.get("last_saving", 0.0))
+    record_trace(
+        "draft_po",
+        state.get("tenant_id", "default"),
+        _get_node_input_summary(state),
+        str(result)[:200],
+        decision="PROCEED",
+        saving_usd=saving,
+        latency_ms=latency_ms
+    )
+    return result
 
 # Router for Intent
 def route_intent(state: AgentState):

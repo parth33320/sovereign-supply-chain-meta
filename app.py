@@ -9,6 +9,8 @@ from voice_handler import process_voice_input
 from warehouse_vision import analyze_shelf_image
 from document_vision import extract_document_data, format_logistics_instruction
 from demand_forecaster import forecast_sku_stockouts
+from agent_tracer import get_traces, get_agent_stats, seed_demo_traces
+from learning_log import log_dpo_feedback, get_learning_stats, seed_demo_feedback
 
 # Load environment variables
 load_dotenv()
@@ -20,6 +22,12 @@ from generate_synthetic_load import generate_load
 from langchain_core.messages import HumanMessage, AIMessage
 
 DEMO_MODE = os.environ.get("DEMO_MODE") == "1"
+
+if DEMO_MODE:
+    if not os.path.exists("agent_traces.db"):
+        seed_demo_traces()
+    if not os.path.exists("dpo_log.db"):
+        seed_demo_feedback()
 
 # Initialization
 if 'thread_id' not in st.session_state:
@@ -197,7 +205,7 @@ with st.sidebar:
 col1, col2 = st.columns([2, 1])
 
 with col1:
-    tab_chat, tab_upload = st.tabs(["Orchestrator Chat", "Upload Document"])
+    tab_chat, tab_upload, tab_activity = st.tabs(["Orchestrator Chat", "Upload Document", "Agent Activity"])
 
     with tab_upload:
         st.subheader("Invoice / Shipping Document Extraction")
@@ -253,9 +261,28 @@ with col1:
         st.subheader("Orchestrator Chat")
 
         # Display chat
-        for msg in st.session_state.chat_history:
+        for i, msg in enumerate(st.session_state.chat_history):
             with st.chat_message(msg["role"]):
                 st.write(msg["content"])
+                if msg["role"] == "assistant":
+                    # Determine last prompt preceding this assistant message
+                    last_prompt = ""
+                    for prev_msg in reversed(st.session_state.chat_history[:i]):
+                        if prev_msg["role"] == "user":
+                            last_prompt = prev_msg["content"]
+                            break
+
+                    fb_key_up = f"fb_up_{i}"
+                    fb_key_down = f"fb_down_{i}"
+                    col_fb1, col_fb2, _ = st.columns([1, 1, 10])
+                    with col_fb1:
+                        if st.button("👍", key=fb_key_up, help="Thumbs up (positive feedback)"):
+                            log_dpo_feedback(prompt=last_prompt, response=msg["content"], feedback=1, tenant_id=tenant_id, intent="chat_response")
+                            st.toast("Feedback recorded: Positive (+1)")
+                    with col_fb2:
+                        if st.button("👎", key=fb_key_down, help="Thumbs down (negative feedback)"):
+                            log_dpo_feedback(prompt=last_prompt, response=msg["content"], feedback=-1, tenant_id=tenant_id, intent="chat_response")
+                            st.toast("Feedback recorded: Negative (-1)")
 
         # Display prefilled prompt stage if available
         if st.session_state.get("prefilled_prompt"):
@@ -370,6 +397,72 @@ with col1:
                             st.session_state.pending_request_id = request_id
                             st.session_state.pending_prompt = dispatched_prompt
                             st.rerun()
+
+    with tab_activity:
+        st.subheader("Agent Operations & Continual Learning")
+
+        stats = get_agent_stats(tenant_id)
+
+        # "Agent Ops Today" stat row
+        st.markdown("#### Agent Ops Today")
+        row1, row2, row3 = st.columns(3)
+        with row1:
+            st.metric(label="Total Actions", value=stats["total_actions"])
+        with row2:
+            st.metric(label="Total $ Saved", value=f"${stats['total_savings_usd']:,.2f}")
+        with row3:
+            st.metric(label="Avg Response Time", value=f"{stats['avg_latency_ms']:.1f} ms")
+
+        st.divider()
+
+        # Activity feed table: Time | Agent | Action | Decision | $ Impact
+        st.markdown("#### Activity Feed")
+        traces = get_traces(tenant_id=tenant_id, limit=50)
+        if not traces:
+            # Fallback to all traces if tenant-specific is empty
+            traces = get_traces(limit=50)
+
+        if traces:
+            feed_data = []
+            for tr in traces:
+                feed_data.append({
+                    "Time": tr.timestamp[:19].replace("T", " "),
+                    "Agent": tr.agent_name,
+                    "Action": tr.input_summary,
+                    "Decision": tr.decision,
+                    "$ Impact": f"${tr.saving_usd:,.2f}" if tr.saving_usd > 0 else "$0.00"
+                })
+            st.dataframe(feed_data, use_container_width=True)
+        else:
+            st.info("No agent trace activities recorded yet.")
+
+        st.divider()
+
+        # "Learning Progress" mini-section
+        st.markdown("#### Learning Progress")
+        l_stats = get_learning_stats(tenant_id)
+        if l_stats["total_feedback"] == 0:
+            l_stats = get_learning_stats()
+
+        col_lrn1, col_lrn2 = st.columns(2)
+        with col_lrn1:
+            approval_pct = int(round(l_stats["approval_rate"] * 100))
+            st.metric(
+                label="Approval Rate %",
+                value=f"{approval_pct}%",
+                help=f"Positive: {l_stats['positive']}, Negative: {l_stats['negative']}"
+            )
+            if l_stats["top_improved_intents"]:
+                st.caption(f"Top improved intents: {', '.join(l_stats['top_improved_intents'][:3])}")
+
+        with col_lrn2:
+            st.markdown("**Week-over-Week Trend**")
+            trend = l_stats.get("weekly_trend", [])
+            if trend:
+                trend_chart = {t["week"]: t["rate"] * 100 for t in trend}
+                st.line_chart(trend_chart)
+            else:
+                st.write("No trend data available.")
 
 
 # Polling mechanism for Celery task
