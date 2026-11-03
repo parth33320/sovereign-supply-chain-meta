@@ -303,6 +303,7 @@ def get_graph_with_postgres():
     connection_kwargs = {
         "autocommit": True,
         "prepare_threshold": 0,
+        "sslmode": "require",
     }
 
     DB_URI = os.environ.get("POSTGRES_DB_URI", "postgresql://postgres:postgres@localhost:5432/postgres")
