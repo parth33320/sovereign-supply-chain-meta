@@ -94,7 +94,12 @@ def draft_plan(state: AgentState) -> Dict:
         plan = "No inventory found to process."
     else:
         # Instantiate ChatModel
-        llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0)
+        llm = ChatOpenAI(
+            model=os.environ.get("META_MODEL_NAME", "muse-spark-1.3"),
+            api_key=os.environ.get("META_API_KEY"),
+            base_url=os.environ.get("META_API_BASE_URL"),
+            temperature=0
+        )
 
         # Construct dynamic system prompt
         system_prompt = """You are an intelligent Supply Chain Orchestrator.
@@ -163,7 +168,12 @@ You are a Supplier Agent. Provide a quote ONLY as valid JSON with the keys:
 SKUs needing restock:
 {stockouts}
 """)
-    llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0)
+    llm = ChatOpenAI(
+        model=os.environ.get("META_MODEL_NAME", "muse-spark-1.3"),
+        api_key=os.environ.get("META_API_KEY"),
+        base_url=os.environ.get("META_API_BASE_URL"),
+        temperature=0
+    )
     chain = prompt_tmpl | llm
     stockouts_str = json.dumps(stockouts, indent=2)
 
