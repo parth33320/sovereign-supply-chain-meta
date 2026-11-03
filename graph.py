@@ -9,6 +9,7 @@ from langgraph.checkpoint.postgres import PostgresSaver
 import os
 import tenacity
 from disruption_radar import fetch_disruption_alert
+from demand_forecaster import forecast_sku_stockouts
 
 # Ensure task logging function
 def log_task(request_id: str, status: str, payload: str):
@@ -53,6 +54,24 @@ def global_oracle(state: AgentState) -> Dict:
         severity = str(disruption.get("severity", "low")).upper()
         summary = disruption.get("summary", "")
         messages.append(AIMessage(content=f"[GLOBAL ORACLE ALERT] ({severity}): {summary}"))
+
+    return {"messages": messages}
+
+# Node 1.5: Demand Forecaster Node
+def forecast_demand(state: AgentState) -> Dict:
+    messages = list(state.get("messages", []))
+    forecasts = forecast_sku_stockouts()
+
+    for item in forecasts:
+        confidence = str(item.get("confidence", "low")).lower()
+        if confidence == "high":
+            sku = item.get("sku")
+            days = item.get("days_until_stockout")
+            messages.append(
+                AIMessage(
+                    content=f"[DEMAND FORECAST ALERT] ({confidence.upper()}): {sku} predicted stockout in {days} days."
+                )
+            )
 
     return {"messages": messages}
 
@@ -288,6 +307,7 @@ def route_approval(state: AgentState):
 builder = StateGraph(AgentState)
 
 builder.add_node("global_oracle", global_oracle)
+builder.add_node("forecast_demand", forecast_demand)
 builder.add_node("fetch_inventory", fetch_inventory)
 builder.add_node("draft_plan", draft_plan)
 builder.add_node("human_review", human_review)
@@ -296,7 +316,8 @@ builder.add_node("a2a_negotiate", a2a_negotiate)
 builder.add_node("draft_po", draft_po)
 
 builder.set_entry_point("global_oracle")
-builder.add_edge("global_oracle", "fetch_inventory")
+builder.add_edge("global_oracle", "forecast_demand")
+builder.add_edge("forecast_demand", "fetch_inventory")
 
 builder.add_conditional_edges(
 "fetch_inventory",
