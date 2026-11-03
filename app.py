@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from guardrails import check_prompt_injection
 from voice_handler import process_voice_input
 from warehouse_vision import analyze_shelf_image
+from document_vision import extract_document_data, format_logistics_instruction
 
 # Load environment variables
 load_dotenv()
@@ -25,6 +26,10 @@ if 'waf_count' not in st.session_state:
     st.session_state.waf_count = 0
 if 'shelf_context' not in st.session_state:
     st.session_state.shelf_context = None
+if 'extracted_document' not in st.session_state:
+    st.session_state.extracted_document = None
+if 'prefilled_prompt' not in st.session_state:
+    st.session_state.prefilled_prompt = ""
 
 config = {"configurable": {"thread_id": st.session_state.thread_id}}
 
@@ -88,86 +93,162 @@ with st.sidebar:
 col1, col2 = st.columns([2, 1])
 
 with col1:
-    st.subheader("Orchestrator Chat")
+    tab_chat, tab_upload = st.tabs(["Orchestrator Chat", "Upload Document"])
 
-    # Display chat
-    for msg in st.session_state.chat_history:
-        with st.chat_message(msg["role"]):
-            st.write(msg["content"])
+    with tab_upload:
+        st.subheader("Invoice / Shipping Document Extraction")
+        uploaded_doc = st.file_uploader(
+            "Upload Invoice or Shipping Document",
+            type=["png", "jpg", "jpeg", "webp"],
+            key="document_image_uploader"
+        )
+        if uploaded_doc is not None:
+            if uploaded_doc.size > 2_000_000:
+                st.error("File too large. Please upload under 2MB.")
+            else:
+                doc_bytes = uploaded_doc.read()
+                doc_id = hash(doc_bytes)
+                if st.session_state.get("last_uploaded_doc_id") != doc_id:
+                    st.session_state.last_uploaded_doc_id = doc_id
+                    with st.spinner("Extracting document data with muse-image-1.0..."):
+                        extraction = extract_document_data(doc_bytes)
+                        st.session_state.extracted_document = extraction
+                        st.session_state.prefilled_prompt = format_logistics_instruction(extraction)
 
-    # Voice Input (placed above text chat input)
-    voice_audio = st.audio_input("Record voice instruction", key="voice_audio_input")
-    if voice_audio is not None:
-        # Check if this audio has already been processed to avoid infinite reruns
-        audio_bytes = voice_audio.read()
-        audio_id = hash(audio_bytes)
-        if st.session_state.get("last_processed_audio_id") != audio_id:
-            st.session_state.last_processed_audio_id = audio_id
-            with st.spinner("Processing voice input..."):
-                voice_result = process_voice_input(audio_bytes)
-                if voice_result.get("status") == "ok":
-                    transcript = voice_result.get("transcription", "").strip()
-                    if transcript:
-                        # Auto-submit transcript into orchestrator pipeline
-                        if not check_prompt_injection(transcript):
-                            st.session_state.waf_count += 1
-                            st.error("SECURITY ALERT: Malicious prompt detected and blocked by Semantic Bouncer.")
-                        else:
-                            st.session_state.chat_history.append({"role": "user", "content": transcript})
-                            request_id = str(uuid.uuid4())
-                            dispatched_prompt = transcript
-                            if st.session_state.get("shelf_context") and st.session_state["shelf_context"].get("summary"):
-                                summary_text = st.session_state["shelf_context"]["summary"]
-                                dispatched_prompt = f"[VISUAL SHELF ANALYSIS: {summary_text}]\n{transcript}"
+        if st.session_state.get("extracted_document"):
+            doc_data = st.session_state.extracted_document
+            st.success("Document Extracted Successfully")
 
-                            state = {
-                                "messages": [HumanMessage(content=dispatched_prompt)],
-                                "tenant_id": tenant_id,
-                                "request_id": request_id,
-                                "status": "init"
-                            }
-                            task = process_agent_task.delay(tenant_id, request_id, dispatched_prompt)
-                            st.session_state.pending_task_id = task.id
-                            st.session_state.pending_request_id = request_id
-                            st.session_state.pending_prompt = dispatched_prompt
-                            st.rerun()
+            col_info1, col_info2 = st.columns(2)
+            with col_info1:
+                st.markdown(f"**Supplier:** {doc_data.get('supplier') or 'Not specified'}")
+                dates = doc_data.get("dates", [])
+                st.markdown(f"**Dates:** {', '.join(dates) if dates else 'Not specified'}")
+            with col_info2:
+                st.markdown(f"**Summary:** {doc_data.get('raw_summary') or 'None'}")
+
+            items = doc_data.get("items", [])
+            if items:
+                st.markdown("**Items & Quantities:**")
+                for itm in items:
+                    price_str = f" (${itm.get('unit_price')}/unit)" if itm.get("unit_price") is not None else ""
+                    st.write(f"- {itm.get('quantity', 1)}x {itm.get('description', 'Item')}{price_str}")
+
+            if st.session_state.get("prefilled_prompt"):
+                st.info(f"**Pre-populated Chat Instruction:**\n\n_{st.session_state.prefilled_prompt}_")
+
+            col_btn1, col_btn2 = st.columns(2)
+            with col_btn1:
+                if st.button("Clear Document", key="clear_extracted_doc_btn"):
+                    st.session_state.extracted_document = None
+                    st.session_state.prefilled_prompt = ""
+                    st.session_state.last_uploaded_doc_id = None
+                    st.rerun()
+
+    with tab_chat:
+        st.subheader("Orchestrator Chat")
+
+        # Display chat
+        for msg in st.session_state.chat_history:
+            with st.chat_message(msg["role"]):
+                st.write(msg["content"])
+
+        # Display prefilled prompt stage if available
+        if st.session_state.get("prefilled_prompt"):
+            st.info(f"📋 **Draft Logistics Instruction:**\n\n_{st.session_state.prefilled_prompt}_")
+            if st.button("Send Instruction to Orchestrator", key="send_prefilled_instruction_btn", type="primary"):
+                candidate_prompt = st.session_state.prefilled_prompt
+                st.session_state.prefilled_prompt = ""
+                if not check_prompt_injection(candidate_prompt):
+                    st.session_state.waf_count += 1
+                    st.error("SECURITY ALERT: Malicious prompt detected and blocked by Semantic Bouncer.")
                 else:
-                    st.error(f"Voice processing error: {voice_result.get('intent', 'Unknown error')}")
-
-    # Chat Input
-    prompt = st.chat_input("Enter logistics instruction...")
-    if prompt:
-        # Semantic Bouncer
-        if not check_prompt_injection(prompt):
-            st.session_state.waf_count += 1
-            st.error("SECURITY ALERT: Malicious prompt detected and blocked by Semantic Bouncer.")
-        else:
-            st.session_state.chat_history.append({"role": "user", "content": prompt})
-            with st.chat_message("user"):
-                st.write(prompt)
-
-            with st.chat_message("assistant"):
-                with st.spinner("Processing via LangGraph Orchestrator..."):
+                    st.session_state.chat_history.append({"role": "user", "content": candidate_prompt})
                     request_id = str(uuid.uuid4())
-
-                    dispatched_prompt = prompt
+                    dispatched_prompt = candidate_prompt
                     if st.session_state.get("shelf_context") and st.session_state["shelf_context"].get("summary"):
                         summary_text = st.session_state["shelf_context"]["summary"]
-                        dispatched_prompt = f"[VISUAL SHELF ANALYSIS: {summary_text}]\n{prompt}"
+                        dispatched_prompt = f"[VISUAL SHELF ANALYSIS: {summary_text}]\n{candidate_prompt}"
 
-                    state = {
-                        "messages": [HumanMessage(content=dispatched_prompt)],
-                        "tenant_id": tenant_id,
-                        "request_id": request_id,
-                        "status": "init"
-                    }
-
-                    # Dispatch task to Celery
                     task = process_agent_task.delay(tenant_id, request_id, dispatched_prompt)
                     st.session_state.pending_task_id = task.id
                     st.session_state.pending_request_id = request_id
                     st.session_state.pending_prompt = dispatched_prompt
                     st.rerun()
+
+        # Voice Input (placed above text chat input)
+        voice_audio = st.audio_input("Record voice instruction", key="voice_audio_input")
+        if voice_audio is not None:
+            # Check if this audio has already been processed to avoid infinite reruns
+            audio_bytes = voice_audio.read()
+            audio_id = hash(audio_bytes)
+            if st.session_state.get("last_processed_audio_id") != audio_id:
+                st.session_state.last_processed_audio_id = audio_id
+                with st.spinner("Processing voice input..."):
+                    voice_result = process_voice_input(audio_bytes)
+                    if voice_result.get("status") == "ok":
+                        transcript = voice_result.get("transcription", "").strip()
+                        if transcript:
+                            # Auto-submit transcript into orchestrator pipeline
+                            if not check_prompt_injection(transcript):
+                                st.session_state.waf_count += 1
+                                st.error("SECURITY ALERT: Malicious prompt detected and blocked by Semantic Bouncer.")
+                            else:
+                                st.session_state.chat_history.append({"role": "user", "content": transcript})
+                                request_id = str(uuid.uuid4())
+                                dispatched_prompt = transcript
+                                if st.session_state.get("shelf_context") and st.session_state["shelf_context"].get("summary"):
+                                    summary_text = st.session_state["shelf_context"]["summary"]
+                                    dispatched_prompt = f"[VISUAL SHELF ANALYSIS: {summary_text}]\n{transcript}"
+
+                                state = {
+                                    "messages": [HumanMessage(content=dispatched_prompt)],
+                                    "tenant_id": tenant_id,
+                                    "request_id": request_id,
+                                    "status": "init"
+                                }
+                                task = process_agent_task.delay(tenant_id, request_id, dispatched_prompt)
+                                st.session_state.pending_task_id = task.id
+                                st.session_state.pending_request_id = request_id
+                                st.session_state.pending_prompt = dispatched_prompt
+                                st.rerun()
+                    else:
+                        st.error(f"Voice processing error: {voice_result.get('intent', 'Unknown error')}")
+
+        # Chat Input
+        prompt = st.chat_input("Enter logistics instruction...")
+        if prompt:
+            # Semantic Bouncer
+            if not check_prompt_injection(prompt):
+                st.session_state.waf_count += 1
+                st.error("SECURITY ALERT: Malicious prompt detected and blocked by Semantic Bouncer.")
+            else:
+                st.session_state.chat_history.append({"role": "user", "content": prompt})
+                with st.chat_message("user"):
+                    st.write(prompt)
+
+                with st.chat_message("assistant"):
+                    with st.spinner("Processing via LangGraph Orchestrator..."):
+                        request_id = str(uuid.uuid4())
+
+                        dispatched_prompt = prompt
+                        if st.session_state.get("shelf_context") and st.session_state["shelf_context"].get("summary"):
+                            summary_text = st.session_state["shelf_context"]["summary"]
+                            dispatched_prompt = f"[VISUAL SHELF ANALYSIS: {summary_text}]\n{prompt}"
+
+                        state = {
+                            "messages": [HumanMessage(content=dispatched_prompt)],
+                            "tenant_id": tenant_id,
+                            "request_id": request_id,
+                            "status": "init"
+                        }
+
+                        # Dispatch task to Celery
+                        task = process_agent_task.delay(tenant_id, request_id, dispatched_prompt)
+                        st.session_state.pending_task_id = task.id
+                        st.session_state.pending_request_id = request_id
+                        st.session_state.pending_prompt = dispatched_prompt
+                        st.rerun()
 
 
 # Polling mechanism for Celery task
