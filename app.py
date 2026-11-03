@@ -5,6 +5,7 @@ import uuid
 import time
 from dotenv import load_dotenv
 from guardrails import check_prompt_injection
+from voice_handler import process_voice_input
 
 # Load environment variables
 load_dotenv()
@@ -59,6 +60,40 @@ with col1:
     for msg in st.session_state.chat_history:
         with st.chat_message(msg["role"]):
             st.write(msg["content"])
+
+    # Voice Input (placed above text chat input)
+    voice_audio = st.audio_input("Record voice instruction", key="voice_audio_input")
+    if voice_audio is not None:
+        # Check if this audio has already been processed to avoid infinite reruns
+        audio_bytes = voice_audio.read()
+        audio_id = hash(audio_bytes)
+        if st.session_state.get("last_processed_audio_id") != audio_id:
+            st.session_state.last_processed_audio_id = audio_id
+            with st.spinner("Processing voice input..."):
+                voice_result = process_voice_input(audio_bytes)
+                if voice_result.get("status") == "ok":
+                    transcript = voice_result.get("transcription", "").strip()
+                    if transcript:
+                        # Auto-submit transcript into orchestrator pipeline
+                        if not check_prompt_injection(transcript):
+                            st.session_state.waf_count += 1
+                            st.error("SECURITY ALERT: Malicious prompt detected and blocked by Semantic Bouncer.")
+                        else:
+                            st.session_state.chat_history.append({"role": "user", "content": transcript})
+                            request_id = str(uuid.uuid4())
+                            state = {
+                                "messages": [HumanMessage(content=transcript)],
+                                "tenant_id": tenant_id,
+                                "request_id": request_id,
+                                "status": "init"
+                            }
+                            task = process_agent_task.delay(tenant_id, request_id, transcript)
+                            st.session_state.pending_task_id = task.id
+                            st.session_state.pending_request_id = request_id
+                            st.session_state.pending_prompt = transcript
+                            st.rerun()
+                else:
+                    st.error(f"Voice processing error: {voice_result.get('intent', 'Unknown error')}")
 
     # Chat Input
     prompt = st.chat_input("Enter logistics instruction...")
