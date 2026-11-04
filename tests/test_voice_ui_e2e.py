@@ -125,7 +125,7 @@ def test_voice_ui_e2e_playwright(tmp_path):
             page.goto(f"http://localhost:{port}", timeout=15000)
 
             # Check page title
-            expect(page).to_have_title("Sovereign Supply Chain Orchestrator")
+            expect(page).to_have_title("Sovereign Supply Chain Orchestrator", timeout=15000)
 
             # Expect audio input widget to exist and be visible
             audio_widget = page.locator('[data-testid="stAudioInput"]')

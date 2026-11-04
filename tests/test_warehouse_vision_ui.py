@@ -22,14 +22,17 @@ def mock_graph_deps():
 
 
 def test_app_shelf_image_uploader_exists():
-    """Test that app.py sidebar contains file uploader for shelf image."""
+    """Test that app.py contains file uploader for shelf image in Warehouse module."""
     import streamlit.testing.v1 as st_test
     app_path = REPO_ROOT / "app.py"
     at = st_test.AppTest.from_file(str(app_path), default_timeout=10)
     at.run()
-    assert len(at.sidebar.file_uploader) >= 1
-    uploader = at.sidebar.file_uploader[0]
-    assert uploader.label == "Upload Shelf Image"
+    at.sidebar.radio[0].set_value("Warehouse")
+    at.run()
+
+    uploaders = [u for u in at.file_uploader if u.key == "shelf_image_uploader"]
+    assert len(uploaders) == 1
+    assert uploaders[0].label == "Upload Shelf Image"
 
 
 def test_app_shelf_image_file_too_large():
@@ -38,16 +41,19 @@ def test_app_shelf_image_file_too_large():
     app_path = REPO_ROOT / "app.py"
     at = st_test.AppTest.from_file(str(app_path), default_timeout=10)
     at.run()
+    at.sidebar.radio[0].set_value("Warehouse")
+    at.run()
 
     large_bytes = b"0" * 1_000_001
-    at.sidebar.file_uploader[0].upload("big_shelf.jpg", large_bytes)
+    shelf_uploader = [u for u in at.file_uploader if u.key == "shelf_image_uploader"][0]
+    shelf_uploader.upload("big_shelf.jpg", large_bytes)
     try:
         at.run()
     except Exception:
         pass
 
-    assert len(at.sidebar.error) > 0
-    assert "File too large. Please upload under 1MB." in at.sidebar.error[0].value
+    assert len(at.error) > 0
+    assert any("File too large. Please upload under 1MB." in err.value for err in at.error)
 
 
 def test_app_shelf_image_upload_and_context_injection():
@@ -77,14 +83,22 @@ def test_app_shelf_image_upload_and_context_injection():
         at = st_test.AppTest.from_file(str(app_path), default_timeout=10)
         at.run()
 
+        # Navigate to Warehouse
+        at.sidebar.radio[0].set_value("Warehouse")
+        at.run()
+
         # Upload valid image using upload helper
-        at.sidebar.file_uploader[0].upload("shelf.png", fake_img)
+        shelf_uploader = [u for u in at.file_uploader if u.key == "shelf_image_uploader"][0]
+        shelf_uploader.upload("shelf.png", fake_img)
         at.run()
 
         mock_analyze.assert_called_once_with(fake_img)
         assert at.session_state["shelf_context"] == mock_analysis
 
-        # Submit text prompt
+        # Switch back to Orchestrator to submit text prompt
+        at.sidebar.radio[0].set_value("Orchestrator")
+        at.run()
+
         at.chat_input[0].set_value("Reallocate low stock items")
         try:
             at.run()
@@ -99,7 +113,7 @@ def test_app_shelf_image_upload_and_context_injection():
 
 
 def test_warehouse_vision_ui_e2e_playwright(tmp_path):
-    """Playwright E2E verification of shelf image uploader in sidebar."""
+    """Playwright E2E verification of shelf image uploader in Warehouse module."""
     port = 8598
     proc = subprocess.Popen(
         [
@@ -127,16 +141,19 @@ def test_warehouse_vision_ui_e2e_playwright(tmp_path):
             page = context.new_page()
             page.goto(f"http://localhost:{port}", timeout=15000)
 
-            expect(page).to_have_title("Sovereign Supply Chain Orchestrator")
+            expect(page).to_have_title("Sovereign Supply Chain Orchestrator", timeout=15000)
 
-            # Check sidebar contains Warehouse Vision header and file uploader
+            # Check sidebar contains navigation rail and click Warehouse
             sidebar = page.locator('[data-testid="stSidebar"]')
             expect(sidebar).to_be_visible()
 
-            vision_header = sidebar.get_by_role("heading", name="Warehouse Vision")
-            expect(vision_header).to_be_visible()
+            warehouse_nav = sidebar.locator('label', has_text="Warehouse")
+            expect(warehouse_nav).to_be_visible()
+            warehouse_nav.click()
+            time.sleep(1)
 
-            uploader = sidebar.locator('[data-testid="stFileUploader"]')
+            # Check file uploader in Warehouse module
+            uploader = page.locator('[data-testid="stFileUploader"]').first
             expect(uploader).to_be_visible()
             expect(uploader).to_contain_text("Upload Shelf Image")
 

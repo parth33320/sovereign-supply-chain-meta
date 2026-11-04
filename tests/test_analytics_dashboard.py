@@ -37,10 +37,8 @@ def test_app_py_has_analytics_dashboard_sidebar():
     with open(REPO_ROOT / "app.py", "r") as f:
         content = f.read()
 
-    # Expanders for each section
+    # Expanders for active sections (PR update: Disruption Alert History and Forecast Predictions preserved)
     assert "st.expander" in content
-    assert "WAF Events Over Time" in content
-    assert "PO History Table" in content
     assert "Disruption Alert History" in content
     assert "Forecast Predictions" in content
 
@@ -114,7 +112,7 @@ def test_forecast_confidence_color_mapping():
 
 
 def test_analytics_dashboard_ui_playwright(tmp_path):
-    """Playwright E2E verification of Analytics Dashboard in sidebar."""
+    """Playwright E2E verification of Analytics Dashboard in Developer Tools."""
     port = 8598
     proc = subprocess.Popen(
         [
@@ -125,7 +123,7 @@ def test_analytics_dashboard_ui_playwright(tmp_path):
         cwd=str(REPO_ROOT),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        env=dict(os.environ, STREAMLIT_SERVER_PORT=str(port))
+        env=dict(os.environ, STREAMLIT_SERVER_PORT=str(port), DEV_MODE="1")
     )
 
     video_dir = tmp_path / "videos"
@@ -140,20 +138,27 @@ def test_analytics_dashboard_ui_playwright(tmp_path):
                 record_video_size={"width": 1280, "height": 720}
             )
             page = context.new_page()
-            page.goto(f"http://localhost:{port}", timeout=15000)
+            page.goto(f"http://localhost:{port}?dev=1", timeout=15000)
 
-            expect(page).to_have_title("Sovereign Supply Chain Orchestrator")
+            expect(page).to_have_title("Sovereign Supply Chain Orchestrator", timeout=15000)
 
-            # Check Analytics Dashboard header in sidebar
+            # In intentional dev mode, Developer Tools expander is present in sidebar
             sidebar = page.locator('[data-testid="stSidebar"]')
             expect(sidebar).to_be_visible()
-            expect(sidebar.get_by_text("Analytics Dashboard")).to_be_visible()
+            dev_tools = sidebar.locator('details').first
+            expect(dev_tools).to_be_visible()
+            dev_tools.click()
+            time.sleep(1)
 
-            # Check the 4 expanders
-            expect(sidebar.get_by_text("WAF Events Over Time")).to_be_visible()
-            expect(sidebar.get_by_text("PO History Table")).to_be_visible()
-            expect(sidebar.get_by_text("Disruption Alert History")).to_be_visible()
-            expect(sidebar.get_by_text("Forecast Predictions")).to_be_visible()
+            # Select Analytics Dashboard view
+            analytics_radio = sidebar.locator('label', has_text="Analytics Dashboard")
+            expect(analytics_radio).to_be_visible()
+            analytics_radio.click()
+            time.sleep(1)
+
+            # Check the active expanders exist in main content area
+            expect(page.get_by_text("Disruption Alert History")).to_be_visible()
+            expect(page.get_by_text("Forecast Predictions")).to_be_visible()
 
             screenshot_path = tmp_path / "analytics_dashboard.png"
             page.screenshot(path=str(screenshot_path))

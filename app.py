@@ -3,32 +3,265 @@ import sqlite3
 import json
 import uuid
 import time
+import os
+import re
+import pandas as pd
 from dotenv import load_dotenv
+
 from guardrails import check_prompt_injection
 from voice_handler import process_voice_input
 from warehouse_vision import analyze_shelf_image
 from document_vision import extract_document_data, format_logistics_instruction
 from demand_forecaster import forecast_sku_stockouts
-import pandas as pd
 from portfolio import (
     create_initiative,
     get_wsjf_ranked_backlog,
     get_evms_snapshot,
     get_connection as get_portfolio_connection,
 )
-
-# Load environment variables
-load_dotenv()
-import os
 from graph import get_graph_with_postgres, log_dpo
 from worker import process_agent_task
 from celery.result import AsyncResult
 from generate_synthetic_load import generate_load
 from langchain_core.messages import HumanMessage, AIMessage
 
+# Load environment variables
+load_dotenv()
+
 DEMO_MODE = os.environ.get("DEMO_MODE") == "1"
 
-# Initialization
+# Page Configuration
+st.set_page_config(
+    page_title="Sovereign Supply Chain Orchestrator",
+    page_icon="🛡️",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+st.markdown("""
+<style>
+header[data-testid="stHeader"] {
+    display: none !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# Enterprise SaaS Design System CSS (Dark Slate + Linear/Vercel/ServiceNow aesthetic)
+ENTERPRISE_CSS = """
+<style>
+/* Base Theme Overrides */
+html, body, [class*="css"] {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #e6edf3;
+}
+
+/* Hide Streamlit Deploy Button */
+.stDeployButton, [data-testid="stDeployButton"] {
+    display: none !important;
+}
+
+/* App Background */
+.stApp {
+    background-color: #0b0f17;
+}
+
+/* Sidebar Navigation Rail */
+[data-testid="stSidebar"] {
+    background-color: #111622 !important;
+    border-right: 1px solid #232b3e !important;
+    padding-top: 1.5rem !important;
+}
+
+[data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
+    gap: 0.6rem !important;
+}
+
+/* Custom Navigation Radio */
+[data-testid="stSidebar"] .stRadio > div {
+    gap: 0.35rem;
+}
+
+[data-testid="stSidebar"] .stRadio label {
+    background: transparent;
+    border: 1px solid transparent;
+    padding: 0.55rem 0.85rem;
+    border-radius: 6px;
+    font-weight: 500;
+    font-size: 0.88rem;
+    cursor: pointer;
+    transition: all 0.15s ease-in-out;
+    color: #94a3b8 !important;
+    display: flex;
+    align-items: center;
+}
+
+[data-testid="stSidebar"] .stRadio label:hover {
+    background-color: #1a2234;
+    color: #f1f5f9 !important;
+}
+
+/* Active Nav Selection */
+[data-testid="stSidebar"] .stRadio label[data-checked="true"],
+[data-testid="stSidebar"] .stRadio label:has(input:checked) {
+    background-color: #1e293b !important;
+    border-color: #3b82f6 !important;
+    color: #ffffff !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+/* Enterprise Header Bar */
+.top-header-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.85rem 1.25rem;
+    background: #111622;
+    border: 1px solid #232b3e;
+    border-radius: 8px;
+    margin-bottom: 1.25rem;
+}
+
+.brand-title {
+    font-size: 1.15rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: #f8fafc;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    background: #0f2e24;
+    border: 1px solid #10b981;
+    color: #34d399;
+    padding: 0.25rem 0.65rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.status-dot {
+    width: 6px;
+    height: 6px;
+    background-color: #10b981;
+    border-radius: 50%;
+    box-shadow: 0 0 6px #10b981;
+}
+
+/* Enterprise Cards & Panels */
+.control-card {
+    background: #131926;
+    border: 1px solid #232b3e;
+    border-radius: 8px;
+    padding: 1.25rem;
+    margin-bottom: 1rem;
+}
+
+.control-card-header {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #f1f5f9;
+    margin-bottom: 0.85rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid #1e293b;
+    padding-bottom: 0.5rem;
+}
+
+/* Button Standardizations */
+button[kind="primary"], .stButton > button[kind="primary"] {
+    background-color: #2563eb !important;
+    border: 1px solid #3b82f6 !important;
+    color: #ffffff !important;
+    font-weight: 500 !important;
+    border-radius: 6px !important;
+    padding: 0.5rem 1.25rem !important;
+    white-space: nowrap !important;
+    min-height: 2.4rem !important;
+    transition: background 0.15s ease !important;
+}
+
+button[kind="primary"]:hover {
+    background-color: #1d4ed8 !important;
+    border-color: #60a5fa !important;
+}
+
+button[kind="secondary"], .stButton > button:not([kind="primary"]) {
+    background-color: #1e293b !important;
+    border: 1px solid #334155 !important;
+    color: #e2e8f0 !important;
+    font-weight: 500 !important;
+    border-radius: 6px !important;
+    padding: 0.5rem 1.25rem !important;
+    white-space: nowrap !important;
+    min-height: 2.4rem !important;
+}
+
+button[kind="secondary"]:hover, .stButton > button:not([kind="primary"]):hover {
+    background-color: #334155 !important;
+    color: #ffffff !important;
+}
+
+/* Metric Cards */
+[data-testid="stMetric"] {
+    background-color: #161f30;
+    border: 1px solid #26334d;
+    padding: 0.85rem;
+    border-radius: 6px;
+}
+
+[data-testid="stMetricLabel"] {
+    font-size: 0.78rem;
+    color: #94a3b8 !important;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+[data-testid="stMetricValue"] {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: #f8fafc !important;
+}
+
+/* Notification & Alert Banners */
+.alert-banner {
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+    margin-bottom: 1rem;
+    font-size: 0.875rem;
+    line-height: 1.4;
+    border: 1px solid;
+}
+
+.alert-banner.critical {
+    background-color: #381216;
+    border-color: #ef4444;
+    color: #fca5a5;
+}
+
+.alert-banner.warning {
+    background-color: #35210c;
+    border-color: #f59e0b;
+    color: #fcd34d;
+}
+
+.alert-banner.info {
+    background-color: #11253e;
+    border-color: #3b82f6;
+    color: #93c5fd;
+}
+</style>
+"""
+st.markdown(ENTERPRISE_CSS, unsafe_allow_html=True)
+
+# State Initialization
 if 'thread_id' not in st.session_state:
     st.session_state.thread_id = str(uuid.uuid4())
 if 'chat_history' not in st.session_state:
@@ -56,296 +289,391 @@ if 'demo_pending_po' not in st.session_state:
 if 'demo_pending_plan' not in st.session_state:
     st.session_state.demo_pending_plan = ""
 
-st.set_page_config(page_title="Sovereign Supply Chain Orchestrator", layout="wide")
+if DEMO_MODE and st.query_params.get("demo_hitl") == "1":
+    st.session_state.demo_paused_for_hitl = True
+    st.session_state.demo_pending_po = {
+        "po_id": "PO-948201",
+        "items": [{"sku": "SKU-STEEL-BEAMS", "qty": 500}],
+        "restock_quantity": 500,
+        "price_per_unit": 42.50,
+        "lead_time_days": 3,
+        "supplier": "Apex Logistics Supplier AI"
+    }
+    st.session_state.demo_a2a_transcript = [
+        {"role": "buyer_agent", "request": [{"sku": "SKU-STEEL-BEAMS", "qty": 0}], "response": "Procurement Buyer RFQ: Request restock of 500 units SKU-STEEL-BEAMS. Max lead time: 5 days."},
+        {"role": "supplier_agent", "request": "Procurement Buyer RFQ: Request restock of 500 units SKU-STEEL-BEAMS. Max lead time: 5 days.", "response": {"restock_quantity": 500, "price_per_unit": 42.50, "lead_time_days": 3}}
+    ]
+if 'active_nav_module' not in st.session_state:
+    st.session_state.active_nav_module = "Orchestrator"
 
-# Header
-st.title("Sovereign Supply Chain Orchestrator (MVP)")
-tenant_id = st.selectbox("Select Active Tenant (Multi-Tenant Isolation)", ["Tenant_A", "Tenant_B"])
+# Check intentional developer mode (?dev=1 or DEV_MODE=1)
+# User instruction: "Make it a collapsed Developer Tools item at the bottom of the navigation rail, visible only in intentional developer mode. Don't add an Operator/Developer toggle to the normal user interface."
+is_dev_mode = (
+    st.query_params.get("dev") == "1"
+    or os.environ.get("DEV_MODE") == "1"
+)
+
+# Navigation Rail (Left Sidebar)
+with st.sidebar:
+    st.markdown(
+        """
+        <div style="padding-bottom: 0.75rem; border-bottom: 1px solid #232b3e; margin-bottom: 1rem;">
+            <div style="font-size: 0.75rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em;">Platform</div>
+            <div style="font-size: 1.05rem; font-weight: 700; color: #f8fafc; margin-top: 0.15rem;">Sovereign Tower</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    # Primary Navigation (Single-page navigation pattern with persistent, compact rail)
+    modules = ["Orchestrator", "Warehouse", "Documents"]
+    selected_module = st.radio(
+        "Navigation",
+        modules,
+        index=modules.index(st.session_state.active_nav_module) if st.session_state.active_nav_module in modules else 0,
+        label_visibility="collapsed",
+        key="main_nav_radio"
+    )
+    st.session_state.active_nav_module = selected_module
+
+    st.markdown("<div style='height: 1.5rem;'></div>", unsafe_allow_html=True)
+
+    # Developer Tools Section: visible only in intentional developer mode; collapsed area
+    if is_dev_mode:
+        with st.expander("🛠️ Developer Tools", expanded=False):
+            dev_subviews = ["Diagnostics & WAF", "Analytics Dashboard"]
+            selected_dev_view = st.radio("Developer Views", dev_subviews, key="dev_subview_radio")
+            st.session_state.active_dev_subview = selected_dev_view
+    else:
+        st.session_state.active_dev_subview = None
+
+    st.markdown("<div style='margin-top: auto; padding-top: 2rem;'></div>", unsafe_allow_html=True)
+    st.caption("Environment: Meta Foundation Cloud\nv1.6.0-enterprise")
+
+# Global Top Header Bar (Tenant Isolation & System Status)
+header_col1, header_col2, header_col3 = st.columns([2, 1, 1])
+
+with header_col1:
+    st.markdown(
+        f"""
+        <div style="display: flex; align-items: center; gap: 0.75rem; padding-top: 0.35rem;">
+            <div style="font-size: 1.35rem; font-weight: 700; color: #f8fafc; letter-spacing: -0.02em;">
+                🛡️ Sovereign Supply Chain
+            </div>
+            <div style="font-size: 0.85rem; color: #64748b; font-weight: 500;">
+                / {st.session_state.active_nav_module}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+with header_col2:
+    tenant_id = st.selectbox(
+        "Active Tenant",
+        ["Tenant_A", "Tenant_B"],
+        key="global_tenant_selector",
+        label_visibility="collapsed"
+    )
+
+with header_col3:
+    st.markdown(
+        """
+        <div style="text-align: right; padding-top: 0.35rem;">
+            <span class="status-badge">
+                <span class="status-dot"></span>
+                Operational
+            </span>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 config = {"configurable": {"thread_id": f"{tenant_id}_{st.session_state.thread_id}"}}
+st.markdown("<div style='height: 0.5rem;'></div>", unsafe_allow_html=True)
 
-# Sidebar
-with st.sidebar:
-    st.header("Warehouse Vision")
-    uploaded_image = st.file_uploader("Upload Shelf Image", type=["png", "jpg", "jpeg", "webp"], key="shelf_image_uploader")
-    if uploaded_image is not None:
-        if uploaded_image.size > 1_000_000:
-            st.error("File too large. Please upload under 1MB.")
-            st.stop()
+# Polling mechanism for Celery task
+if 'pending_task_id' in st.session_state:
+    task_id = st.session_state.pending_task_id
+    task = AsyncResult(task_id)
 
-        image_bytes = uploaded_image.read()
-        image_id = hash(image_bytes)
-        if st.session_state.get("last_uploaded_image_id") != image_id:
-            st.session_state.last_uploaded_image_id = image_id
-            with st.spinner("Analyzing shelf image with SAM 3.1..."):
-                analysis = analyze_shelf_image(image_bytes)
-                st.session_state.shelf_context = analysis
-
-    if st.session_state.get("shelf_context"):
-        ctx = st.session_state.shelf_context
-        st.subheader("Shelf Analysis")
-        st.write(f"**Summary:** {ctx.get('summary', '')}")
-        items = ctx.get("items", [])
-        if items:
-            for itm in items:
-                fill_pct = int(itm.get("fill_level", 0.0) * 100)
-                st.write(f"- **{itm.get('item')}**: {fill_pct}% fill ({itm.get('status', 'ok')})")
-        if st.button("Clear Shelf Context", key="clear_shelf_context_btn"):
-            st.session_state.shelf_context = None
-            st.session_state.last_uploaded_image_id = None
+    if task.state == 'PENDING' or task.state == 'STARTED':
+        with st.spinner("Processing via LangGraph Orchestrator..."):
+            time.sleep(2)
             st.rerun()
-
-    st.divider()
-
-    st.header("Security & Diagnostics")
-    st.metric(label="WAF Rate-Limit Count", value=st.session_state.waf_count)
-
-    st.subheader("MCP SQL Terminal Readout")
-    try:
-        conn = sqlite3.connect('mock_sap.db')
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, query, tenant_id FROM mcp_sql_logs ORDER BY id DESC LIMIT 5")
-        logs = cursor.fetchall()
-        if not logs:
-            st.info("No SQL queries executed yet.")
-        for log in logs:
-            st.code(f"[{log[2]}] {log[1]}")
-        conn.close()
-    except Exception as e:
-        st.error(f"Error fetching SQL logs: {e}")
-
-    st.divider()
-
-    st.header("Portfolio Dashboard")
-
-    # Fetch initiatives for dropdown/selection
-    try:
-        p_conn = get_portfolio_connection()
-        p_cur = p_conn.cursor()
-        p_cur.execute("SELECT id, title FROM initiatives ORDER BY id ASC")
-        init_rows = p_cur.fetchall()
-        p_conn.close()
-    except Exception:
-        init_rows = []
-
-    active_init_id = None
-    if init_rows:
-        init_options = {f"{r['id']} - {r['title'][:30]}": r["id"] for r in init_rows}
-        selected_label = st.selectbox("Select Business Initiative", list(init_options.keys()), key="portfolio_initiative_selector")
-        active_init_id = init_options[selected_label]
-    else:
-        st.info("No initiatives created yet.")
-
-    # 1. Input form: "New Initiative"
-    with st.expander("New Initiative", expanded=False):
-        new_title = st.text_input("Initiative Title", placeholder="e.g. Cut procurement costs 20%", key="new_init_title")
-        new_target = st.number_input("Target Savings ($ USD)", min_value=0.0, value=50000.0, step=1000.0, key="new_init_target")
-        new_deadline = st.text_input("Deadline", value="2025-12-31", key="new_init_deadline")
-        submitted = st.button("Create Initiative", key="create_init_btn")
-        if submitted and new_title.strip():
-            create_initiative(new_title.strip(), new_target, new_deadline.strip())
-            st.success(f"Initiative '{new_title}' created!")
-            st.rerun()
-
-    # 2. WSJF backlog table: columns = Work Item | WSJF Score | Status | $ Saved
-    st.subheader("WSJF Backlog Table")
-    backlog_items = get_wsjf_ranked_backlog(active_init_id)
-    if not backlog_items:
-        st.info("No work items in backlog for this initiative.")
-    else:
-        table_rows = []
-        for item in backlog_items:
-            table_rows.append({
-                "Work Item": item.title,
-                "WSJF Score": round(item.wsjf_score, 1),
-                "Status": item.status,
-                "$ Saved": f"${item.actual_saving_usd:,.2f}"
-            })
-        st.dataframe(pd.DataFrame(table_rows), use_container_width=True, hide_index=True)
-
-    # 3. EVMS mini-chart: horizontal bar showing PV vs EV vs AC
-    st.subheader("EVMS Performance Chart")
-    if active_init_id:
-        evms = get_evms_snapshot(active_init_id)
-        evms_data = pd.DataFrame({
-            "Metric": ["Planned Value (PV)", "Earned Value (EV)", "Actual Cost (AC)"],
-            "Amount ($ USD)": [evms["planned_value"], evms["earned_value"], evms["actual_cost"]]
-        })
-        st.bar_chart(evms_data, x="Metric", y="Amount ($ USD)", horizontal=True)
-
-        col_spi, col_cpi = st.columns(2)
-        with col_spi:
-            st.metric("Schedule Perf (SPI)", f"{evms['spi']:.2f}")
-        with col_cpi:
-            st.metric("Cost Perf (CPI)", f"{evms['cpi']:.2f}")
-
-    # 4. "AI Recommend Next" button: calls get_wsjf_ranked_backlog(), displays top item
-    if st.button("AI Recommend Next", key="ai_recommend_next_btn"):
-        ranked = get_wsjf_ranked_backlog(active_init_id)
-        if ranked:
-            top = ranked[0]
-            st.success(
-                f"🎯 **AI Recommended Next Action:**\n\n"
-                f"**Item:** {top.title}\n\n"
-                f"**WSJF Priority Score:** {top.wsjf_score:.1f} | **Status:** {top.status}\n\n"
-                f"**Potential Target / Current Saved:** ${top.actual_saving_usd:,.2f}"
-            )
-        else:
-            st.info("No work items available to recommend.")
-
-    st.divider()
-
-    st.header("Analytics Dashboard")
-
-    # Section 1: WAF events over time
-    with st.expander("WAF Events Over Time", expanded=False):
-        if not st.session_state.waf_history:
-            st.info("No WAF events recorded yet.")
-        else:
-            waf_counts = {}
-            for ev in st.session_state.waf_history:
-                ts = ev.get("timestamp", "unknown")
-                waf_counts[ts] = waf_counts.get(ts, 0) + ev.get("count", 1)
-            st.bar_chart(waf_counts)
-
-    # Section 2: PO history table
-    with st.expander("PO History Table", expanded=False):
+    elif task.state == 'SUCCESS' or task.status == 'PAUSED_FOR_REVIEW':
+        st.success("Execution completed or paused.")
         try:
-            conn = sqlite3.connect('mock_sap.db')
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT id, request_id, status, payload, created_at
-                FROM task_queue
-                WHERE status = 'EXECUTED'
-                ORDER BY id DESC
-                LIMIT 10
-            """)
-            po_rows = cursor.fetchall()
-            conn.close()
-            if not po_rows:
-                st.info("No executed purchase orders found in task queue.")
+            graph = get_graph_with_postgres()
+            config_task = {"configurable": {"thread_id": f"{tenant_id}_{st.session_state.pending_request_id}"}}
+            current_state = graph.get_state(config_task)
+
+            if current_state and hasattr(current_state, 'values'):
+                final_messages = current_state.values.get("messages", [])
+                drafted_plan = current_state.values.get("drafted_plan", "")
+
+                for m in final_messages:
+                    if isinstance(m, AIMessage):
+                        if not any(chat["content"] == m.content for chat in st.session_state.chat_history):
+                            st.session_state.chat_history.append({"role": "assistant", "content": m.content})
+                        if "[GLOBAL ORACLE ALERT]" in m.content:
+                            match = re.search(r"\[GLOBAL ORACLE ALERT\]\s*\((.*?)\):\s*(.*)", m.content)
+                            if match:
+                                severity = match.group(1).lower()
+                                summary = match.group(2)
+                                if not any(d.get("summary") == summary for d in st.session_state.disruption_history):
+                                    st.session_state.disruption_history.append({
+                                        "timestamp": time.strftime("%H:%M:%S"),
+                                        "severity": severity,
+                                        "summary": summary
+                                    })
+
+                st.session_state.pending_plan = drafted_plan
+        except Exception:
+            pass
+
+        del st.session_state.pending_task_id
+        st.rerun()
+    elif task.state == 'FAILURE':
+        st.error(f"Task failed: {task.info}")
+        del st.session_state.pending_task_id
+        st.rerun()
+
+
+# Determine HITL State for contextual panel
+if DEMO_MODE:
+    is_paused = st.session_state.demo_paused_for_hitl
+    pending_po = st.session_state.demo_pending_po
+    a2a_transcript = st.session_state.demo_a2a_transcript
+    pending_plan_content = st.session_state.demo_pending_plan
+elif not os.environ.get("POSTGRES_DB_URI"):
+    is_paused = False
+    pending_po = None
+    a2a_transcript = []
+    pending_plan_content = ""
+else:
+    try:
+        graph = get_graph_with_postgres()
+        current_state = graph.get_state(config)
+        is_paused = current_state.next == ('human_review',)
+        pending_po = current_state.values.get("pending_po") if hasattr(current_state, "values") else None
+        a2a_transcript = current_state.values.get("a2a_transcript", []) if hasattr(current_state, "values") else []
+        pending_plan_content = current_state.values.get("drafted_plan", "") if hasattr(current_state, "values") else ""
+    except Exception:
+        is_paused = False
+        pending_po = None
+        a2a_transcript = []
+        pending_plan_content = ""
+
+
+# -----------------------------------------------------------------------------
+# Developer Tools Display (When activated in Intentional Developer Mode)
+# -----------------------------------------------------------------------------
+if is_dev_mode and st.session_state.get("active_dev_subview"):
+    subview = st.session_state.active_dev_subview
+    st.markdown(f"### 🛠️ Developer Tools: {subview}")
+
+    if subview == "Diagnostics & WAF":
+        col_waf, col_sql = st.columns([1, 2])
+        with col_waf:
+            st.metric(label="WAF Rate-Limit Count", value=st.session_state.waf_count)
+            if st.button("Reset WAF Counter", key="reset_waf_count_btn"):
+                st.session_state.waf_count = 0
+                st.session_state.waf_history = []
+                st.rerun()
+
+        with col_sql:
+            st.subheader("MCP SQL Terminal Readout")
+            try:
+                conn = sqlite3.connect('mock_sap.db')
+                cursor = conn.cursor()
+                cursor.execute("SELECT id, query, tenant_id FROM mcp_sql_logs ORDER BY id DESC LIMIT 5")
+                logs = cursor.fetchall()
+                if not logs:
+                    st.info("No SQL queries executed yet.")
+                for log in logs:
+                    st.code(f"[{log[2]}] {log[1]}")
+                conn.close()
+            except Exception as e:
+                st.error(f"Error fetching SQL logs: {e}")
+
+    elif subview == "Analytics Dashboard":
+        st.subheader("Analytics Dashboard")
+
+        # Section 1: Disruption alert history
+        with st.expander("Disruption Alert History", expanded=True):
+            if not st.session_state.disruption_history:
+                st.info("No disruption alerts recorded yet.")
             else:
-                table_data = []
-                for row in po_rows:
-                    table_data.append({
-                        "ID": row[0],
-                        "Request ID": row[1],
-                        "Status": row[2],
-                        "Payload": row[3],
-                        "Created At": row[4]
-                    })
-                st.dataframe(table_data, use_container_width=True)
-        except Exception as e:
-            st.error(f"Error loading PO history: {e}")
+                for alert in reversed(st.session_state.disruption_history):
+                    sev = alert.get("severity", "low").upper()
+                    summary = alert.get("summary", "No details")
+                    ts = alert.get("timestamp", "")
+                    st.markdown(f"**[{ts}] ({sev})**: {summary}")
 
-    # Section 3: Disruption alert history
-    with st.expander("Disruption Alert History", expanded=False):
-        if not st.session_state.disruption_history:
-            st.info("No disruption alerts recorded yet.")
-        else:
-            for alert in reversed(st.session_state.disruption_history):
-                sev = alert.get("severity", "low").upper()
-                summary = alert.get("summary", "No details")
-                ts = alert.get("timestamp", "")
-                st.markdown(f"**[{ts}] ({sev})**: {summary}")
+        # Section 2: Forecast predictions display
+        with st.expander("Forecast Predictions", expanded=True):
+            if st.button("Refresh Forecast", key="refresh_forecast_btn_dev"):
+                with st.spinner("Forecasting SKU stockouts with muse-spark-1.3..."):
+                    st.session_state.forecast_cache = forecast_sku_stockouts()
 
-    # Section 4: Forecast predictions display
-    with st.expander("Forecast Predictions", expanded=False):
-        if st.button("Refresh Forecast", key="refresh_forecast_btn"):
-            with st.spinner("Forecasting SKU stockouts with muse-spark-1.3..."):
-                st.session_state.forecast_cache = forecast_sku_stockouts()
+            forecasts = st.session_state.forecast_cache
+            if not forecasts:
+                st.info("No stockout predictions recorded. Click 'Refresh Forecast' to query model.")
+            else:
+                color_map = {"high": "red", "medium": "orange", "low": "green"}
+                for fc in forecasts:
+                    sku = fc.get("sku", "Unknown SKU")
+                    days = fc.get("days_until_stockout", 0)
+                    conf = str(fc.get("confidence", "low")).lower()
+                    color = color_map.get(conf, "gray")
+                    st.markdown(f"- **{sku}**: Stockout in **{days}** days (Confidence: :{color}[{conf.upper()}])")
 
-        if st.session_state.forecast_cache is None:
-            # Auto-populate cache if empty
-            with st.spinner("Loading initial stockout forecasts..."):
-                st.session_state.forecast_cache = forecast_sku_stockouts()
+    st.divider()
 
-        forecasts = st.session_state.forecast_cache
-        if not forecasts:
-            st.info("No stockout predictions at this time.")
-        else:
-            color_map = {
-                "high": "red",
-                "medium": "orange",
-                "low": "green"
-            }
-            for fc in forecasts:
-                sku = fc.get("sku", "Unknown SKU")
-                days = fc.get("days_until_stockout", 0)
-                conf = str(fc.get("confidence", "low")).lower()
-                color = color_map.get(conf, "gray")
+
+# -----------------------------------------------------------------------------
+# Module 1: Orchestrator
+# -----------------------------------------------------------------------------
+if selected_module == "Orchestrator":
+    # Check for active disruption banner from history
+    if st.session_state.disruption_history:
+        latest_alert = st.session_state.disruption_history[-1]
+        sev = latest_alert.get("severity", "low").lower()
+        banner_class = "critical" if sev == "high" else ("warning" if sev == "medium" else "info")
+        st.markdown(
+            f"""
+            <div class="alert-banner {banner_class}">
+                <strong>⚡ LOGISTICS DISRUPTION ALERT ({sev.upper()}):</strong> {latest_alert.get('summary', '')}
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    # Layout: Responsive split. If paused for HITL, show review panel (1/3) side-by-side on wide screens.
+    if is_paused:
+        col_main, col_hitl = st.columns([2, 1])
+    else:
+        col_main = st.container()
+        col_hitl = None
+
+    # Contextual HITL Review Panel (Only rendered when real approval is pending)
+    if col_hitl is not None:
+        with col_hitl:
+            st.markdown(
+                """
+                <div class="control-card-header">
+                    <span>⚠️ AWAITING HUMAN APPROVAL</span>
+                    <span style="font-size: 0.75rem; color: #f59e0b; background: #35210c; padding: 2px 8px; border-radius: 4px;">PAUSED</span>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+            # Real Draft Plan Details
+            if pending_plan_content:
+                st.markdown("**Proposed Logistics Plan:**")
+                st.info(pending_plan_content)
+
+            # Real A2A Negotiation and Draft PO
+            if pending_po:
+                # Human-readable summary card for Purchase Order
+                supplier = pending_po.get("supplier", "Unknown Supplier")
+                sku = pending_po.get("sku", "N/A")
+                quantity = pending_po.get("quantity", pending_po.get("restock_quantity", 0))
+                price = pending_po.get("price_per_unit", pending_po.get("unit_price", 0.0))
+                lead_time = pending_po.get("lead_time_days", "N/A")
+
                 st.markdown(
-                    f"- **{sku}**: Stockout in **{days}** days "
-                    f"(Confidence: :{color}[{conf.upper()}])"
+                    f"""
+                    <div style="background: #161f30; border: 1px solid #232b3e; border-radius: 6px; padding: 0.85rem; margin-bottom: 0.85rem;">
+                        <div style="font-size: 0.78rem; font-weight: 700; color: #3b82f6; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">
+                            📦 Purchase Order Summary
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; font-size: 0.84rem;">
+                            <div><span style="color: #94a3b8;">Supplier:</span> <strong style="color: #f8fafc;">{supplier}</strong></div>
+                            <div><span style="color: #94a3b8;">SKU:</span> <strong style="color: #f8fafc;">{sku}</strong></div>
+                            <div><span style="color: #94a3b8;">Quantity:</span> <strong style="color: #f8fafc;">{quantity:,} units</strong></div>
+                            <div><span style="color: #94a3b8;">Price / Unit:</span> <strong style="color: #34d399;">${price:,.2f}</strong></div>
+                            <div><span style="color: #94a3b8;">Lead Time:</span> <strong style="color: #f8fafc;">{lead_time} days</strong></div>
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
                 )
 
-# Main Layout
-col1, col2 = st.columns([2, 1])
+            if a2a_transcript:
+                with st.expander("📄 A2A Negotiation Transcript (JSON)", expanded=False):
+                    for exchange in a2a_transcript:
+                        st.json(exchange)
 
-with col1:
-    tab_chat, tab_upload = st.tabs(["Orchestrator Chat", "Upload Document"])
+            st.markdown("<div style='height: 0.5rem;'></div>", unsafe_allow_html=True)
+            col_app, col_rej = st.columns(2)
+            with col_app:
+                if st.button("Approve", type="primary", key="hitl_approve_btn", use_container_width=True):
+                    log_dpo(
+                        st.session_state.get('pending_prompt', ''),
+                        st.session_state.get('demo_pending_plan', st.session_state.get('pending_plan', '')),
+                        ""
+                    )
+                    if DEMO_MODE:
+                        st.session_state.demo_paused_for_hitl = False
+                        st.session_state.chat_history.append({"role": "assistant", "content": "Plan Approved and Executed."})
+                        st.success("Plan Approved and Executed.")
+                        st.rerun()
+                    else:
+                        graph.update_state(config, {"status": "approved"})
+                        for event in graph.stream(None, config):
+                            pass
+                        st.session_state.chat_history.append({"role": "assistant", "content": "Plan Approved and Executed."})
+                        st.success("Plan Approved and Executed.")
+                        st.rerun()
 
-    with tab_upload:
-        st.subheader("Invoice / Shipping Document Extraction")
-        uploaded_doc = st.file_uploader(
-            "Upload Invoice or Shipping Document",
-            type=["png", "jpg", "jpeg", "webp"],
-            key="document_image_uploader"
-        )
-        if uploaded_doc is not None:
-            if uploaded_doc.size > 2_000_000:
-                st.error("File too large. Please upload under 2MB.")
-            else:
-                doc_bytes = uploaded_doc.read()
-                doc_id = hash(doc_bytes)
-                if st.session_state.get("last_uploaded_doc_id") != doc_id:
-                    st.session_state.last_uploaded_doc_id = doc_id
-                    with st.spinner("Extracting document data with muse-image-1.0..."):
-                        extraction = extract_document_data(doc_bytes)
-                        st.session_state.extracted_document = extraction
-                        st.session_state.prefilled_prompt = format_logistics_instruction(extraction)
+            with col_rej:
+                if st.button("Reject", key="hitl_reject_btn", use_container_width=True):
+                    log_dpo(
+                        st.session_state.get('pending_prompt', ''),
+                        "",
+                        st.session_state.get('demo_pending_plan', st.session_state.get('pending_plan', ''))
+                    )
+                    if DEMO_MODE:
+                        st.session_state.demo_paused_for_hitl = False
+                        st.session_state.chat_history.append({"role": "assistant", "content": "Plan Rejected."})
+                        st.error("Plan Rejected.")
+                        st.rerun()
+                    else:
+                        graph.update_state(config, {"status": "rejected"})
+                        for event in graph.stream(None, config):
+                            pass
+                        st.session_state.chat_history.append({"role": "assistant", "content": "Plan Rejected."})
+                        st.error("Plan Rejected.")
+                        st.rerun()
 
-        if st.session_state.get("extracted_document"):
-            doc_data = st.session_state.extracted_document
-            st.success("Document Extracted Successfully")
+    # Main Conversation Area
+    with col_main:
+        # Display Conversation
+        chat_container = st.container()
+        with chat_container:
+            if not st.session_state.chat_history:
+                st.markdown(
+                    """
+                    <div style="text-align: center; padding: 3rem 1rem; color: #64748b; border: 1px dashed #232b3e; border-radius: 8px;">
+                        <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">💬</div>
+                        <div style="font-weight: 600; color: #94a3b8;">Orchestrator Ready</div>
+                        <div style="font-size: 0.85rem; margin-top: 0.25rem;">Dispatch voice or text logistics instructions to begin.</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+            for msg in st.session_state.chat_history:
+                with st.chat_message(msg["role"]):
+                    st.write(msg["content"])
 
-            col_info1, col_info2 = st.columns(2)
-            with col_info1:
-                st.markdown(f"**Supplier:** {doc_data.get('supplier') or 'Not specified'}")
-                dates = doc_data.get("dates", [])
-                st.markdown(f"**Dates:** {', '.join(dates) if dates else 'Not specified'}")
-            with col_info2:
-                st.markdown(f"**Summary:** {doc_data.get('raw_summary') or 'None'}")
+        st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
 
-            items = doc_data.get("items", [])
-            if items:
-                st.markdown("**Items & Quantities:**")
-                for itm in items:
-                    price_str = f" (${itm.get('unit_price')}/unit)" if itm.get("unit_price") is not None else ""
-                    st.write(f"- {itm.get('quantity', 1)}x {itm.get('description', 'Item')}{price_str}")
-
-            if st.session_state.get("prefilled_prompt"):
-                st.info(f"**Pre-populated Chat Instruction:**\n\n_{st.session_state.prefilled_prompt}_")
-
-            col_btn1, col_btn2 = st.columns(2)
-            with col_btn1:
-                if st.button("Clear Document", key="clear_extracted_doc_btn"):
-                    st.session_state.extracted_document = None
-                    st.session_state.prefilled_prompt = ""
-                    st.session_state.last_uploaded_doc_id = None
-                    st.rerun()
-
-    with tab_chat:
-        st.subheader("Orchestrator Chat")
-
-        # Display chat
-        for msg in st.session_state.chat_history:
-            with st.chat_message(msg["role"]):
-                st.write(msg["content"])
-
-        # Display prefilled prompt stage if available
+        # Prefilled prompt from Document module if available
         if st.session_state.get("prefilled_prompt"):
-            st.info(f"📋 **Draft Logistics Instruction:**\n\n_{st.session_state.prefilled_prompt}_")
+            st.info(f"📋 **Draft Logistics Instruction from Document:**\n\n_{st.session_state.prefilled_prompt}_")
             if st.button("Send Instruction to Orchestrator", key="send_prefilled_instruction_btn", type="primary"):
                 candidate_prompt = st.session_state.prefilled_prompt
                 st.session_state.prefilled_prompt = ""
@@ -367,20 +695,18 @@ with col1:
                     st.session_state.pending_prompt = dispatched_prompt
                     st.rerun()
 
-        # Voice Input (placed above text chat input)
+        # Operational Voice Command Input (Placed directly above chat input)
         voice_audio = st.audio_input("Record voice instruction", key="voice_audio_input")
         if voice_audio is not None:
-            # Check if this audio has already been processed to avoid infinite reruns
             audio_bytes = voice_audio.read()
             audio_id = hash(audio_bytes)
             if st.session_state.get("last_processed_audio_id") != audio_id:
                 st.session_state.last_processed_audio_id = audio_id
-                with st.spinner("Processing voice input..."):
+                with st.spinner("Transcribing voice command with muse-voice-transcribe-1.0..."):
                     voice_result = process_voice_input(audio_bytes)
                     if voice_result.get("status") == "ok":
                         transcript = voice_result.get("transcription", "").strip()
                         if transcript:
-                            # Auto-submit transcript into orchestrator pipeline
                             if not check_prompt_injection(transcript):
                                 st.session_state.waf_count += 1
                                 st.session_state.waf_history.append({"timestamp": time.strftime("%H:%M:%S"), "count": 1})
@@ -393,12 +719,6 @@ with col1:
                                     summary_text = st.session_state["shelf_context"]["summary"]
                                     dispatched_prompt = f"[VISUAL SHELF ANALYSIS: {summary_text}]\n{transcript}"
 
-                                state = {
-                                    "messages": [HumanMessage(content=dispatched_prompt)],
-                                    "tenant_id": tenant_id,
-                                    "request_id": request_id,
-                                    "status": "init"
-                                }
                                 task = process_agent_task.delay(tenant_id, request_id, dispatched_prompt)
                                 st.session_state.pending_task_id = task.id
                                 st.session_state.pending_request_id = request_id
@@ -407,17 +727,15 @@ with col1:
                     else:
                         st.error(f"Voice processing error: {voice_result.get('intent', 'Unknown error')}")
 
-        # Chat Input
+        # Text Logistics Command Input
         prompt = st.chat_input("Enter logistics instruction...")
         if prompt:
-            # Semantic Bouncer
             if not check_prompt_injection(prompt):
                 st.session_state.waf_count += 1
                 st.session_state.waf_history.append({"timestamp": time.strftime("%H:%M:%S"), "count": 1})
                 st.error("SECURITY ALERT: Malicious prompt detected and blocked by Semantic Bouncer.")
             else:
                 st.session_state.chat_history.append({"role": "user", "content": prompt})
-
                 request_id = str(uuid.uuid4())
                 dispatched_prompt = prompt
                 if st.session_state.get("shelf_context") and st.session_state["shelf_context"].get("summary"):
@@ -425,7 +743,6 @@ with col1:
                     dispatched_prompt = f"[VISUAL SHELF ANALYSIS: {summary_text}]\n{prompt}"
 
                 if DEMO_MODE:
-                    # In DEMO_MODE, execute synchronously and inject mock response deterministically
                     resp_plan = (
                         f"Orchestrator Analysis for '{prompt}':\n"
                         f"• Tenant: {tenant_id}\n"
@@ -438,182 +755,170 @@ with col1:
                     st.session_state.pending_prompt = dispatched_prompt
                     st.rerun()
                 else:
-                    with st.chat_message("user"):
-                        st.write(prompt)
-
-                    with st.chat_message("assistant"):
-                        with st.spinner("Processing via LangGraph Orchestrator..."):
-                            state = {
-                                "messages": [HumanMessage(content=dispatched_prompt)],
-                                "tenant_id": tenant_id,
-                                "request_id": request_id,
-                                "status": "init"
-                            }
-
-                            # Dispatch task to Celery
-                            task = process_agent_task.delay(tenant_id, request_id, dispatched_prompt)
-                            st.session_state.pending_task_id = task.id
-                            st.session_state.pending_request_id = request_id
-                            st.session_state.pending_prompt = dispatched_prompt
-                            st.rerun()
-
-
-# Polling mechanism for Celery task
-if 'pending_task_id' in st.session_state:
-    task_id = st.session_state.pending_task_id
-    task = AsyncResult(task_id)
-
-    if task.state == 'PENDING' or task.state == 'STARTED':
-        with st.spinner("Processing via LangGraph Orchestrator..."):
-            time.sleep(2)
-            st.rerun()
-    elif task.state == 'SUCCESS' or task.status == 'PAUSED_FOR_REVIEW':
-        # Task finished or paused, we can read from Postgres
-        st.success("Execution completed or paused.")
-        graph = get_graph_with_postgres()
-        config = {"configurable": {"thread_id": f"{tenant_id}_{st.session_state.pending_request_id}"}}
-        current_state = graph.get_state(config)
-
-        if current_state and hasattr(current_state, 'values'):
-            final_messages = current_state.values.get("messages", [])
-            drafted_plan = current_state.values.get("drafted_plan", "")
-
-            for m in final_messages:
-                if isinstance(m, AIMessage):
-                    if not any(chat["content"] == m.content for chat in st.session_state.chat_history):
-                        st.session_state.chat_history.append({"role": "assistant", "content": m.content})
-                    if "[GLOBAL ORACLE ALERT]" in m.content:
-                        import re
-                        match = re.search(r"\[GLOBAL ORACLE ALERT\]\s*\((.*?)\):\s*(.*)", m.content)
-                        if match:
-                            severity = match.group(1).lower()
-                            summary = match.group(2)
-                            if not any(d.get("summary") == summary for d in st.session_state.disruption_history):
-                                st.session_state.disruption_history.append({
-                                    "timestamp": time.strftime("%H:%M:%S"),
-                                    "severity": severity,
-                                    "summary": summary
-                                })
-
-            st.session_state.pending_plan = drafted_plan
-
-        del st.session_state.pending_task_id
-        st.rerun()
-    elif task.state == 'FAILURE':
-        st.error(f"Task failed: {task.info}")
-        del st.session_state.pending_task_id
-        st.rerun()
-
-with col2:
-    st.subheader("Controls")
-
-    # Action Row: HITL
-    st.write("Human-in-the-Loop Checkpoint")
-    if DEMO_MODE:
-        is_paused = st.session_state.demo_paused_for_hitl
-        pending_po = st.session_state.demo_pending_po
-        a2a_transcript = st.session_state.demo_a2a_transcript
-    else:
-        try:
-            graph = get_graph_with_postgres()
-            current_state = graph.get_state(config)
-            is_paused = current_state.next == ('human_review',)
-            pending_po = current_state.values.get("pending_po") if hasattr(current_state, "values") else None
-            a2a_transcript = current_state.values.get("a2a_transcript", []) if hasattr(current_state, "values") else []
-        except Exception:
-            is_paused = False
-            pending_po = None
-            a2a_transcript = []
-
-    if is_paused:
-        st.warning("Execution Paused. Plan awaits approval.")
-
-        # --- Sprint-3 A2A visualisation ---
-        if pending_po:
-            st.subheader("A2A Negotiation Transcript")
-            for exchange in a2a_transcript:
-                st.json(exchange)
-            st.subheader("Draft Purchase Order")
-            st.json(pending_po)
-        # -----------------------------------
-
-        col_approve, col_reject = st.columns(2)
-        with col_approve:
-            if st.button("Approve", type="primary"):
-                # Log DPO
-                log_dpo(st.session_state.get('pending_prompt', ''), st.session_state.get('demo_pending_plan', st.session_state.get('pending_plan', '')), "")
-
-                if DEMO_MODE:
-                    st.session_state.demo_paused_for_hitl = False
-                    st.success("Plan Approved and Executed.")
-                    st.session_state.chat_history.append({"role": "assistant", "content": "Plan Approved and Executed."})
-                    st.rerun()
-                else:
-                    graph.update_state(config, {"status": "approved"})
-                    for event in graph.stream(None, config):
-                        pass
-                    st.success("Plan Approved and Executed.")
-                    st.session_state.chat_history.append({"role": "assistant", "content": "Plan Approved and Executed."})
+                    task = process_agent_task.delay(tenant_id, request_id, dispatched_prompt)
+                    st.session_state.pending_task_id = task.id
+                    st.session_state.pending_request_id = request_id
+                    st.session_state.pending_prompt = dispatched_prompt
                     st.rerun()
 
-        with col_reject:
-            if st.button("Reject"):
-                # Log DPO
-                log_dpo(st.session_state.get('pending_prompt', ''), "", st.session_state.get('demo_pending_plan', st.session_state.get('pending_plan', '')) )
 
-                if DEMO_MODE:
-                    st.session_state.demo_paused_for_hitl = False
-                    st.error("Plan Rejected.")
-                    st.session_state.chat_history.append({"role": "assistant", "content": "Plan Rejected."})
-                    st.rerun()
-                else:
-                    graph.update_state(config, {"status": "rejected"})
-                    for event in graph.stream(None, config):
-                        pass
-                    st.error("Plan Rejected.")
-                    st.session_state.chat_history.append({"role": "assistant", "content": "Plan Rejected."})
-                    st.rerun()
-    else:
-        st.info("No plans pending approval.")
 
-    st.divider()
+# -----------------------------------------------------------------------------
+# Module 2: Warehouse Vision
+# -----------------------------------------------------------------------------
+elif selected_module == "Warehouse":
+    st.markdown("### 📦 Warehouse Vision & Inventory Segmentation")
+    st.markdown("Automated stock segmentation powered by Meta SAM 3.1. Upload shelf imagery to detect low-stock or empty SKU bins.")
 
-    # A2A Negotiate
-    if st.button("A2A Negotiate"):
-        with st.spinner("Initiating Agent-to-Agent Handshake..."):
-            time.sleep(1) # Simulate millisecond handshake visually
-            if DEMO_MODE:
-                # Trigger A2A negotiation transcript + draft PO display in HITL section
-                mock_rfq = "Procurement Buyer RFQ: Request restock of 500 units SKU-STEEL-BEAMS. Max lead time: 5 days."
-                mock_quote = {"restock_quantity": 500, "price_per_unit": 42.50, "lead_time_days": 3}
-                st.session_state.demo_a2a_transcript = [
-                    {"role": "buyer_agent", "request": [{"sku": "SKU-STEEL-BEAMS", "qty": 0}], "response": mock_rfq},
-                    {"role": "supplier_agent", "request": mock_rfq, "response": mock_quote}
-                ]
-                st.session_state.demo_pending_po = {
-                    "po_id": "PO-948201",
-                    "items": [{"sku": "SKU-STEEL-BEAMS", "qty": 500}],
-                    "restock_quantity": 500,
-                    "price_per_unit": 42.50,
-                    "lead_time_days": 3,
-                    "supplier": "Apex Logistics Supplier AI"
-                }
-                st.session_state.demo_paused_for_hitl = True
-                st.success("Handshake complete: SYNC_ACK with Vendor AI.")
+    col_up, col_ctx = st.columns([1, 1])
+
+    with col_up:
+        st.markdown(
+            """
+            <div class="control-card-header">
+                <span>UPLOAD SHELF CAMERA FEED</span>
+                <span style="font-size: 0.75rem; color: #94a3b8;">MAX 1MB</span>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        uploaded_image = st.file_uploader(
+            "Upload Shelf Image",
+            type=["png", "jpg", "jpeg", "webp"],
+            key="shelf_image_uploader"
+        )
+        if uploaded_image is not None:
+            if uploaded_image.size > 1_000_000:
+                st.error("File too large. Please upload under 1MB.")
+            else:
+                image_bytes = uploaded_image.read()
+                image_id = hash(image_bytes)
+                if st.session_state.get("last_uploaded_image_id") != image_id:
+                    st.session_state.last_uploaded_image_id = image_id
+                    with st.spinner("Analyzing shelf image with SAM 3.1..."):
+                        analysis = analyze_shelf_image(image_bytes)
+                        st.session_state.shelf_context = analysis
+                        st.rerun()
+
+    with col_ctx:
+        st.markdown(
+            """
+            <div class="control-card-header">
+                <span>ACTIVE VISUAL CONTEXT</span>
+                <span style="font-size: 0.75rem; color: #34d399;">SAM 3.1 ACTIVE</span>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        if st.session_state.get("shelf_context"):
+            ctx = st.session_state.shelf_context
+            st.markdown(f"**Analysis Summary:**\n\n{ctx.get('summary', 'No summary generated.')}")
+
+            items = ctx.get("items", [])
+            if items:
+                table_items = []
+                for itm in items:
+                    fill_pct = int(itm.get("fill_level", 0.0) * 100)
+                    table_items.append({
+                        "Item SKU": itm.get("item"),
+                        "Fill Level": f"{fill_pct}%",
+                        "Status": itm.get("status", "ok").upper()
+                    })
+                st.dataframe(pd.DataFrame(table_items), use_container_width=True, hide_index=True)
+
+            st.caption("Active context is automatically appended to subsequent Orchestrator instructions.")
+            if st.button("Clear Shelf Context", key="clear_shelf_context_btn"):
+                st.session_state.shelf_context = None
+                st.session_state.last_uploaded_image_id = None
                 st.rerun()
-            else:
-                st.success("Handshake complete: SYNC_ACK with Vendor AI.")
+        else:
+            st.info("No active shelf image analyzed. Upload an image to segment inventory.")
 
-    # Chaos Test
-    if st.button("Trigger Chaos Load Test"):
-        with st.spinner("Injecting 1,000 edge cases..."):
-            generate_load()
-            if DEMO_MODE:
-                st.session_state.demo_chaos_triggered = True
-            else:
-                st.success("1,000 synthetic edge-case rows injected into database.")
-            st.rerun()
 
-    if DEMO_MODE and st.session_state.get("demo_chaos_triggered"):
-        st.success("1,000 synthetic edge-case rows injected into database.")
-        st.info("System recovered: Tenacity retry policies engaged. Database integrity preserved.")
+# -----------------------------------------------------------------------------
+# Module 3: Documents
+# -----------------------------------------------------------------------------
+elif selected_module == "Documents":
+    st.markdown("### 📄 Document & Invoice Extraction")
+    st.markdown("Automated structured data extraction powered by Meta muse-image-1.0. Upload invoices, bills of lading, and freight manifests.")
+
+    col_doc_up, col_doc_view = st.columns([1, 1])
+
+    with col_doc_up:
+        st.markdown(
+            """
+            <div class="control-card-header">
+                <span>UPLOAD INVOICE / BOL DOCUMENT</span>
+                <span style="font-size: 0.75rem; color: #94a3b8;">MAX 2MB</span>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        uploaded_doc = st.file_uploader(
+            "Upload Invoice or Shipping Document",
+            type=["png", "jpg", "jpeg", "webp"],
+            key="document_image_uploader"
+        )
+        if uploaded_doc is not None:
+            if uploaded_doc.size > 2_000_000:
+                st.error("File too large. Please upload under 2MB.")
+            else:
+                doc_bytes = uploaded_doc.read()
+                doc_id = hash(doc_bytes)
+                if st.session_state.get("last_uploaded_doc_id") != doc_id:
+                    st.session_state.last_uploaded_doc_id = doc_id
+                    with st.spinner("Extracting document data with muse-image-1.0..."):
+                        extraction = extract_document_data(doc_bytes)
+                        st.session_state.extracted_document = extraction
+                        st.session_state.prefilled_prompt = format_logistics_instruction(extraction)
+                        st.rerun()
+
+    with col_doc_view:
+        st.markdown(
+            """
+            <div class="control-card-header">
+                <span>STRUCTURED EXTRACTION</span>
+                <span style="font-size: 0.75rem; color: #3b82f6;">MUSE-IMAGE-1.0</span>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        if st.session_state.get("extracted_document"):
+            doc_data = st.session_state.extracted_document
+            col_d1, col_d2 = st.columns(2)
+            with col_d1:
+                st.markdown(f"**Supplier:** {doc_data.get('supplier') or 'Not specified'}")
+                dates = doc_data.get("dates", [])
+                st.markdown(f"**Dates:** {', '.join(dates) if dates else 'Not specified'}")
+            with col_d2:
+                st.markdown(f"**Summary:** {doc_data.get('raw_summary') or 'None'}")
+
+            items = doc_data.get("items", [])
+            if items:
+                st.markdown("**Line Items:**")
+                doc_table = []
+                for itm in items:
+                    doc_table.append({
+                        "Description": itm.get('description', 'Item'),
+                        "Quantity": itm.get('quantity', 1),
+                        "Unit Price": f"${itm.get('unit_price')}" if itm.get('unit_price') is not None else "N/A"
+                    })
+                st.dataframe(pd.DataFrame(doc_table), use_container_width=True, hide_index=True)
+
+            if st.session_state.get("prefilled_prompt"):
+                st.markdown("**Generated Logistics Instruction:**")
+                st.info(st.session_state.prefilled_prompt)
+
+            col_b1, col_b2 = st.columns(2)
+            with col_b1:
+                if st.button("Clear Document", key="clear_extracted_doc_btn"):
+                    st.session_state.extracted_document = None
+                    st.session_state.prefilled_prompt = ""
+                    st.session_state.last_uploaded_doc_id = None
+                    st.rerun()
+            with col_b2:
+                if st.button("Open in Orchestrator", type="primary", key="open_in_orchestrator_btn"):
+                    st.session_state.active_nav_module = "Orchestrator"
+                    st.rerun()
+        else:
+            st.info("No document uploaded. Upload a document to extract structured logistics data.")

@@ -21,10 +21,14 @@ def mock_graph_deps():
 
 
 def test_app_document_upload_tab_and_uploader_exists():
-    """Test that app.py contains the 'Upload Document' tab with the image uploader."""
+    """Test that app.py contains the Documents module with the image uploader."""
     import streamlit.testing.v1 as st_test
     app_path = REPO_ROOT / "app.py"
     at = st_test.AppTest.from_file(str(app_path), default_timeout=10)
+    at.run()
+
+    # Navigate to Documents module
+    at.sidebar.radio[0].set_value("Documents")
     at.run()
 
     # Find the document uploader by key or label
@@ -64,6 +68,10 @@ def test_app_document_upload_and_prepopulates_chat():
         at = st_test.AppTest.from_file(str(app_path), default_timeout=10)
         at.run()
 
+        # Navigate to Documents module
+        at.sidebar.radio[0].set_value("Documents")
+        at.run()
+
         # Find document uploader and upload
         doc_uploader = [u for u in at.file_uploader if u.key == "document_image_uploader"][0]
         doc_uploader.upload("invoice.png", fake_img)
@@ -77,7 +85,7 @@ def test_app_document_upload_and_prepopulates_chat():
 
 
 def test_document_vision_ui_e2e_playwright(tmp_path):
-    """Playwright E2E verification of 'Upload Document' tab and extraction readout."""
+    """Playwright E2E verification of Documents module and extraction readout."""
     port = 8599
     proc = subprocess.Popen(
         [
@@ -105,15 +113,19 @@ def test_document_vision_ui_e2e_playwright(tmp_path):
             page = context.new_page()
             page.goto(f"http://localhost:{port}", timeout=15000)
 
-            expect(page).to_have_title("Sovereign Supply Chain Orchestrator")
+            expect(page).to_have_title("Sovereign Supply Chain Orchestrator", timeout=15000)
 
-            # Verify "Upload Document" tab exists and can be clicked
-            upload_tab = page.get_by_role("tab", name="Upload Document")
-            expect(upload_tab).to_be_visible()
-            upload_tab.click()
+            # Click "Documents" in sidebar navigation rail
+            sidebar = page.locator('[data-testid="stSidebar"]')
+            expect(sidebar).to_be_visible()
 
-            # Verify the document file uploader exists
-            doc_uploader = page.locator('[data-testid="stFileUploader"]').last
+            doc_nav = sidebar.locator('label', has_text="Documents")
+            expect(doc_nav).to_be_visible()
+            doc_nav.click()
+            time.sleep(1)
+
+            # Verify document uploader exists in Documents module
+            doc_uploader = page.locator('[data-testid="stFileUploader"]').first
             expect(doc_uploader).to_be_visible()
 
             screenshot_path = tmp_path / "document_vision_tab.png"
