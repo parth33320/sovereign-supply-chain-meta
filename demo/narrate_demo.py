@@ -1,92 +1,70 @@
-"""
-Automated Demo Video Production - Narration and Video Assembly (S14)
-===================================================================
-1. Reads narration script matching video timestamps from demo/timestamps.json.
-2. Uses gTTS to generate MP3 narration audio clips.
-3. Uses MoviePy to composite audio clips at timestamps and merge with raw_recording.webm
-   into demo/demo_final.mp4 (H.264 video + AAC audio).
-"""
-
-import json
 import os
-import sys
+import glob
 from pathlib import Path
 from gtts import gTTS
+import moviepy
+from moviepy import VideoFileClip, AudioFileClip, CompositeAudioClip
+
+NARRATION = [
+    (0,   "What if one voice command could save your company $12,000 — today?"),
+    (8,   "A warehouse manager says: Emergency. Widget-A is running out. Get me the best price now."),
+    (28,  "muse-voice-transcribe-1.0 captures the command. No keyboard. No ticket. AI activates instantly."),
+    (45,  "sam-3.1 scans the warehouse shelf. Widget-A is at twelve percent. Critical. Humans hadn't checked yet."),
+    (68,  "muse-spark-1.3 forecasts a stockout in fourteen days. Cost of inaction: eight thousand dollars in emergency fees."),
+    (90,  "Two AI agents negotiate. Buyer agent versus Supplier agent. muse-spark-1.3 runs both sides. Deal locked: eight dollars twenty per unit, saving one hundred dollars versus opening offer."),
+    (130, "muse-image-1.0 reads the invoice. AI prepares the purchase order. One human clicks Approve."),
+    (155, "Result: twelve thousand two hundred dollars saved in week one. Fourteen hours of procurement work automated. On track for a fifty thousand dollar Q4 target."),
+    (168, "Four Meta Llama models. One voice command. Zero stockouts. Sovereign Supply Chain AI."),
+]
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEMO_DIR = REPO_ROOT / "demo"
-RAW_VIDEO_PATH = DEMO_DIR / "raw_recording.webm"
-TIMESTAMPS_PATH = DEMO_DIR / "timestamps.json"
-FINAL_VIDEO_PATH = DEMO_DIR / "demo_final.mp4"
 AUDIO_OUTPUT_DIR = DEMO_DIR / "audio_tracks"
-
-# Narration scripts designed to fit within the timestamp durations of each phase
-NARRATION_SCRIPTS = {
-    1: "First, we submit a logistics command to the multi-agent orchestrator, generating a rebalancing plan.",
-    2: "Next, we trigger a chaos load test with 1,000 edge cases, verifying resilience and automatic recovery.",
-    3: "Now, uploading a warehouse shelf image triggers SAM computer vision for automated inventory segmentation.",
-    4: "Here, our Buyer and Supplier agents execute an autonomous A2A negotiation and draft a purchase order.",
-    5: "The human-in-the-loop governance checkpoint allows instant review and formal plan execution.",
-    6: "Finally, zero-trust semantic guardrails intercept and neutralize a prompt injection attack."
-}
+FINAL_VIDEO_PATH = DEMO_DIR / "demo_final.mp4"
 
 
-def generate_narration_audio_clips(phases_info):
-    """
-    Generates MP3 audio files using gTTS for each phase.
-    Returns list of dicts with phase, audio_path, start_sec, end_sec.
-    """
+def find_recorded_video() -> Path:
+    """Finds the webm video recorded by Playwright in demo/."""
+    candidates = sorted(
+        list(DEMO_DIR.glob("*.webm")) + list(DEMO_DIR.glob("**/*.webm")),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True
+    )
+    if not candidates:
+        raise FileNotFoundError("No .webm video file found in demo/")
+    return candidates[0]
+
+
+def generate_audio_tracks():
     AUDIO_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     audio_clips_meta = []
-
-    for phase_data in phases_info:
-        phase_num = phase_data["phase"]
-        start_sec = phase_data["start_sec"]
-        end_sec = phase_data["end_sec"]
-        text = NARRATION_SCRIPTS.get(phase_num, f"Executing demonstration step {phase_num}.")
-
-        mp3_path = AUDIO_OUTPUT_DIR / f"phase_{phase_num}.mp3"
-        print(f"Generating TTS for Phase {phase_num}: '{text}'...")
-        tts = gTTS(text=text, lang="en", tld="com", slow=False)
-        tts.save(str(mp3_path))
-
-        audio_clips_meta.append({
-            "phase": phase_num,
-            "start_sec": start_sec,
-            "end_sec": end_sec,
-            "audio_path": str(mp3_path)
-        })
-
+    for idx, (timestamp, text) in enumerate(NARRATION):
+        audio_file = AUDIO_OUTPUT_DIR / f"narrate_{idx}.mp3"
+        print(f"Generating TTS for {timestamp}s: '{text[:40]}...'")
+        tts = gTTS(text=text, lang="en", slow=False)
+        tts.save(str(audio_file))
+        audio_clips_meta.append((timestamp, str(audio_file)))
     return audio_clips_meta
 
 
-def assemble_video(video_path: Path, audio_clips_meta, output_path: Path):
-    """
-    Composites the audio tracks onto the video at their corresponding timestamps
-    using MoviePy and exports the final MP4.
-    """
-    # MoviePy 2.x imports
-    from moviepy import VideoFileClip, AudioFileClip, CompositeAudioClip
-
-    print(f"Loading video from {video_path}...")
-    video_clip = VideoFileClip(str(video_path))
+def assemble_final_video():
+    raw_video_path = find_recorded_video()
+    print(f"Using raw video from: {raw_video_path}")
+    video_clip = VideoFileClip(str(raw_video_path))
     video_duration = video_clip.duration
+    print(f"Raw video duration: {video_duration}s")
 
+    audio_meta = generate_audio_tracks()
     audio_clips = []
-    for meta in audio_clips_meta:
-        audio_file = meta["audio_path"]
-        start_time = meta["start_sec"]
+    for timestamp, audio_file in audio_meta:
         a_clip = AudioFileClip(audio_file)
-
-        # Set audio clip start time in the composition
-        # In moviepy 2.x, with_start or start handles timing
         if hasattr(a_clip, "with_start"):
-            a_clip = a_clip.with_start(start_time)
+            a_clip = a_clip.with_start(timestamp)
         elif hasattr(a_clip, "set_start"):
-            a_clip = a_clip.set_start(start_time)
+            a_clip = a_clip.set_start(timestamp)
         audio_clips.append(a_clip)
 
-    print("Compositing audio track onto video...")
+    print("Compositing audio tracks...")
     composite_audio = CompositeAudioClip(audio_clips)
     if hasattr(composite_audio, "with_duration"):
         composite_audio = composite_audio.with_duration(video_duration)
@@ -98,42 +76,23 @@ def assemble_video(video_path: Path, audio_clips_meta, output_path: Path):
     else:
         final_video = video_clip.set_audio(composite_audio)
 
-    print(f"Writing output video to {output_path}...")
+    print(f"Writing final video to {FINAL_VIDEO_PATH}...")
     final_video.write_videofile(
-        str(output_path),
+        str(FINAL_VIDEO_PATH),
         codec="libx264",
         audio_codec="aac",
+        bitrate="2500k",
         fps=24,
         logger="bar"
     )
 
-    # Close clips
-    for a in audio_clips:
-        a.close()
+    for clip in audio_clips:
+        clip.close()
     composite_audio.close()
     video_clip.close()
     final_video.close()
-    print(f"Video assembly complete! Saved to {output_path}")
-
-
-def main():
-    if not TIMESTAMPS_PATH.exists():
-        raise FileNotFoundError(f"Timestamps file not found at {TIMESTAMPS_PATH}. Run demo/record_demo.py first.")
-
-    if not RAW_VIDEO_PATH.exists():
-        raise FileNotFoundError(f"Raw video recording not found at {RAW_VIDEO_PATH}. Run demo/record_demo.py first.")
-
-    with open(TIMESTAMPS_PATH, "r") as f:
-        timestamps_data = json.load(f)
-
-    phases_info = timestamps_data.get("phases", [])
-    if not phases_info:
-        raise ValueError("No phases found in timestamps.json")
-
-    print(f"Found {len(phases_info)} phases in {TIMESTAMPS_PATH}")
-    audio_clips_meta = generate_narration_audio_clips(phases_info)
-    assemble_video(RAW_VIDEO_PATH, audio_clips_meta, FINAL_VIDEO_PATH)
+    print("Narration and assembly complete!")
 
 
 if __name__ == "__main__":
-    main()
+    assemble_final_video()

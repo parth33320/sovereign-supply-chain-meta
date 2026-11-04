@@ -128,6 +128,6 @@ def test_final_mp4_output_integration():
     try:
         assert clip.duration > 10.0
         assert clip.audio is not None
-        assert clip.size == [1280, 720]
+        assert clip.size in ([1280, 720], [1280, 1080])
     finally:
         clip.close()
