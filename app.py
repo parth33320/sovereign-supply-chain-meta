@@ -20,8 +20,6 @@ from portfolio import (
     get_connection as get_portfolio_connection,
 )
 from graph import get_graph_with_postgres, log_dpo
-from worker import process_agent_task
-from celery.result import AsyncResult
 from generate_synthetic_load import generate_load
 from langchain_core.messages import HumanMessage, AIMessage
 
@@ -392,25 +390,23 @@ with header_col3:
 config = {"configurable": {"thread_id": f"{tenant_id}_{st.session_state.thread_id}"}}
 st.markdown("<div style='height: 0.5rem;'></div>", unsafe_allow_html=True)
 
-# Polling mechanism for Celery task
-if 'pending_task_id' in st.session_state:
-    task_id = st.session_state.pending_task_id
-    task = AsyncResult(task_id)
 
-    if task.state == 'PENDING' or task.state == 'STARTED':
-        with st.spinner("Processing via LangGraph Orchestrator..."):
-            time.sleep(2)
-            st.rerun()
-    elif task.state == 'SUCCESS' or task.status == 'PAUSED_FOR_REVIEW':
-        st.success("Execution completed or paused.")
+def execute_agent_synchronous(dispatched_prompt: str, tenant_id: str, request_id: str):
+    """Invoke LangGraph synchronously and display response."""
+    with st.spinner("Processing via LangGraph Orchestrator..."):
         try:
             graph = get_graph_with_postgres()
-            config_task = {"configurable": {"thread_id": f"{tenant_id}_{st.session_state.pending_request_id}"}}
-            current_state = graph.get_state(config_task)
+            state = {
+                "messages": [HumanMessage(content=dispatched_prompt)],
+                "tenant_id": tenant_id,
+                "request_id": request_id,
+                "status": "init"
+            }
+            result = graph.invoke(state, config)
 
-            if current_state and hasattr(current_state, 'values'):
-                final_messages = current_state.values.get("messages", [])
-                drafted_plan = current_state.values.get("drafted_plan", "")
+            if result:
+                final_messages = result.get("messages", [])
+                drafted_plan = result.get("drafted_plan", "")
 
                 for m in final_messages:
                     if isinstance(m, AIMessage):
@@ -429,15 +425,8 @@ if 'pending_task_id' in st.session_state:
                                     })
 
                 st.session_state.pending_plan = drafted_plan
-        except Exception:
-            pass
-
-        del st.session_state.pending_task_id
-        st.rerun()
-    elif task.state == 'FAILURE':
-        st.error(f"Task failed: {task.info}")
-        del st.session_state.pending_task_id
-        st.rerun()
+        except Exception as e:
+            st.error(f"Execution error: {e}")
 
 
 # Determine HITL State for contextual panel
@@ -689,10 +678,19 @@ if selected_module == "Orchestrator":
                         summary_text = st.session_state["shelf_context"]["summary"]
                         dispatched_prompt = f"[VISUAL SHELF ANALYSIS: {summary_text}]\n{candidate_prompt}"
 
-                    task = process_agent_task.delay(tenant_id, request_id, dispatched_prompt)
-                    st.session_state.pending_task_id = task.id
-                    st.session_state.pending_request_id = request_id
                     st.session_state.pending_prompt = dispatched_prompt
+                    if DEMO_MODE:
+                        resp_plan = (
+                            f"Orchestrator Analysis for '{candidate_prompt}':\n"
+                            f"• Tenant: {tenant_id}\n"
+                            f"• Stock level verified across regional hubs.\n"
+                            f"• Draft reallocation route: Warehouse-West to Distribution-East.\n"
+                            f"• Optimal carrier dispatch generated with ETA 24 hours."
+                        )
+                        st.session_state.chat_history.append({"role": "assistant", "content": resp_plan})
+                        st.session_state.demo_pending_plan = resp_plan
+                    else:
+                        execute_agent_synchronous(dispatched_prompt, tenant_id, request_id)
                     st.rerun()
 
         # Operational Voice Command Input (Placed directly above chat input)
@@ -719,10 +717,19 @@ if selected_module == "Orchestrator":
                                     summary_text = st.session_state["shelf_context"]["summary"]
                                     dispatched_prompt = f"[VISUAL SHELF ANALYSIS: {summary_text}]\n{transcript}"
 
-                                task = process_agent_task.delay(tenant_id, request_id, dispatched_prompt)
-                                st.session_state.pending_task_id = task.id
-                                st.session_state.pending_request_id = request_id
                                 st.session_state.pending_prompt = dispatched_prompt
+                                if DEMO_MODE:
+                                    resp_plan = (
+                                        f"Orchestrator Analysis for '{transcript}':\n"
+                                        f"• Tenant: {tenant_id}\n"
+                                        f"• Stock level verified across regional hubs.\n"
+                                        f"• Draft reallocation route: Warehouse-West to Distribution-East.\n"
+                                        f"• Optimal carrier dispatch generated with ETA 24 hours."
+                                    )
+                                    st.session_state.chat_history.append({"role": "assistant", "content": resp_plan})
+                                    st.session_state.demo_pending_plan = resp_plan
+                                else:
+                                    execute_agent_synchronous(dispatched_prompt, tenant_id, request_id)
                                 st.rerun()
                     else:
                         st.error(f"Voice processing error: {voice_result.get('intent', 'Unknown error')}")
@@ -742,6 +749,7 @@ if selected_module == "Orchestrator":
                     summary_text = st.session_state["shelf_context"]["summary"]
                     dispatched_prompt = f"[VISUAL SHELF ANALYSIS: {summary_text}]\n{prompt}"
 
+                st.session_state.pending_prompt = dispatched_prompt
                 if DEMO_MODE:
                     resp_plan = (
                         f"Orchestrator Analysis for '{prompt}':\n"
@@ -751,6 +759,7 @@ if selected_module == "Orchestrator":
                         f"• Optimal carrier dispatch generated with ETA 24 hours."
                     )
                     st.session_state.chat_history.append({"role": "assistant", "content": resp_plan})
+                    st.session_state.demo_pending_plan = resp_plan
                     st.session_state.demo_pending_plan = resp_plan
                     st.session_state.demo_paused_for_hitl = True
                     st.session_state.demo_pending_po = {
@@ -762,13 +771,9 @@ if selected_module == "Orchestrator":
                         "supplier": "Apex Logistics Supplier AI"
                     }
                     st.session_state.pending_prompt = dispatched_prompt
-                    st.rerun()
                 else:
-                    task = process_agent_task.delay(tenant_id, request_id, dispatched_prompt)
-                    st.session_state.pending_task_id = task.id
-                    st.session_state.pending_request_id = request_id
-                    st.session_state.pending_prompt = dispatched_prompt
-                    st.rerun()
+                    execute_agent_synchronous(dispatched_prompt, tenant_id, request_id)
+                st.rerun()
 
 
 

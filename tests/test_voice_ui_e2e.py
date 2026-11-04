@@ -45,23 +45,20 @@ def test_app_voice_input_auto_submission():
     silent_wav = generate_silent_wav(duration_seconds=1.0)
 
     with patch("graph.ConnectionPool"), \
+         patch("graph.get_graph_with_postgres") as mock_get_graph, \
          patch("voice_handler.process_voice_input") as mock_pvi, \
-         patch("worker.process_agent_task.delay") as mock_delay, \
-         patch("app.AsyncResult") as mock_async_result, \
          patch("app.check_prompt_injection", return_value=True):
+        mock_graph = MagicMock()
+        mock_get_graph.return_value = mock_graph
+        mock_graph.invoke.return_value = {
+            "messages": [],
+            "drafted_plan": ""
+        }
         mock_pvi.return_value = {
             "status": "ok",
             "transcription": "Reroute 500 widgets to warehouse B",
             "intent": "reroute widgets"
         }
-        mock_task = MagicMock()
-        mock_task.id = "mock-task-voice-999"
-        mock_delay.return_value = mock_task
-
-        # Return simulated pending task from AsyncResult
-        mock_async_task = MagicMock()
-        mock_async_task.state = "PENDING"
-        mock_async_result.return_value = mock_async_task
 
         app_path = REPO_ROOT / "app.py"
         at = st_test.AppTest.from_file(str(app_path), default_timeout=5)
@@ -79,12 +76,16 @@ def test_app_voice_input_auto_submission():
 
         # Verify chat history contains the transcribed prompt
         assert len(at.session_state["chat_history"]) > 0
-        assert at.session_state["chat_history"][-1] == {
+        assert at.session_state["chat_history"][0] == {
             "role": "user",
             "content": "Reroute 500 widgets to warehouse B"
         }
         assert at.session_state.get("pending_prompt") == "Reroute 500 widgets to warehouse B"
-        assert at.session_state.get("pending_task_id") == "mock-task-voice-999"
+        mock_graph.invoke.assert_called_once()
+        state_arg = mock_graph.invoke.call_args[0][0]
+        assert state_arg["tenant_id"] == "Tenant_A"
+        assert state_arg["status"] == "init"
+        assert state_arg["messages"][0].content == "Reroute 500 widgets to warehouse B"
 
 
 def test_voice_ui_e2e_playwright(tmp_path):

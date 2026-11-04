@@ -29,7 +29,6 @@ def test_thread_id_namespacing():
 
     # The config should namespace thread_id with tenant_id
     assert '{"configurable": {"thread_id": f"{tenant_id}_{st.session_state.thread_id}"}}' in content
-    assert '{"configurable": {"thread_id": f"{tenant_id}_{st.session_state.pending_request_id}"}}' in content
 
 
 def test_app_py_has_analytics_dashboard_sidebar():
