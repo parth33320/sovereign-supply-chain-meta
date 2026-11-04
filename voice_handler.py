@@ -39,7 +39,7 @@ def transcribe_audio(audio_bytes: bytes) -> str:
     response = requests.post(
         "https://api.meta.ai/v1/asr/transcribe",
         headers={"Authorization": f"Bearer {api_key}"},
-        files={"file": ("audio.webm", audio_bytes, "audio/webm")},
+        files={"audio": ("audio.webm", audio_bytes, "audio/webm")},
         data={"mode": "PUSH_TO_TALK"}
     )
     response.raise_for_status()
