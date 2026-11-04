@@ -30,44 +30,21 @@ logger = logging.getLogger(__name__)
 
 
 def transcribe_audio(audio_bytes: bytes) -> str:
-    """
-    Transcribes audio bytes to text using the muse-voice-transcribe-1.0 model.
-
-    Inputs:
-        audio_bytes (bytes): Raw audio bytes (e.g. WAV format).
-
-    Outputs:
-        str: Transcribed text string.
-
-    Raises:
-        ValueError: If audio_bytes is empty or invalid.
-        Exception: If the transcription API call fails.
-    """
     if not audio_bytes or not isinstance(audio_bytes, (bytes, bytearray)):
         raise ValueError("Invalid or empty audio bytes provided for transcription.")
 
     api_key = os.environ.get("META_API_KEY")
     base_url = os.environ.get("META_API_BASE_URL", "https://api.meta.ai/v1")
 
-    client = openai.OpenAI(
-        api_key=api_key,
-        base_url=base_url
+    import requests
+    response = requests.post(
+        f"{base_url}/asr/transcribe",
+        headers={"Authorization": f"Bearer {api_key}"},
+        files={"file": ("audio.wav", audio_bytes, "audio/wav")},
+        data={"model": "muse-voice-transcribe-1.0"}
     )
-
-    audio_file = io.BytesIO(audio_bytes)
-    audio_file.name = "audio.wav"
-
-    response = client.audio.transcriptions.create(
-        model="muse-voice-transcribe-1.0",
-        file=audio_file
-    )
-
-    # OpenAI client returns either an object with .text or a string
-    if hasattr(response, "text"):
-        return response.text
-    elif isinstance(response, dict) and "text" in response:
-        return response["text"]
-    return str(response)
+    response.raise_for_status()
+    return response.json().get("text", "")
 
 
 def extract_logistics_intent(transcription: str) -> str:
