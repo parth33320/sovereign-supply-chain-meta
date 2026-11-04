@@ -34,7 +34,7 @@ def log_dpo(prompt: str, chosen: str, rejected: str):
         f.write(json.dumps(data) + "\n")
 
 # State definition
-class AgentState(TypedDict):
+class AgentState(TypedDict, total=False):
     messages: Annotated[Sequence[BaseMessage], "add"]
     tenant_id: str
     request_id: str
@@ -44,6 +44,9 @@ class AgentState(TypedDict):
     # Sprint-3 additions
     a2a_transcript: List[Dict[str, Any]] # running negotiation log
     pending_po: Dict[str, Any] # final Purchase Order
+    # CEO-to-click portfolio additions
+    work_item_id: str
+    last_saving: Any
 
 # Node 1: Global Oracle (Prescriptive Analytics Stub)
 def global_oracle(state: AgentState) -> Dict:
@@ -158,9 +161,38 @@ def human_review(state: AgentState) -> Dict:
 
 # Node 4: Executor (Post-HITL)
 def execute_plan(state: AgentState) -> Dict:
+    import re
+    from portfolio import record_agent_action
+
     messages = list(state.get("messages", []))
     messages.append(AIMessage(content="Plan executed successfully."))
     log_task(state["request_id"], "EXECUTED", "Plan executed.")
+
+    # Record agent action in portfolio if work_item_id is present
+    work_item_id = state.get("work_item_id")
+    if work_item_id:
+        # action_description = last message content summary
+        last_msg = messages[-1].content if messages else "Plan executed successfully."
+        action_description = f"Action completed: {str(last_msg)[:120]}"
+
+        # saving_usd = extract dollar figure from state["last_saving"] if present
+        raw_saving = state.get("last_saving")
+        saving_usd = 0.0
+        if raw_saving is not None:
+            if isinstance(raw_saving, (int, float)):
+                saving_usd = float(raw_saving)
+            else:
+                raw_str = str(raw_saving)
+                # Match dollar patterns like $5,000 or 5000 or 5000.00
+                m = re.search(r"\$?\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)", raw_str)
+                if m:
+                    try:
+                        saving_usd = float(m.group(1).replace(",", ""))
+                    except Exception:
+                        saving_usd = 0.0
+
+        record_agent_action(work_item_id, action_description, saving_usd)
+
     return {"messages": messages, "status": "executed"}
 
 import asyncio

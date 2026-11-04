@@ -9,6 +9,13 @@ from voice_handler import process_voice_input
 from warehouse_vision import analyze_shelf_image
 from document_vision import extract_document_data, format_logistics_instruction
 from demand_forecaster import forecast_sku_stockouts
+import pandas as pd
+from portfolio import (
+    create_initiative,
+    get_wsjf_ranked_backlog,
+    get_evms_snapshot,
+    get_connection as get_portfolio_connection,
+)
 
 # Load environment variables
 load_dotenv()
@@ -106,6 +113,86 @@ with st.sidebar:
         conn.close()
     except Exception as e:
         st.error(f"Error fetching SQL logs: {e}")
+
+    st.divider()
+
+    st.header("Portfolio Dashboard")
+
+    # Fetch initiatives for dropdown/selection
+    try:
+        p_conn = get_portfolio_connection()
+        p_cur = p_conn.cursor()
+        p_cur.execute("SELECT id, title FROM initiatives ORDER BY id ASC")
+        init_rows = p_cur.fetchall()
+        p_conn.close()
+    except Exception:
+        init_rows = []
+
+    active_init_id = None
+    if init_rows:
+        init_options = {f"{r['id']} - {r['title'][:30]}": r["id"] for r in init_rows}
+        selected_label = st.selectbox("Select Business Initiative", list(init_options.keys()), key="portfolio_initiative_selector")
+        active_init_id = init_options[selected_label]
+    else:
+        st.info("No initiatives created yet.")
+
+    # 1. Input form: "New Initiative"
+    with st.expander("New Initiative", expanded=False):
+        with st.form("new_initiative_form", clear_on_submit=True):
+            new_title = st.text_input("Initiative Title", placeholder="e.g. Cut procurement costs 20%")
+            new_target = st.number_input("Target Savings ($ USD)", min_value=0.0, value=50000.0, step=1000.0)
+            new_deadline = st.text_input("Deadline", value="2025-12-31")
+            submitted = st.form_submit_button("Create Initiative")
+            if submitted and new_title.strip():
+                create_initiative(new_title.strip(), new_target, new_deadline.strip())
+                st.success(f"Initiative '{new_title}' created!")
+                st.rerun()
+
+    # 2. WSJF backlog table: columns = Work Item | WSJF Score | Status | $ Saved
+    st.subheader("WSJF Backlog Table")
+    backlog_items = get_wsjf_ranked_backlog(active_init_id)
+    if not backlog_items:
+        st.info("No work items in backlog for this initiative.")
+    else:
+        table_rows = []
+        for item in backlog_items:
+            table_rows.append({
+                "Work Item": item.title,
+                "WSJF Score": round(item.wsjf_score, 1),
+                "Status": item.status,
+                "$ Saved": f"${item.actual_saving_usd:,.2f}"
+            })
+        st.dataframe(pd.DataFrame(table_rows), use_container_width=True, hide_index=True)
+
+    # 3. EVMS mini-chart: horizontal bar showing PV vs EV vs AC
+    st.subheader("EVMS Performance Chart")
+    if active_init_id:
+        evms = get_evms_snapshot(active_init_id)
+        evms_data = pd.DataFrame({
+            "Metric": ["Planned Value (PV)", "Earned Value (EV)", "Actual Cost (AC)"],
+            "Amount ($ USD)": [evms["planned_value"], evms["earned_value"], evms["actual_cost"]]
+        })
+        st.bar_chart(evms_data, x="Metric", y="Amount ($ USD)", horizontal=True)
+
+        col_spi, col_cpi = st.columns(2)
+        with col_spi:
+            st.metric("Schedule Perf (SPI)", f"{evms['spi']:.2f}")
+        with col_cpi:
+            st.metric("Cost Perf (CPI)", f"{evms['cpi']:.2f}")
+
+    # 4. "AI Recommend Next" button: calls get_wsjf_ranked_backlog(), displays top item
+    if st.button("AI Recommend Next", key="ai_recommend_next_btn"):
+        ranked = get_wsjf_ranked_backlog(active_init_id)
+        if ranked:
+            top = ranked[0]
+            st.success(
+                f"🎯 **AI Recommended Next Action:**\n\n"
+                f"**Item:** {top.title}\n\n"
+                f"**WSJF Priority Score:** {top.wsjf_score:.1f} | **Status:** {top.status}\n\n"
+                f"**Potential Target / Current Saved:** ${top.actual_saving_usd:,.2f}"
+            )
+        else:
+            st.info("No work items available to recommend.")
 
     st.divider()
 
