@@ -752,6 +752,15 @@ if selected_module == "Orchestrator":
                     )
                     st.session_state.chat_history.append({"role": "assistant", "content": resp_plan})
                     st.session_state.demo_pending_plan = resp_plan
+                    st.session_state.demo_paused_for_hitl = True
+                    st.session_state.demo_pending_po = {
+                        "po_id": "PO-948201",
+                        "items": [{"sku": "SKU-STEEL-BEAMS", "qty": 500}],
+                        "restock_quantity": 500,
+                        "price_per_unit": 42.50,
+                        "lead_time_days": 3,
+                        "supplier": "Apex Logistics Supplier AI"
+                    }
                     st.session_state.pending_prompt = dispatched_prompt
                     st.rerun()
                 else:
