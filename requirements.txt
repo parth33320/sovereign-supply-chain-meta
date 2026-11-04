@@ -1,4 +1,4 @@
-mcp
+mcp<2
 langchain
 langchain-core
 langgraph

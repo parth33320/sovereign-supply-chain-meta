@@ -1,10 +1,16 @@
 import os
 from langchain_openai import ChatOpenAI
 
+import pytest
+
 def test_meta_smoke():
+    api_key = os.environ.get("META_API_KEY")
+    if not api_key:
+        pytest.skip("META_API_KEY not set; skipping live Meta API smoke test")
+
     llm = ChatOpenAI(
         model=os.environ.get("META_MODEL_NAME", "muse-spark-1.3"),
-        api_key=os.environ.get("META_API_KEY"),
+        api_key=api_key,
         base_url=os.environ.get("META_API_BASE_URL"),
         temperature=0
     )
