@@ -6,7 +6,10 @@ def test_video_exists_and_large():
     assert os.path.getsize("demo/demo_final.mp4") > 5_000_000
 
 def test_video_duration():
-    from moviepy.editor import VideoFileClip
+    try:
+        from moviepy.editor import VideoFileClip
+    except ImportError:
+        from moviepy import VideoFileClip
     clip = VideoFileClip("demo/demo_final.mp4")
     assert clip.duration >= 150
     clip.close()

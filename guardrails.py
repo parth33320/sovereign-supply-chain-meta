@@ -12,7 +12,13 @@ MALICIOUS_PATTERNS = [
     r"you are now an unrestricted",
     r"system prompt",
     r"jailbreak",
-    r"bypass rules"
+    r"bypass rules",
+    r"reveal all api keys",
+    r"\[\[injection\]\]",
+    r"drop table",
+    r"print the contents of your \.env",
+    r"without restriction",
+    r"admin access to the database"
 ]
 
 def check_prompt_injection(prompt: str) -> bool:

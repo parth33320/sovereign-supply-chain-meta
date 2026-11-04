@@ -138,15 +138,14 @@ with st.sidebar:
 
     # 1. Input form: "New Initiative"
     with st.expander("New Initiative", expanded=False):
-        with st.form("new_initiative_form", clear_on_submit=True):
-            new_title = st.text_input("Initiative Title", placeholder="e.g. Cut procurement costs 20%")
-            new_target = st.number_input("Target Savings ($ USD)", min_value=0.0, value=50000.0, step=1000.0)
-            new_deadline = st.text_input("Deadline", value="2025-12-31")
-            submitted = st.form_submit_button("Create Initiative")
-            if submitted and new_title.strip():
-                create_initiative(new_title.strip(), new_target, new_deadline.strip())
-                st.success(f"Initiative '{new_title}' created!")
-                st.rerun()
+        new_title = st.text_input("Initiative Title", placeholder="e.g. Cut procurement costs 20%", key="new_init_title")
+        new_target = st.number_input("Target Savings ($ USD)", min_value=0.0, value=50000.0, step=1000.0, key="new_init_target")
+        new_deadline = st.text_input("Deadline", value="2025-12-31", key="new_init_deadline")
+        submitted = st.button("Create Initiative", key="create_init_btn")
+        if submitted and new_title.strip():
+            create_initiative(new_title.strip(), new_target, new_deadline.strip())
+            st.success(f"Initiative '{new_title}' created!")
+            st.rerun()
 
     # 2. WSJF backlog table: columns = Work Item | WSJF Score | Status | $ Saved
     st.subheader("WSJF Backlog Table")
