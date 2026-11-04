@@ -22,6 +22,8 @@ import io
 import os
 import logging
 from typing import Dict, Any
+import requests
+from pydub import AudioSegment
 import openai
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
@@ -96,50 +98,43 @@ def extract_logistics_intent(transcription: str) -> str:
     return response.content.strip()
 
 
-def process_voice_input(audio_bytes: bytes) -> Dict[str, str]:
+def process_voice_input(audio_bytes: bytes) -> dict:
     """
-    Processes voice input end-to-end: audio bytes -> transcription -> intent extraction.
-
-    Inputs:
-        audio_bytes (bytes): Raw audio bytes.
-
-    Outputs:
-        dict:
-            {
-                "transcription": str,
-                "intent": str,
-                "status": "ok" | "error"
-            }
+    Transcribes audio using Meta muse-voice-transcribe-1.0.
+    Converts WebM (from st.audio_input) to 16kHz mono WAV before sending.
     """
-    if not audio_bytes or not isinstance(audio_bytes, (bytes, bytearray)):
-        return {
-            "transcription": "",
-            "intent": "Error: empty or invalid audio input provided.",
-            "status": "error"
-        }
+    if not audio_bytes:
+        return {"status": "error", "intent": "No audio bytes received."}
+
+    # Step 1: WebM → WAV (16kHz, mono, 16-bit PCM)
+    try:
+        segment = AudioSegment.from_file(io.BytesIO(audio_bytes), format="webm")
+        segment = segment.set_frame_rate(16000).set_channels(1).set_sample_width(2)
+        wav_buf = io.BytesIO()
+        segment.export(wav_buf, format="wav")
+        wav_bytes = wav_buf.getvalue()
+    except Exception as e:
+        return {"status": "error", "intent": f"Audio conversion error: {e}"}
+
+    # Step 2: POST WAV to Meta ASR
+    api_key = os.environ.get("META_API_KEY")
+    base_url = os.environ.get("META_API_BASE_URL", "https://api.meta.ai/v1")
 
     try:
-        transcription = transcribe_audio(audio_bytes)
+        resp = requests.post(
+            f"{base_url}/asr/transcribe",
+            headers={"Authorization": f"Bearer {api_key}"},
+            files={"audio": ("audio.wav", wav_bytes, "audio/wav")},
+            data={"model": "muse-voice-transcribe-1.0"},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        body = resp.json()
+        transcription = (body.get("text") or body.get("transcription") or "").strip()
+        if not transcription:
+            return {"status": "error", "intent": "Empty transcription returned."}
+        return {"status": "ok", "transcription": transcription}
+    except requests.HTTPError as e:
+        return {"status": "error", "intent": f"ASR HTTP {e.response.status_code}: {e.response.text[:200]}"}
     except Exception as e:
-        logger.error(f"Error during audio transcription: {e}")
-        return {
-            "transcription": "",
-            "intent": f"Transcription error: {str(e)}",
-            "status": "error"
-        }
-
-    try:
-        intent = extract_logistics_intent(transcription)
-    except Exception as e:
-        logger.error(f"Error during intent extraction: {e}")
-        return {
-            "transcription": transcription,
-            "intent": f"Intent extraction error: {str(e)}",
-            "status": "error"
-        }
-
-    return {
-        "transcription": transcription,
-        "intent": intent,
-        "status": "ok"
-    }
+        return {"status": "error", "intent": str(e)}
