@@ -38,6 +38,14 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+st.markdown("""
+<style>
+header[data-testid="stHeader"] {
+    display: none !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 # Enterprise SaaS Design System CSS (Dark Slate + Linear/Vercel/ServiceNow aesthetic)
 ENTERPRISE_CSS = """
 <style>
@@ -45,6 +53,11 @@ ENTERPRISE_CSS = """
 html, body, [class*="css"] {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     color: #e6edf3;
+}
+
+/* Hide Streamlit Deploy Button */
+.stDeployButton, [data-testid="stDeployButton"] {
+    display: none !important;
 }
 
 /* App Background */
@@ -275,6 +288,21 @@ if 'demo_pending_po' not in st.session_state:
     st.session_state.demo_pending_po = None
 if 'demo_pending_plan' not in st.session_state:
     st.session_state.demo_pending_plan = ""
+
+if DEMO_MODE and st.query_params.get("demo_hitl") == "1":
+    st.session_state.demo_paused_for_hitl = True
+    st.session_state.demo_pending_po = {
+        "po_id": "PO-948201",
+        "items": [{"sku": "SKU-STEEL-BEAMS", "qty": 500}],
+        "restock_quantity": 500,
+        "price_per_unit": 42.50,
+        "lead_time_days": 3,
+        "supplier": "Apex Logistics Supplier AI"
+    }
+    st.session_state.demo_a2a_transcript = [
+        {"role": "buyer_agent", "request": [{"sku": "SKU-STEEL-BEAMS", "qty": 0}], "response": "Procurement Buyer RFQ: Request restock of 500 units SKU-STEEL-BEAMS. Max lead time: 5 days."},
+        {"role": "supplier_agent", "request": "Procurement Buyer RFQ: Request restock of 500 units SKU-STEEL-BEAMS. Max lead time: 5 days.", "response": {"restock_quantity": 500, "price_per_unit": 42.50, "lead_time_days": 3}}
+    ]
 if 'active_nav_module' not in st.session_state:
     st.session_state.active_nav_module = "Orchestrator"
 
@@ -313,7 +341,7 @@ with st.sidebar:
     # Developer Tools Section: visible only in intentional developer mode; collapsed area
     if is_dev_mode:
         with st.expander("🛠️ Developer Tools", expanded=False):
-            dev_subviews = ["Diagnostics & WAF", "Chaos Testing", "Analytics Dashboard", "Portfolio Dashboard"]
+            dev_subviews = ["Diagnostics & WAF", "Analytics Dashboard"]
             selected_dev_view = st.radio("Developer Views", dev_subviews, key="dev_subview_radio")
             st.session_state.active_dev_subview = selected_dev_view
     else:
@@ -469,68 +497,11 @@ if is_dev_mode and st.session_state.get("active_dev_subview"):
             except Exception as e:
                 st.error(f"Error fetching SQL logs: {e}")
 
-    elif subview == "Chaos Testing":
-        st.subheader("Chaos Resilience & Synthetic Load Injection")
-        st.markdown("Inject 1,000 synthetic edge cases to verify Tenacity retry policies and database integrity.")
-        if st.button("Trigger Chaos Load Test", type="primary", key="trigger_chaos_test_btn"):
-            with st.spinner("Injecting 1,000 edge cases..."):
-                generate_load()
-                if DEMO_MODE:
-                    st.session_state.demo_chaos_triggered = True
-                else:
-                    st.success("1,000 synthetic edge-case rows injected into database.")
-                st.rerun()
-
-        if DEMO_MODE and st.session_state.get("demo_chaos_triggered"):
-            st.success("1,000 synthetic edge-case rows injected into database.")
-            st.info("System recovered: Tenacity retry policies engaged. Database integrity preserved.")
-
     elif subview == "Analytics Dashboard":
         st.subheader("Analytics Dashboard")
 
-        # Section 1: WAF events over time
-        with st.expander("WAF Events Over Time", expanded=False):
-            if not st.session_state.waf_history:
-                st.info("No WAF events recorded yet.")
-            else:
-                waf_counts = {}
-                for ev in st.session_state.waf_history:
-                    ts = ev.get("timestamp", "unknown")
-                    waf_counts[ts] = waf_counts.get(ts, 0) + ev.get("count", 1)
-                st.bar_chart(waf_counts)
-
-        # Section 2: PO history table
-        with st.expander("PO History Table", expanded=False):
-            try:
-                conn = sqlite3.connect('mock_sap.db')
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT id, request_id, status, payload, created_at
-                    FROM task_queue
-                    WHERE status = 'EXECUTED'
-                    ORDER BY id DESC
-                    LIMIT 10
-                """)
-                po_rows = cursor.fetchall()
-                conn.close()
-                if not po_rows:
-                    st.info("No executed purchase orders found in task queue.")
-                else:
-                    table_data = []
-                    for row in po_rows:
-                        table_data.append({
-                            "ID": row[0],
-                            "Request ID": row[1],
-                            "Status": row[2],
-                            "Payload": row[3],
-                            "Created At": row[4]
-                        })
-                    st.dataframe(pd.DataFrame(table_data), use_container_width=True)
-            except Exception as e:
-                st.error(f"Error loading PO history: {e}")
-
-        # Section 3: Disruption alert history
-        with st.expander("Disruption Alert History", expanded=False):
+        # Section 1: Disruption alert history
+        with st.expander("Disruption Alert History", expanded=True):
             if not st.session_state.disruption_history:
                 st.info("No disruption alerts recorded yet.")
             else:
@@ -540,8 +511,8 @@ if is_dev_mode and st.session_state.get("active_dev_subview"):
                     ts = alert.get("timestamp", "")
                     st.markdown(f"**[{ts}] ({sev})**: {summary}")
 
-        # Section 4: Forecast predictions display
-        with st.expander("Forecast Predictions", expanded=False):
+        # Section 2: Forecast predictions display
+        with st.expander("Forecast Predictions", expanded=True):
             if st.button("Refresh Forecast", key="refresh_forecast_btn_dev"):
                 with st.spinner("Forecasting SKU stockouts with muse-spark-1.3..."):
                     st.session_state.forecast_cache = forecast_sku_stockouts()
@@ -557,79 +528,6 @@ if is_dev_mode and st.session_state.get("active_dev_subview"):
                     conf = str(fc.get("confidence", "low")).lower()
                     color = color_map.get(conf, "gray")
                     st.markdown(f"- **{sku}**: Stockout in **{days}** days (Confidence: :{color}[{conf.upper()}])")
-
-    elif subview == "Portfolio Dashboard":
-        st.subheader("Portfolio Dashboard")
-        try:
-            p_conn = get_portfolio_connection()
-            p_cur = p_conn.cursor()
-            p_cur.execute("SELECT id, title FROM initiatives ORDER BY id ASC")
-            init_rows = p_cur.fetchall()
-            p_conn.close()
-        except Exception:
-            init_rows = []
-
-        active_init_id = None
-        if init_rows:
-            init_options = {f"{r['id']} - {r['title'][:30]}": r["id"] for r in init_rows}
-            selected_label = st.selectbox("Select Business Initiative", list(init_options.keys()), key="portfolio_init_selector_dev")
-            active_init_id = init_options[selected_label]
-        else:
-            st.info("No initiatives created yet.")
-
-        with st.expander("New Initiative", expanded=False):
-            with st.form("new_initiative_form_dev", clear_on_submit=True):
-                new_title = st.text_input("Initiative Title", placeholder="e.g. Cut procurement costs 20%")
-                new_target = st.number_input("Target Savings ($ USD)", min_value=0.0, value=50000.0, step=1000.0)
-                new_deadline = st.text_input("Deadline", value="2025-12-31")
-                submitted = st.form_submit_button("Create Initiative")
-                if submitted and new_title.strip():
-                    create_initiative(new_title.strip(), new_target, new_deadline.strip())
-                    st.success(f"Initiative '{new_title}' created!")
-                    st.rerun()
-
-        st.markdown("#### WSJF Backlog Prioritization")
-        backlog_items = get_wsjf_ranked_backlog(active_init_id)
-        if not backlog_items:
-            st.info("No work items in backlog for this initiative.")
-        else:
-            table_rows = []
-            for item in backlog_items:
-                table_rows.append({
-                    "Work Item": item.title,
-                    "WSJF Score": round(item.wsjf_score, 1),
-                    "Status": item.status,
-                    "$ Saved": f"${item.actual_saving_usd:,.2f}"
-                })
-            st.dataframe(pd.DataFrame(table_rows), use_container_width=True, hide_index=True)
-
-        if active_init_id:
-            st.markdown("#### EVMS Performance Metrics")
-            evms = get_evms_snapshot(active_init_id)
-            evms_data = pd.DataFrame({
-                "Metric": ["Planned Value (PV)", "Earned Value (EV)", "Actual Cost (AC)"],
-                "Amount ($ USD)": [evms["planned_value"], evms["earned_value"], evms["actual_cost"]]
-            })
-            st.bar_chart(evms_data, x="Metric", y="Amount ($ USD)", horizontal=True)
-
-            col_spi, col_cpi = st.columns(2)
-            with col_spi:
-                st.metric("Schedule Perf (SPI)", f"{evms['spi']:.2f}")
-            with col_cpi:
-                st.metric("Cost Perf (CPI)", f"{evms['cpi']:.2f}")
-
-        if st.button("AI Recommend Next", key="ai_recommend_next_btn_dev"):
-            ranked = get_wsjf_ranked_backlog(active_init_id)
-            if ranked:
-                top = ranked[0]
-                st.success(
-                    f"🎯 **AI Recommended Next Action:**\n\n"
-                    f"**Item:** {top.title}\n\n"
-                    f"**WSJF Priority Score:** {top.wsjf_score:.1f} | **Status:** {top.status}\n\n"
-                    f"**Potential Target / Current Saved:** ${top.actual_saving_usd:,.2f}"
-                )
-            else:
-                st.info("No work items available to recommend.")
 
     st.divider()
 
@@ -679,13 +577,35 @@ if selected_module == "Orchestrator":
 
             # Real A2A Negotiation and Draft PO
             if pending_po:
-                st.markdown("**Draft Purchase Order:**")
-                st.json(pending_po)
+                # Human-readable summary card for Purchase Order
+                supplier = pending_po.get("supplier", "Unknown Supplier")
+                sku = pending_po.get("sku", "N/A")
+                quantity = pending_po.get("quantity", pending_po.get("restock_quantity", 0))
+                price = pending_po.get("price_per_unit", pending_po.get("unit_price", 0.0))
+                lead_time = pending_po.get("lead_time_days", "N/A")
+
+                st.markdown(
+                    f"""
+                    <div style="background: #161f30; border: 1px solid #232b3e; border-radius: 6px; padding: 0.85rem; margin-bottom: 0.85rem;">
+                        <div style="font-size: 0.78rem; font-weight: 700; color: #3b82f6; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">
+                            📦 Purchase Order Summary
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; font-size: 0.84rem;">
+                            <div><span style="color: #94a3b8;">Supplier:</span> <strong style="color: #f8fafc;">{supplier}</strong></div>
+                            <div><span style="color: #94a3b8;">SKU:</span> <strong style="color: #f8fafc;">{sku}</strong></div>
+                            <div><span style="color: #94a3b8;">Quantity:</span> <strong style="color: #f8fafc;">{quantity:,} units</strong></div>
+                            <div><span style="color: #94a3b8;">Price / Unit:</span> <strong style="color: #34d399;">${price:,.2f}</strong></div>
+                            <div><span style="color: #94a3b8;">Lead Time:</span> <strong style="color: #f8fafc;">{lead_time} days</strong></div>
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
 
             if a2a_transcript:
-                st.markdown("**A2A Negotiation Transcript:**")
-                for exchange in a2a_transcript:
-                    st.json(exchange)
+                with st.expander("📄 A2A Negotiation Transcript (JSON)", expanded=False):
+                    for exchange in a2a_transcript:
+                        st.json(exchange)
 
             st.markdown("<div style='height: 0.5rem;'></div>", unsafe_allow_html=True)
             col_app, col_rej = st.columns(2)
@@ -841,32 +761,6 @@ if selected_module == "Orchestrator":
                     st.session_state.pending_prompt = dispatched_prompt
                     st.rerun()
 
-        # Operational Action Bar: A2A Negotiate
-        col_act1, col_act2 = st.columns([2, 5])
-        with col_act1:
-            if st.button("A2A Negotiate", key="orchestrator_a2a_btn", use_container_width=True):
-                with st.spinner("Initiating Agent-to-Agent Handshake..."):
-                    time.sleep(1)
-                    if DEMO_MODE:
-                        mock_rfq = "Procurement Buyer RFQ: Request restock of 500 units SKU-STEEL-BEAMS. Max lead time: 5 days."
-                        mock_quote = {"restock_quantity": 500, "price_per_unit": 42.50, "lead_time_days": 3}
-                        st.session_state.demo_a2a_transcript = [
-                            {"role": "buyer_agent", "request": [{"sku": "SKU-STEEL-BEAMS", "qty": 0}], "response": mock_rfq},
-                            {"role": "supplier_agent", "request": mock_rfq, "response": mock_quote}
-                        ]
-                        st.session_state.demo_pending_po = {
-                            "po_id": "PO-948201",
-                            "items": [{"sku": "SKU-STEEL-BEAMS", "qty": 500}],
-                            "restock_quantity": 500,
-                            "price_per_unit": 42.50,
-                            "lead_time_days": 3,
-                            "supplier": "Apex Logistics Supplier AI"
-                        }
-                        st.session_state.demo_paused_for_hitl = True
-                        st.success("Handshake complete: SYNC_ACK with Vendor AI.")
-                        st.rerun()
-                    else:
-                        st.success("Handshake complete: SYNC_ACK with Vendor AI.")
 
 
 # -----------------------------------------------------------------------------

@@ -37,10 +37,8 @@ def test_app_py_has_analytics_dashboard_sidebar():
     with open(REPO_ROOT / "app.py", "r") as f:
         content = f.read()
 
-    # Expanders for each section
+    # Expanders for active sections (PR update: Disruption Alert History and Forecast Predictions preserved)
     assert "st.expander" in content
-    assert "WAF Events Over Time" in content
-    assert "PO History Table" in content
     assert "Disruption Alert History" in content
     assert "Forecast Predictions" in content
 
@@ -158,9 +156,7 @@ def test_analytics_dashboard_ui_playwright(tmp_path):
             analytics_radio.click()
             time.sleep(1)
 
-            # Check the 4 expanders exist in main content area
-            expect(page.get_by_text("WAF Events Over Time")).to_be_visible()
-            expect(page.get_by_text("PO History Table")).to_be_visible()
+            # Check the active expanders exist in main content area
             expect(page.get_by_text("Disruption Alert History")).to_be_visible()
             expect(page.get_by_text("Forecast Predictions")).to_be_visible()
 
