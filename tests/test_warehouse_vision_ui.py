@@ -67,17 +67,14 @@ def test_app_shelf_image_upload_and_context_injection():
     }
 
     with patch("warehouse_vision.analyze_shelf_image", return_value=mock_analysis) as mock_analyze, \
-         patch("worker.process_agent_task.delay") as mock_delay, \
-         patch("celery.result.AsyncResult") as mock_async_result, \
+         patch("graph.get_graph_with_postgres") as mock_get_graph, \
          patch("guardrails.check_prompt_injection", return_value=True):
-
-        mock_task = MagicMock()
-        mock_task.id = "mock-task-vision-1"
-        mock_delay.return_value = mock_task
-
-        mock_async_task = MagicMock()
-        mock_async_task.state = "PENDING"
-        mock_async_result.return_value = mock_async_task
+        mock_graph = MagicMock()
+        mock_get_graph.return_value = mock_graph
+        mock_graph.invoke.return_value = {
+            "messages": [],
+            "drafted_plan": ""
+        }
 
         app_path = REPO_ROOT / "app.py"
         at = st_test.AppTest.from_file(str(app_path), default_timeout=10)
@@ -108,8 +105,9 @@ def test_app_shelf_image_upload_and_context_injection():
         # Verify dispatched prompt has prefix
         expected_dispatched = "[VISUAL SHELF ANALYSIS: Bolts at 20% fill level.]\nReallocate low stock items"
         assert at.session_state.get("pending_prompt") == expected_dispatched
-        mock_delay.assert_called_once()
-        assert mock_delay.call_args[0][2] == expected_dispatched
+        mock_graph.invoke.assert_called_once()
+        state_arg = mock_graph.invoke.call_args[0][0]
+        assert state_arg["messages"][0].content == expected_dispatched
 
 
 def test_warehouse_vision_ui_e2e_playwright(tmp_path):

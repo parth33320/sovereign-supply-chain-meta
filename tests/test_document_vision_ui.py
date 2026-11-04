@@ -52,17 +52,7 @@ def test_app_document_upload_and_prepopulates_chat():
     }
 
     with patch("document_vision.extract_document_data", return_value=mock_doc_data) as mock_extract, \
-         patch("worker.process_agent_task.delay") as mock_delay, \
-         patch("celery.result.AsyncResult") as mock_async_result, \
          patch("guardrails.check_prompt_injection", return_value=True):
-
-        mock_task = MagicMock()
-        mock_task.id = "mock-task-doc-1"
-        mock_delay.return_value = mock_task
-
-        mock_async_task = MagicMock()
-        mock_async_task.state = "PENDING"
-        mock_async_result.return_value = mock_async_task
 
         app_path = REPO_ROOT / "app.py"
         at = st_test.AppTest.from_file(str(app_path), default_timeout=10)
