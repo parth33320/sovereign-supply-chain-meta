@@ -33,18 +33,23 @@ def transcribe_audio(audio_bytes: bytes) -> str:
     if not audio_bytes or not isinstance(audio_bytes, (bytes, bytearray)):
         raise ValueError("Invalid or empty audio bytes provided for transcription.")
 
-    api_key = os.environ.get("META_API_KEY")
-    base_url = os.environ.get("META_API_BASE_URL", "https://api.meta.ai/v1")
-
     import requests
+    api_key = os.environ.get("META_API_KEY")
+
     response = requests.post(
-        f"{base_url}/asr/transcribe",
+        "https://api.meta.ai/v1/asr/transcribe",
         headers={"Authorization": f"Bearer {api_key}"},
-        files={"file": ("audio.wav", audio_bytes, "audio/wav")},
-        data={"model": "muse-voice-transcribe-1.0"}
+        files={"file": ("audio.webm", audio_bytes, "audio/webm")},
+        data={"mode": "PUSH_TO_TALK"}
     )
     response.raise_for_status()
-    return response.json().get("text", "")
+
+    result = response.json()
+    # handle both {text: ...} and {turns: [...]} response shapes
+    if "text" in result:
+        return result["text"]
+    turns = result.get("turns", [])
+    return " ".join(t.get("transcript", "") for t in turns).strip()
 
 
 def extract_logistics_intent(transcription: str) -> str:
