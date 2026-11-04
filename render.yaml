@@ -1,0 +1,69 @@
+services:
+  # 1. Streamlit Web Dashboard Service
+  - type: web
+    name: sovereign-supply-chain-meta
+    runtime: docker
+    dockerfilePath: Dockerfile
+    dockerContext: .
+    plan: free
+    region: oregon
+    buildCommand: ""
+    startCommand: streamlit run app.py --server.port=8501 --server.address=0.0.0.0
+    envVars:
+      - key: PORT
+        value: 8501
+      - key: CELERY_BROKER_URL
+        fromService:
+          type: redis
+          name: supply-chain-redis
+          property: connectionString
+      - key: CELERY_RESULT_BACKEND
+        fromService:
+          type: redis
+          name: supply-chain-redis
+          property: connectionString
+      - key: POSTGRES_DB_URI
+        sync: false
+      - key: META_API_KEY
+        sync: false
+      - key: META_API_BASE_URL
+        sync: false
+      - key: META_MODEL_NAME
+        value: muse-spark-1.3
+
+  # 2. Celery Worker Service
+  - type: worker
+    name: sovereign-supply-chain-worker
+    runtime: docker
+    dockerfilePath: Dockerfile
+    dockerContext: .
+    plan: free
+    region: oregon
+    buildCommand: ""
+    startCommand: celery -A worker worker --loglevel=info
+    envVars:
+      - key: CELERY_BROKER_URL
+        fromService:
+          type: redis
+          name: supply-chain-redis
+          property: connectionString
+      - key: CELERY_RESULT_BACKEND
+        fromService:
+          type: redis
+          name: supply-chain-redis
+          property: connectionString
+      - key: POSTGRES_DB_URI
+        sync: false
+      - key: META_API_KEY
+        sync: false
+      - key: META_API_BASE_URL
+        sync: false
+      - key: META_MODEL_NAME
+        value: muse-spark-1.3
+
+  # 3. Redis Service for Celery Broker
+  - type: redis
+    name: supply-chain-redis
+    plan: free
+    region: oregon
+    ipAllowList: []

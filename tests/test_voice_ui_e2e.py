@@ -28,11 +28,12 @@ def test_app_voice_input_widget_exists():
     """Test that app.py contains st.audio_input above chat input."""
     import streamlit.testing.v1 as st_test
     app_path = REPO_ROOT / "app.py"
-    at = st_test.AppTest.from_file(str(app_path), default_timeout=10)
-    at.run()
-    assert len(at.audio_input) == 1, "app.py does not have an audio_input widget"
-    assert at.audio_input[0].key == "voice_audio_input"
-    assert "Record voice" in at.audio_input[0].label
+    with patch("graph.ConnectionPool"):
+        at = st_test.AppTest.from_file(str(app_path), default_timeout=10)
+        at.run()
+        assert len(at.audio_input) == 1, "app.py does not have an audio_input widget"
+        assert at.audio_input[0].key == "voice_audio_input"
+        assert "Record voice" in at.audio_input[0].label
 
 
 def test_app_voice_input_auto_submission():
@@ -43,7 +44,8 @@ def test_app_voice_input_auto_submission():
     import streamlit.testing.v1 as st_test
     silent_wav = generate_silent_wav(duration_seconds=1.0)
 
-    with patch("voice_handler.process_voice_input") as mock_pvi, \
+    with patch("graph.ConnectionPool"), \
+         patch("voice_handler.process_voice_input") as mock_pvi, \
          patch("worker.process_agent_task.delay") as mock_delay, \
          patch("app.AsyncResult") as mock_async_result, \
          patch("app.check_prompt_injection", return_value=True):
