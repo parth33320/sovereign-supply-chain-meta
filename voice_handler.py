@@ -140,7 +140,7 @@ def process_voice_input(audio_bytes: bytes) -> dict:
             headers={"Authorization": f"Bearer {api_key}"},
             files={
                 "audio": ("audio.wav", wav_bytes, "audio/wav"),
-                "request": (None, json.dumps({"model": "muse-voice-transcribe-1.0"}), "application/json"),
+                "request": (None, json.dumps({"model": "muse-voice-transcribe-1.0", "audioEncoding": "LINEAR16"}), "application/json"),
             },
             timeout=30,
         )
