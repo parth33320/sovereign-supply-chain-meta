@@ -8,8 +8,10 @@ from psycopg_pool import ConnectionPool
 from langgraph.checkpoint.postgres import PostgresSaver
 import os
 import tenacity
+from concurrent.futures import ThreadPoolExecutor
 from disruption_radar import fetch_disruption_alert
 from demand_forecaster import forecast_sku_stockouts
+from llm_client import get_llm
 
 # Ensure task logging function
 def log_task(request_id: str, status: str, payload: str):
@@ -57,35 +59,33 @@ class AgentState(TypedDict, total=False):
     work_item_id: str
     last_saving: Any
 
-# Node 1: Global Oracle (Prescriptive Analytics Stub)
-def global_oracle(state: AgentState) -> Dict:
-    messages = list(state.get("messages", []))
+# Combined Parallel Node: Global Oracle + Demand Forecaster
+def global_oracle_and_forecast(state: AgentState) -> Dict:
+    import disruption_radar
+    import demand_forecaster
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        f_disruption = ex.submit(disruption_radar.fetch_disruption_alert)
+        f_forecast = ex.submit(demand_forecaster.forecast_sku_stockouts)
+        disruption = f_disruption.result(timeout=15)
+        forecasts = f_forecast.result(timeout=15)
 
-    disruption = fetch_disruption_alert()
+    messages = list(state.get("messages", []))
+    # process disruption result
     if disruption.get("alert"):
-        severity = str(disruption.get("severity", "low")).upper()
-        summary = disruption.get("summary", "")
-        messages.append(AIMessage(content=f"[GLOBAL ORACLE ALERT] ({severity}): {summary}"))
-
-    return {"messages": messages}
-
-# Node 1.5: Demand Forecaster Node
-def forecast_demand(state: AgentState) -> Dict:
-    messages = list(state.get("messages", []))
-    forecasts = forecast_sku_stockouts()
-
+        messages.append(AIMessage(content=
+            f"[GLOBAL ORACLE ALERT] ({disruption['severity'].upper()}): {disruption['summary']}"))
+    # process forecast result
     for item in forecasts:
-        confidence = str(item.get("confidence", "low")).lower()
-        if confidence == "high":
-            sku = item.get("sku")
-            days = item.get("days_until_stockout")
-            messages.append(
-                AIMessage(
-                    content=f"[DEMAND FORECAST ALERT] ({confidence.upper()}): {sku} predicted stockout in {days} days."
-                )
-            )
-
+        if str(item.get("confidence","")).lower() == "high":
+            messages.append(AIMessage(content=
+                f"[DEMAND FORECAST ALERT] (HIGH): {item['sku']} stockout in {item['days_until_stockout']} days."))
     return {"messages": messages}
+
+def global_oracle(state: AgentState) -> Dict:
+    return global_oracle_and_forecast(state)
+
+def forecast_demand(state: AgentState) -> Dict:
+    return global_oracle_and_forecast(state)
 
 # Node 2: MCP Inventory Query (with Exponential Backoff)
 @tenacity.retry(
@@ -114,7 +114,6 @@ def fetch_inventory(state: AgentState) -> Dict:
 
 # Node 3: Plan Drafter
 def draft_plan(state: AgentState) -> Dict:
-    from langchain_openai import ChatOpenAI
     from langchain_core.prompts import ChatPromptTemplate
 
     inventory = state.get("inventory_data", [])
@@ -126,13 +125,8 @@ def draft_plan(state: AgentState) -> Dict:
     if not inventory:
         plan = "No inventory found to process."
     else:
-        # Instantiate ChatModel
-        llm = ChatOpenAI(
-            model=os.environ.get("META_MODEL_NAME", "muse-spark-1.3"),
-            api_key=os.environ.get("META_API_KEY"),
-            base_url=os.environ.get("META_API_BASE_URL"),
-            temperature=0
-        )
+        # Use singleton ChatModel
+        llm = get_llm()
 
         # Construct dynamic system prompt
         system_prompt = """You are an intelligent Supply Chain Orchestrator.
@@ -223,12 +217,7 @@ def a2a_negotiate_sync(state: AgentState) -> Dict:
 
     stockouts_str = json.dumps(stockouts, indent=2)
 
-    llm = ChatOpenAI(
-        model=os.environ.get("META_MODEL_NAME", "muse-spark-1.3"),
-        api_key=os.environ.get("META_API_KEY"),
-        base_url=os.environ.get("META_API_BASE_URL"),
-        temperature=0
-    )
+    llm = get_llm()
 
     # Step 1: Buyer Agent persona generates formal RFQ
     buyer_prompt_tmpl = ChatPromptTemplate.from_messages([
@@ -343,8 +332,7 @@ def route_approval(state: AgentState):
 # Build Graph
 builder = StateGraph(AgentState)
 
-builder.add_node("global_oracle", global_oracle)
-builder.add_node("forecast_demand", forecast_demand)
+builder.add_node("global_oracle_and_forecast", global_oracle_and_forecast)
 builder.add_node("fetch_inventory", fetch_inventory)
 builder.add_node("draft_plan", draft_plan)
 builder.add_node("human_review", human_review)
@@ -352,9 +340,8 @@ builder.add_node("execute_plan", execute_plan)
 builder.add_node("a2a_negotiate", a2a_negotiate_sync)
 builder.add_node("draft_po", draft_po)
 
-builder.set_entry_point("global_oracle")
-builder.add_edge("global_oracle", "forecast_demand")
-builder.add_edge("forecast_demand", "fetch_inventory")
+builder.set_entry_point("global_oracle_and_forecast")
+builder.add_edge("global_oracle_and_forecast", "fetch_inventory")
 
 builder.add_conditional_edges(
 "fetch_inventory",
@@ -385,22 +372,28 @@ builder.add_edge("execute_plan", END)
 def get_graph():
     return builder.compile(interrupt_before=["human_review"])
 
+_pg_pool = None
+
+def get_pg_pool():
+    global _pg_pool
+    if _pg_pool is None:
+        DB_URI = os.environ.get("POSTGRES_DB_URI", "")
+        if DB_URI.strip():
+            _pg_pool = ConnectionPool(
+                conninfo=DB_URI,
+                max_size=20,
+                kwargs={"autocommit": True,
+                        "prepare_threshold": 0,
+                        "sslmode": "require"}
+            )
+    return _pg_pool
+
 def get_graph_with_postgres():
-    DB_URI = os.environ.get("POSTGRES_DB_URI")
-    if not DB_URI or not DB_URI.strip():
-        # Fall back to in-memory/standard graph without Postgres checkpointer when POSTGRES_DB_URI is not set
+    pool = get_pg_pool()
+    if pool is None:
         return builder.compile(interrupt_before=["human_review"])
-
-    connection_kwargs = {
-        "autocommit": True,
-        "prepare_threshold": 0,
-        "sslmode": "require",
-    }
-
-    pool = ConnectionPool(conninfo=DB_URI, max_size=20, kwargs=connection_kwargs)
     checkpointer = PostgresSaver(pool)
     checkpointer.setup()
-
     return builder.compile(
         checkpointer=checkpointer,
         interrupt_before=["human_review"]
