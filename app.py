@@ -24,6 +24,31 @@ load_dotenv()
 
 DEMO_MODE = os.environ.get("DEMO_MODE") == "1"
 
+_api_key = os.environ.get("META_API_KEY")
+if not _api_key:
+    st.set_page_config(page_title="Setup Required",
+                       page_icon="🔑", layout="centered")
+    st.markdown("""
+    <div style="max-width:500px; margin:4rem auto;
+    background:#131926; border:1px solid #ef4444;
+    border-radius:8px; padding:2rem; text-align:center;">
+      <div style="font-size:2rem;">🔑</div>
+      <h2 style="color:#f8fafc;">API Key Required</h2>
+      <p style="color:#94a3b8;">
+        Add your Meta AI API key to get started.
+      </p>
+      <code style="background:#0b0f17; color:#3b82f6;
+      padding:0.5rem 1rem; border-radius:4px; display:block;
+      margin:1rem 0;">META_API_KEY=your_key_here</code>
+      <p style="color:#64748b; font-size:0.85rem;">
+        Get your key at
+        <a href="https://dev.meta.ai/api-keys"
+        style="color:#3b82f6;">dev.meta.ai/api-keys</a>
+      </p>
+    </div>
+    """, unsafe_allow_html=True)
+    st.stop()
+
 # Page Configuration
 st.set_page_config(
     page_title="Sovereign Supply Chain",
@@ -859,7 +884,12 @@ if is_dev_mode and st.session_state.get("active_dev_subview"):
 
     elif subview == "Analytics Dashboard":
         try:
-            from portfolio import get_evms_snapshot
+            from portfolio import (
+                create_initiative,
+                get_wsjf_ranked_backlog,
+                get_evms_snapshot,
+                get_connection as get_portfolio_connection,
+            )
         except Exception:
             pass
 
