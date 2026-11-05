@@ -303,6 +303,36 @@ button[kind="secondary"]:hover, .stButton > button:not([kind="primary"]):hover {
 st.markdown(ENTERPRISE_CSS, unsafe_allow_html=True)
 
 
+FRIENDLY_ERRORS = {
+    "connection": "⚠️ Cannot reach the database right now. Try again in 30 seconds.",
+    "timeout": "⚠️ The AI model took too long to respond. Please retry your request.",
+    "guardrail": "⚠️ Your request was blocked by security filters. See Example Inputs below for accepted phrasing.",
+    "upload": "⚠️ File could not be processed. Ensure it is a clear PNG/JPG/WEBP under 1MB.",
+    "default": "⚠️ Something went wrong. Please retry or contact your system administrator."
+}
+
+def friendly_error(e: Exception) -> str:
+    msg = str(e).lower()
+    if "connect" in msg or "database" in msg:
+        return FRIENDLY_ERRORS["connection"]
+    if "timeout" in msg or "timed out" in msg:
+        return FRIENDLY_ERRORS["timeout"]
+    if "guardrail" in msg or "blocked" in msg:
+        return FRIENDLY_ERRORS["guardrail"]
+    if "upload" in msg or "image" in msg:
+        return FRIENDLY_ERRORS["upload"]
+    return FRIENDLY_ERRORS["default"]
+
+RATE_LIMIT_SECONDS = 10
+
+def check_rate_limit(tenant_id: str) -> bool:
+    key = f"last_dispatch_{tenant_id}"
+    last = st.session_state.get(key, 0)
+    if time.time() - last < RATE_LIMIT_SECONDS:
+        return False
+    st.session_state[key] = time.time()
+    return True
+
 def show_user_error(message: str, suggestion: str):
     """
     Renders a styled HTML card with a ⚠️ icon, plain-English error headline, and a 'What to do next:' line.
@@ -563,10 +593,7 @@ def execute_agent_synchronous(dispatched_prompt: str, tenant_id: str, request_id
 
                 st.session_state.pending_plan = drafted_plan
         except Exception as e:
-            show_user_error(
-                message=f"Orchestration engine encountered a system error: {e}",
-                suggestion="Please check backend service connectivity or try submitting your logistics instruction again."
-            )
+            st.error(friendly_error(e))
 
 
 # Load gold standard inputs once for example collapsibles
@@ -628,10 +655,7 @@ if is_dev_mode and st.session_state.get("active_dev_subview"):
                 for log in logs:
                     st.code(f"[{log.get('tenant_id')}] {log.get('query')}")
             except Exception as e:
-                show_user_error(
-                    message=f"Failed to retrieve database activity logs: {e}",
-                    suggestion="Verify database credentials or initialize tables via init_db.py."
-                )
+                st.error(friendly_error(e))
 
     elif subview == "Analytics Dashboard":
         st.subheader("Analytics Dashboard")
@@ -681,6 +705,10 @@ if st.session_state.get("auto_submit_prompt"):
             suggestion="Ensure your message contains only valid operational supply chain instructions and does not attempt system override commands."
         )
     else:
+        if not check_rate_limit(tenant_id):
+            st.warning("⏳ Please wait a few seconds before sending another request.")
+            st.stop()
+
         st.session_state.chat_history.append({"role": "user", "content": to_submit})
         request_id = str(uuid.uuid4())
         dispatched_prompt = to_submit
@@ -733,10 +761,7 @@ if is_admin_mode:
         else:
             st.info(f"No inventory records found for {tenant_id}.")
     except Exception as e:
-        show_user_error(
-            message=f"Failed to fetch catalog data: {e}",
-            suggestion="Run init_db.py to seed initial catalog inventory."
-        )
+        st.error(friendly_error(e))
         inventory_rows = []
 
     st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
@@ -841,7 +866,7 @@ if is_admin_mode:
             [tenant_id]
         )
     except Exception as e:
-        show_user_error(f"Error fetching pending requests: {e}", "Verify the admin_requests table schema.")
+        st.error(friendly_error(e))
         pending_requests = []
 
     if not pending_requests:
@@ -1170,10 +1195,7 @@ elif selected_module == "Warehouse":
                             st.session_state.shelf_context = analysis
                             st.rerun()
                         except Exception as e:
-                            show_user_error(
-                                message=f"Computer vision model failed to segment shelf image: {e}",
-                                suggestion="Verify lighting conditions, ensure the rack barcode is visible, or select an example scenario above."
-                            )
+                            st.error(friendly_error(e))
 
     with col_ctx:
         st.markdown(
@@ -1274,10 +1296,7 @@ elif selected_module == "Documents":
                             st.session_state.prefilled_prompt = format_logistics_instruction(extraction)
                             st.rerun()
                         except Exception as e:
-                            show_user_error(
-                                message=f"Unable to extract text from document: {e}",
-                                suggestion="Ensure the document is upright, well-lit, and text is sharp, or test with an example invoice line item above."
-                            )
+                            st.error(friendly_error(e))
 
     with col_doc_view:
         st.markdown(

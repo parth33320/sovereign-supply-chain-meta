@@ -7,8 +7,9 @@ services:
     dockerContext: .
     plan: free
     region: oregon
+    healthCheckPath: /health
     buildCommand: ""
-    startCommand: streamlit run app.py --server.port=8501 --server.address=0.0.0.0
+    startCommand: uvicorn health_check:app --port 8502 & streamlit run app.py --server.port=8501 --server.address=0.0.0.0
     envVars:
       - key: PORT
         value: 8501
