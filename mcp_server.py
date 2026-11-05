@@ -1,7 +1,7 @@
 import re
-import sqlite3
 import json
 from mcp.server.fastmcp import FastMCP
+from db import execute_query, execute_mutation, get_db_connection
 
 mcp = FastMCP("ZeroTrustLogistics")
 
@@ -14,12 +14,23 @@ def is_safe_query(query: str) -> bool:
     return True
 
 def log_sql(query: str, tenant_id: str):
-    conn = sqlite3.connect('mock_sap.db')
-    cursor = conn.cursor()
-    cursor.execute("CREATE TABLE IF NOT EXISTS mcp_sql_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, query TEXT, tenant_id TEXT, timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
-    cursor.execute("INSERT INTO mcp_sql_logs (query, tenant_id) VALUES (?, ?)", (query, tenant_id))
-    conn.commit()
-    conn.close()
+    conn, engine = get_db_connection()
+    try:
+        if engine == "postgres":
+            with conn.cursor() as cur:
+                cur.execute(
+                    "CREATE TABLE IF NOT EXISTS mcp_sql_logs (id SERIAL PRIMARY KEY, query TEXT, tenant_id TEXT, timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+                )
+                cur.execute("INSERT INTO mcp_sql_logs (query, tenant_id) VALUES (%s, %s)", (query, tenant_id))
+        else:
+            cur = conn.cursor()
+            cur.execute(
+                "CREATE TABLE IF NOT EXISTS mcp_sql_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, query TEXT, tenant_id TEXT, timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+            )
+            cur.execute("INSERT INTO mcp_sql_logs (query, tenant_id) VALUES (?, ?)", (query, tenant_id))
+            conn.commit()
+    finally:
+        conn.close()
 
 @mcp.tool()
 def read_inventory(tenant_id: str) -> str:
@@ -28,29 +39,18 @@ def read_inventory(tenant_id: str) -> str:
     Args:
         tenant_id: The ID of the tenant (e.g., 'Tenant_A' or 'Tenant_B').
     """
-    conn = sqlite3.connect('mock_sap.db')
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-
     query = f"SELECT * FROM inventory WHERE tenant_id = '{tenant_id}'"
-    # Even though we use formatting for demo of capturing the exact string query,
-    # we enforce guardrails:
     if not is_safe_query(query):
         return json.dumps({"error": "Unsafe query detected. Operation blocked."})
 
     log_sql(query, tenant_id)
 
     try:
-        cursor.execute(query)
-        rows = cursor.fetchall()
-    except sqlite3.Error as e:
-        conn.close()
+        rows = execute_query(query)
+    except Exception as e:
         return json.dumps({"error": str(e)})
 
-    conn.close()
-
-    result = [dict(row) for row in rows]
-    return json.dumps(result)
+    return json.dumps(rows)
 
 if __name__ == "__main__":
     mcp.run()

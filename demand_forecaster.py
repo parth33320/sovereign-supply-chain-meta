@@ -19,31 +19,45 @@ def get_trend_data(db_path: str = "mock_sap.db") -> List[str]:
     Fetch payload data from the task_queue table.
     Filters for records created within the last 30 days.
     If 0 records are found, falls back to all available records in task_queue.
+    Uses PostgreSQL if POSTGRES_DB_URI is configured, otherwise SQLite.
     """
-    if not os.path.exists(db_path):
+    from db import get_db_connection, is_postgres_configured
+
+    if not is_postgres_configured() and not os.path.exists(db_path):
         return []
 
     try:
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-
-        # Query last 30 days
-        cursor.execute(
-            """
-            SELECT payload FROM task_queue
-            WHERE created_at >= datetime('now', '-30 days')
-            ORDER BY created_at ASC
-            """
-        )
-        rows = cursor.fetchall()
-
-        if not rows:
-            # Fall back to all available rows
-            cursor.execute("SELECT payload FROM task_queue ORDER BY created_at ASC")
+        conn, engine = get_db_connection()
+        if engine == "postgres":
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT payload FROM task_queue
+                    WHERE created_at >= NOW() - INTERVAL '30 days'
+                    ORDER BY created_at ASC
+                    """
+                )
+                rows = cur.fetchall()
+                if not rows:
+                    cur.execute("SELECT payload FROM task_queue ORDER BY created_at ASC")
+                    rows = cur.fetchall()
+            conn.close()
+            return [r["payload"] for r in rows if r.get("payload")]
+        else:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT payload FROM task_queue
+                WHERE created_at >= datetime('now', '-30 days')
+                ORDER BY created_at ASC
+                """
+            )
             rows = cursor.fetchall()
-
-        conn.close()
-        return [r[0] for r in rows if r[0]]
+            if not rows:
+                cursor.execute("SELECT payload FROM task_queue ORDER BY created_at ASC")
+                rows = cursor.fetchall()
+            conn.close()
+            return [r[0] for r in rows if r[0]]
     except Exception:
         return []
 

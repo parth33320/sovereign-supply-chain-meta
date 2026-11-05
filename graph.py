@@ -13,15 +13,26 @@ from demand_forecaster import forecast_sku_stockouts
 
 # Ensure task logging function
 def log_task(request_id: str, status: str, payload: str):
-    conn = sqlite3.connect('mock_sap.db')
-    cursor = conn.cursor()
-    cursor.execute("CREATE TABLE IF NOT EXISTS task_queue (id INTEGER PRIMARY KEY AUTOINCREMENT, request_id TEXT, status TEXT, payload TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
-    cursor.execute(
-        "INSERT INTO task_queue (request_id, status, payload) VALUES (?, ?, ?)",
-        (request_id, status, payload)
-    )
-    conn.commit()
-    conn.close()
+    from db import get_db_connection
+    conn, engine = get_db_connection()
+    try:
+        if engine == "postgres":
+            with conn.cursor() as cur:
+                cur.execute("CREATE TABLE IF NOT EXISTS task_queue (id SERIAL PRIMARY KEY, request_id TEXT, status TEXT, payload TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+                cur.execute(
+                    "INSERT INTO task_queue (request_id, status, payload) VALUES (%s, %s, %s)",
+                    (request_id, status, payload)
+                )
+        else:
+            cursor = conn.cursor()
+            cursor.execute("CREATE TABLE IF NOT EXISTS task_queue (id INTEGER PRIMARY KEY AUTOINCREMENT, request_id TEXT, status TEXT, payload TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+            cursor.execute(
+                "INSERT INTO task_queue (request_id, status, payload) VALUES (?, ?, ?)",
+                (request_id, status, payload)
+            )
+            conn.commit()
+    finally:
+        conn.close()
 
 # DPO Logger
 def log_dpo(prompt: str, chosen: str, rejected: str):
@@ -195,13 +206,10 @@ def execute_plan(state: AgentState) -> Dict:
 
     return {"messages": messages, "status": "executed"}
 
-import asyncio
-async def a2a_negotiate(state: AgentState) -> Dict:
+def a2a_negotiate_sync(state: AgentState) -> Dict:
     """
-    Simulates a multi-agent handshake between a Buyer Agent and a Supplier Agent
-    using two distinct Meta model personas.
-    The LLM calls are wrapped with asyncio.to_thread() so we never block the
-    event loop.
+    Synchronous implementation of multi-agent handshake between a Buyer Agent
+    and a Supplier Agent using two distinct Meta model personas.
     """
     from langchain_openai import ChatOpenAI
     from langchain_core.prompts import ChatPromptTemplate
@@ -230,10 +238,7 @@ async def a2a_negotiate(state: AgentState) -> Dict:
         ("human", "Stockout items:\n{stockouts}")
     ])
     buyer_chain = buyer_prompt_tmpl | llm
-
-    rfq_str = await asyncio.to_thread(
-        lambda: buyer_chain.invoke({"stockouts": stockouts_str}).content
-    )
+    rfq_str = buyer_chain.invoke({"stockouts": stockouts_str}).content
 
     a2a_transcript.append({
         "role": "buyer_agent",
@@ -248,10 +253,7 @@ async def a2a_negotiate(state: AgentState) -> Dict:
         ("human", "Request for Quotation:\n{rfq}")
     ])
     supplier_chain = supplier_prompt_tmpl | llm
-
-    quote_str = await asyncio.to_thread(
-        lambda: supplier_chain.invoke({"rfq": rfq_str}).content
-    )
+    quote_str = supplier_chain.invoke({"rfq": rfq_str}).content
 
     try:
         quote_json = json.loads(quote_str)
@@ -274,6 +276,11 @@ async def a2a_negotiate(state: AgentState) -> Dict:
     })
     messages.append(AIMessage(content=f"Supplier Agent quote received: {quote_json}"))
     return {"a2a_transcript": a2a_transcript, "messages": messages}
+
+async def a2a_negotiate(state: AgentState) -> Dict:
+    """Async wrapper around a2a_negotiate_sync."""
+    import asyncio
+    return await asyncio.to_thread(lambda: a2a_negotiate_sync(state))
 
 def draft_po(state: AgentState) -> Dict:
     """
@@ -344,7 +351,7 @@ builder.add_node("fetch_inventory", fetch_inventory)
 builder.add_node("draft_plan", draft_plan)
 builder.add_node("human_review", human_review)
 builder.add_node("execute_plan", execute_plan)
-builder.add_node("a2a_negotiate", a2a_negotiate)
+builder.add_node("a2a_negotiate", a2a_negotiate_sync)
 builder.add_node("draft_po", draft_po)
 
 builder.set_entry_point("global_oracle")
@@ -381,13 +388,17 @@ def get_graph():
     return builder.compile(interrupt_before=["human_review"])
 
 def get_graph_with_postgres():
+    DB_URI = os.environ.get("POSTGRES_DB_URI")
+    if not DB_URI or not DB_URI.strip():
+        # Fall back to in-memory/standard graph without Postgres checkpointer when POSTGRES_DB_URI is not set
+        return builder.compile(interrupt_before=["human_review"])
+
     connection_kwargs = {
         "autocommit": True,
         "prepare_threshold": 0,
         "sslmode": "require",
     }
 
-    DB_URI = os.environ.get("POSTGRES_DB_URI", "postgresql://postgres:postgres@localhost:5432/postgres")
     pool = ConnectionPool(conninfo=DB_URI, max_size=20, kwargs=connection_kwargs)
     checkpointer = PostgresSaver(pool)
     checkpointer.setup()

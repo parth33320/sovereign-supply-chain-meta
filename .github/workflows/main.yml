@@ -28,8 +28,6 @@ jobs:
     - name: Run Chaos Tests
       run: python tests/chaos_test.py
 
-    - name: Run Promptfoo Evals
+    - name: Run Supply Chain Eval Suite
       run: |
-        echo "Placeholder: Running Promptfoo automated regression testing for LLM prompts..."
-        # npx promptfoo eval
-        echo "Promptfoo Evals passed."
+        PYTHONPATH=. pytest tests/test_evals.py -s -v
