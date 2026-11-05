@@ -101,22 +101,16 @@ def extract_logistics_intent(transcription: str) -> str:
 
 
 def process_voice_input(audio_bytes: bytes) -> dict:
-    """
-    Transcribes audio using Meta muse-voice-transcribe-1.0.
-    Writes to a named temp file first (required for ffmpeg WebM seek).
-    """
     if not audio_bytes:
         return {"status": "error", "intent": "No audio bytes received."}
 
     tmp_in = None
     tmp_out = None
     try:
-        # Write raw audio to disk — ffmpeg needs a seekable file for EBML/WebM
         with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as f:
             f.write(audio_bytes)
             tmp_in = f.name
 
-        # Let ffmpeg auto-detect format; resample to 16kHz mono 16-bit PCM
         segment = AudioSegment.from_file(tmp_in)
         segment = segment.set_frame_rate(16000).set_channels(1).set_sample_width(2)
 
@@ -147,7 +141,7 @@ def process_voice_input(audio_bytes: bytes) -> dict:
             files={
                 "audio": ("audio.wav", wav_bytes, "audio/wav"),
                 "request": (None, json.dumps({"model": "muse-voice-transcribe-1.0"}), "application/json"),
-            },,
+            },
             timeout=30,
         )
         resp.raise_for_status()
