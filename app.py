@@ -302,6 +302,8 @@ if DEMO_MODE and st.query_params.get("demo_hitl") == "1":
     ]
 if 'active_nav_module' not in st.session_state:
     st.session_state.active_nav_module = "Orchestrator"
+if 'blocked_unknown_item' not in st.session_state:
+    st.session_state.blocked_unknown_item = None
 
 # Check intentional developer mode (?dev=1 or DEV_MODE=1)
 # User instruction: "Make it a collapsed Developer Tools item at the bottom of the navigation rail, visible only in intentional developer mode. Don't add an Operator/Developer toggle to the normal user interface."
@@ -406,6 +408,8 @@ def execute_agent_synchronous(dispatched_prompt: str, tenant_id: str, request_id
             if result:
                 final_messages = result.get("messages", [])
                 drafted_plan = result.get("drafted_plan", "")
+                status = result.get("status", "")
+                unknown_item = result.get("unknown_item")
 
                 for m in final_messages:
                     if isinstance(m, AIMessage):
@@ -423,7 +427,13 @@ def execute_agent_synchronous(dispatched_prompt: str, tenant_id: str, request_id
                                         "summary": summary
                                     })
 
-                st.session_state.pending_plan = drafted_plan
+                if status == "item_not_found" and unknown_item:
+                    st.session_state.blocked_unknown_item = {
+                        "item": unknown_item,
+                        "source": "Voice/Text Orchestrator Input"
+                    }
+                else:
+                    st.session_state.pending_plan = drafted_plan
         except Exception as e:
             st.error(f"Execution error: {e}")
 
@@ -518,6 +528,54 @@ if is_dev_mode and st.session_state.get("active_dev_subview"):
                     st.markdown(f"- **{sku}**: Stockout in **{days}** days (Confidence: :{color}[{conf.upper()}])")
 
     st.divider()
+
+
+# -----------------------------------------------------------------------------
+# Manager Approval HITL Panel (Triggered when input is blocked due to unknown item)
+# -----------------------------------------------------------------------------
+if st.session_state.get("blocked_unknown_item"):
+    blocked_info = st.session_state.blocked_unknown_item
+    unrecognized_item = blocked_info.get("item", "Unknown Item")
+    source_info = blocked_info.get("source", "System Input")
+
+    st.markdown(
+        f"""
+        <div class="control-card" style="border: 1px solid #f59e0b; background: #1c1917;">
+            <div class="control-card-header" style="border-bottom: 1px solid #451a03; color: #fbbf24;">
+                <span>⚠️ MANAGER APPROVAL REQUIRED — UNRECOGNIZED ITEM</span>
+                <span style="font-size: 0.75rem; color: #f59e0b; background: #451a03; padding: 2px 8px; border-radius: 4px;">BLOCKED</span>
+            </div>
+            <div style="font-size: 0.9rem; margin-bottom: 0.75rem; color: #fef3c7;">
+                An unrecognized item was detected from <strong>{source_info}</strong> and blocked by inventory governance:
+            </div>
+            <div style="background: #292524; padding: 0.75rem; border-radius: 6px; margin-bottom: 1rem; border-left: 4px solid #f59e0b;">
+                <span style="color: #94a3b8; font-size: 0.82rem; text-transform: uppercase;">Unrecognized Item / SKU:</span><br/>
+                <strong style="font-size: 1.1rem; color: #f8fafc;">{unrecognized_item}</strong>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    col_mg_app, col_mg_cancel = st.columns([1, 1])
+    with col_mg_app:
+        if st.button("Request Manager Approval to Add", type="primary", key="manager_approval_add_btn", use_container_width=True):
+            log_dpo(
+                prompt=f"Manager approval request to add new inventory item: {unrecognized_item} (tenant: {tenant_id})",
+                chosen="APPROVED",
+                rejected="REJECTED"
+            )
+            st.session_state.blocked_unknown_item = None
+            st.success(f"Manager approval requested to add item '{unrecognized_item}'. Logged successfully.")
+            st.rerun()
+
+    with col_mg_cancel:
+        if st.button("Cancel", key="manager_approval_cancel_btn", use_container_width=True):
+            st.session_state.blocked_unknown_item = None
+            st.info("Manager approval request canceled.")
+            st.rerun()
+
+    st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
 
 
 # -----------------------------------------------------------------------------
@@ -716,15 +774,37 @@ if selected_module == "Orchestrator":
 
                                 st.session_state.pending_prompt = dispatched_prompt
                                 if DEMO_MODE:
-                                    resp_plan = (
-                                        f"Orchestrator Analysis for '{transcript}':\n"
-                                        f"• Tenant: {tenant_id}\n"
-                                        f"• Stock level verified across regional hubs.\n"
-                                        f"• Draft reallocation route: Warehouse-West to Distribution-East.\n"
-                                        f"• Optimal carrier dispatch generated with ETA 24 hours."
-                                    )
-                                    st.session_state.chat_history.append({"role": "assistant", "content": resp_plan})
-                                    st.session_state.demo_pending_plan = resp_plan
+                                    from graph import extract_item_candidates
+                                    from mcp_server import read_inventory
+                                    inv_json = read_inventory(tenant_id)
+                                    inv_items = json.loads(inv_json)
+                                    valid_names = [itm.get("item_name", "").strip() for itm in inv_items if itm.get("item_name")]
+                                    valid_names_lower = {name.lower(): name for name in valid_names}
+                                    candidates = extract_item_candidates(transcript)
+                                    unknown_found = None
+                                    for c in candidates:
+                                        c_lower = c.lower()
+                                        if c_lower not in valid_names_lower and not any(c_lower in v or v in c_lower for v in valid_names_lower):
+                                            unknown_found = c
+                                            break
+
+                                    if unknown_found:
+                                        err_msg = f"Item '{unknown_found}' not found in inventory. Please retry or request manager approval to add new item"
+                                        st.session_state.chat_history.append({"role": "assistant", "content": err_msg})
+                                        st.session_state.blocked_unknown_item = {
+                                            "item": unknown_found,
+                                            "source": "Voice/Text Orchestrator Input"
+                                        }
+                                    else:
+                                        resp_plan = (
+                                            f"Orchestrator Analysis for '{transcript}':\n"
+                                            f"• Tenant: {tenant_id}\n"
+                                            f"• Stock level verified across regional hubs.\n"
+                                            f"• Draft reallocation route: Warehouse-West to Distribution-East.\n"
+                                            f"• Optimal carrier dispatch generated with ETA 24 hours."
+                                        )
+                                        st.session_state.chat_history.append({"role": "assistant", "content": resp_plan})
+                                        st.session_state.demo_pending_plan = resp_plan
                                 else:
                                     execute_agent_synchronous(dispatched_prompt, tenant_id, request_id)
                                 st.rerun()
@@ -748,6 +828,47 @@ if selected_module == "Orchestrator":
 
                 st.session_state.pending_prompt = dispatched_prompt
                 if DEMO_MODE:
+                    from graph import extract_item_candidates
+                    from mcp_server import read_inventory
+                    inv_json = read_inventory(tenant_id)
+                    inv_items = json.loads(inv_json)
+                    valid_names = [itm.get("item_name", "").strip() for itm in inv_items if itm.get("item_name")]
+                    valid_names_lower = {name.lower(): name for name in valid_names}
+                    candidates = extract_item_candidates(prompt)
+                    unknown_found = None
+                    for c in candidates:
+                        c_lower = c.lower()
+                        if c_lower not in valid_names_lower and not any(c_lower in v or v in c_lower for v in valid_names_lower):
+                            unknown_found = c
+                            break
+
+                    if unknown_found:
+                        err_msg = f"Item '{unknown_found}' not found in inventory. Please retry or request manager approval to add new item"
+                        st.session_state.chat_history.append({"role": "assistant", "content": err_msg})
+                        st.session_state.blocked_unknown_item = {
+                            "item": unknown_found,
+                            "source": "Voice/Text Orchestrator Input"
+                        }
+                    else:
+                        resp_plan = (
+                            f"Orchestrator Analysis for '{prompt}':\n"
+                            f"• Tenant: {tenant_id}\n"
+                            f"• Stock level verified across regional hubs.\n"
+                            f"• Draft reallocation route: Warehouse-West to Distribution-East.\n"
+                            f"• Optimal carrier dispatch generated with ETA 24 hours."
+                        )
+                        st.session_state.chat_history.append({"role": "assistant", "content": resp_plan})
+                        st.session_state.demo_pending_plan = resp_plan
+                        st.session_state.demo_paused_for_hitl = True
+                        st.session_state.demo_pending_po = {
+                            "po_id": "PO-948201",
+                            "items": [{"sku": "SKU-STEEL-BEAMS", "qty": 500}],
+                            "restock_quantity": 500,
+                            "price_per_unit": 42.50,
+                            "lead_time_days": 3,
+                            "supplier": "Apex Logistics Supplier AI"
+                        }
+                        st.session_state.pending_prompt = dispatched_prompt
                     resp_plan = (
                         f"Orchestrator Analysis for '{prompt}':\n"
                         f"• Tenant: {tenant_id}\n"
@@ -806,9 +927,17 @@ elif selected_module == "Warehouse":
                 if st.session_state.get("last_uploaded_image_id") != image_id:
                     st.session_state.last_uploaded_image_id = image_id
                     with st.spinner("Analyzing shelf image with SAM 3.1..."):
-                        analysis = analyze_shelf_image(image_bytes)
-                        st.session_state.shelf_context = analysis
-                        st.rerun()
+                        analysis = analyze_shelf_image(image_bytes, tenant_id=tenant_id)
+                        if "error" in analysis:
+                            st.session_state.shelf_context = None
+                            st.session_state.blocked_unknown_item = {
+                                "item": analysis.get("unknown_item", "Unknown Item"),
+                                "source": "Warehouse Shelf Vision"
+                            }
+                            st.error(analysis["error"])
+                        else:
+                            st.session_state.shelf_context = analysis
+                            st.rerun()
 
     with col_ctx:
         st.markdown(
@@ -878,10 +1007,19 @@ elif selected_module == "Documents":
                 if st.session_state.get("last_uploaded_doc_id") != doc_id:
                     st.session_state.last_uploaded_doc_id = doc_id
                     with st.spinner("Extracting document data with muse-image-1.0..."):
-                        extraction = extract_document_data(doc_bytes)
-                        st.session_state.extracted_document = extraction
-                        st.session_state.prefilled_prompt = format_logistics_instruction(extraction)
-                        st.rerun()
+                        extraction = extract_document_data(doc_bytes, tenant_id=tenant_id)
+                        if "error" in extraction:
+                            st.session_state.extracted_document = None
+                            st.session_state.prefilled_prompt = ""
+                            st.session_state.blocked_unknown_item = {
+                                "item": extraction.get("unknown_item", "Unknown Item"),
+                                "source": "Document/Invoice Ingestion"
+                            }
+                            st.error(extraction["error"])
+                        else:
+                            st.session_state.extracted_document = extraction
+                            st.session_state.prefilled_prompt = format_logistics_instruction(extraction)
+                            st.rerun()
 
     with col_doc_view:
         st.markdown(
