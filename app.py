@@ -20,7 +20,6 @@ from portfolio import (
     get_connection as get_portfolio_connection,
 )
 from graph import get_graph_with_postgres, log_dpo
-from generate_synthetic_load import generate_load
 from langchain_core.messages import HumanMessage, AIMessage
 
 # Load environment variables
@@ -644,16 +643,14 @@ if selected_module == "Orchestrator":
         chat_container = st.container()
         with chat_container:
             if not st.session_state.chat_history:
-                st.markdown(
-                    """
-                    <div style="text-align: center; padding: 3rem 1rem; color: #64748b; border: 1px dashed #232b3e; border-radius: 8px;">
-                        <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">💬</div>
-                        <div style="font-weight: 600; color: #94a3b8;">Orchestrator Ready</div>
-                        <div style="font-size: 0.85rem; margin-top: 0.25rem;">Dispatch voice or text logistics instructions to begin.</div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
+                st.markdown("""
+<div style="text-align: center; padding: 2rem 1rem; color: #64748b; border: 1px dashed #232b3e; border-radius: 8px;">
+    <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">💬</div>
+    <div style="font-weight: 600; color: #94a3b8; margin-bottom: 0.5rem;">Orchestrator Ready</div>
+    <div style="font-size: 0.82rem; color: #475569;">Try: <em>"Emergency: Widget-A is out of stock, get best price now"</em></div>
+    <div style="font-size: 0.82rem; color: #475569; margin-top: 0.25rem;">Or: <em>"Rebalance steel beam inventory across all warehouses"</em></div>
+</div>
+""", unsafe_allow_html=True)
             for msg in st.session_state.chat_history:
                 with st.chat_message(msg["role"]):
                     st.write(msg["content"])
@@ -759,7 +756,6 @@ if selected_module == "Orchestrator":
                         f"• Optimal carrier dispatch generated with ETA 24 hours."
                     )
                     st.session_state.chat_history.append({"role": "assistant", "content": resp_plan})
-                    st.session_state.demo_pending_plan = resp_plan
                     st.session_state.demo_pending_plan = resp_plan
                     st.session_state.demo_paused_for_hitl = True
                     st.session_state.demo_pending_po = {
