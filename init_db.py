@@ -20,6 +20,7 @@ from db import is_postgres_configured, get_db_connection
 
 SEED_DATA: List[Tuple[str, str, int, int, float, str]] = [
     # --- Tenant A (Electronics & Industrial Hardware) ---
+    ('Tenant_A', 'Widget-A', 50, 7, 8.20, 'SUP_APEX'),
     ('Tenant_A', 'Semiconductors', 500, 14, 1500.50, 'SUP_001'),
     ('Tenant_A', 'Copper Wire Spools', 2000, 7, 300.00, 'SUP_002'),
     ('Tenant_A', 'Lithium Batteries', 100, 21, 2500.00, 'SUP_003'),
@@ -199,6 +200,13 @@ def init_postgres(db_uri: str):
 
 def init_db():
     init_sqlite()
+
+    # Always initialize portfolio database and seed demo data unconditionally
+    try:
+        from portfolio import init_portfolio_db
+        init_portfolio_db()
+    except Exception as e:
+        print(f"Warning: Failed to initialize portfolio DB ({e}).")
 
     db_uri = os.environ.get("POSTGRES_DB_URI")
     if db_uri and db_uri.strip() and HAS_PSYCOPG:

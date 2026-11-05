@@ -39,6 +39,11 @@ def transcribe_audio(audio_bytes: bytes) -> str:
 
     import requests
     api_key = os.environ.get("META_API_KEY")
+    if not api_key:
+        raise ValueError(
+            "META_API_KEY is not set. "
+            "Add your Meta AI API key from dev.meta.ai to your environment variables."
+        )
 
     response = requests.post(
         "https://api.meta.ai/v1/asr/transcribe",
@@ -132,6 +137,11 @@ def process_voice_input(audio_bytes: bytes) -> dict:
                     pass
 
     api_key = os.environ.get("META_API_KEY")
+    if not api_key:
+        return {
+            "status": "error",
+            "intent": "META_API_KEY is not set. Add your Meta AI API key from dev.meta.ai to your environment variables."
+        }
     base_url = os.environ.get("META_API_BASE_URL", "https://api.meta.ai/v1")
 
     try:

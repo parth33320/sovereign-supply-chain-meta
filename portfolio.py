@@ -89,12 +89,11 @@ def init_portfolio_db(db_path: Optional[str] = None):
 
     conn.commit()
 
-    # Pre-seed if DEMO_MODE or if table is empty in DEMO_MODE
-    demo_mode = os.environ.get("DEMO_MODE") == "1"
-    cursor.execute("SELECT COUNT(*) FROM initiatives")
-    init_count = cursor.fetchone()[0]
+    # Pre-seed if table is empty or if Widget-A demo item is missing
+    cursor.execute("SELECT COUNT(*) FROM work_items WHERE title LIKE '%Widget-A%'")
+    widget_count = cursor.fetchone()[0]
 
-    if demo_mode and init_count == 0:
+    if widget_count == 0:
         seed_demo_data(conn)
 
     conn.close()
@@ -320,5 +319,8 @@ def get_evms_snapshot(initiative_id: str) -> Dict[str, float]:
         "cpi": round(cpi, 3)
     }
 
-# Initialize on import
-init_portfolio_db()
+# Initialize on import safely
+try:
+    init_portfolio_db()
+except Exception:
+    pass

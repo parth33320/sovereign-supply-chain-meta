@@ -15,12 +15,6 @@ from voice_handler import process_voice_input
 from warehouse_vision import analyze_shelf_image
 from document_vision import extract_document_data, format_logistics_instruction
 from demand_forecaster import forecast_sku_stockouts
-from portfolio import (
-    create_initiative,
-    get_wsjf_ranked_backlog,
-    get_evms_snapshot,
-    get_connection as get_portfolio_connection,
-)
 from graph import get_graph_with_postgres, log_dpo
 from langchain_core.messages import HumanMessage, AIMessage
 from db import execute_query, execute_mutation, get_db_connection
@@ -297,6 +291,12 @@ button[kind="secondary"]:hover, .stButton > button:not([kind="primary"]):hover {
     background-color: #11253e;
     border-color: #3b82f6;
     color: #93c5fd;
+}
+
+.alert-banner.success {
+    background-color: #0f2e24;
+    border-color: #10b981;
+    color: #34d399;
 }
 </style>
 """
@@ -665,6 +665,11 @@ if is_dev_mode and st.session_state.get("active_dev_subview"):
                 st.error(friendly_error(e))
 
     elif subview == "Analytics Dashboard":
+        try:
+            from portfolio import get_evms_snapshot
+        except Exception:
+            pass
+
         st.subheader("Analytics Dashboard")
         with st.expander("Disruption Alert History", expanded=True):
             if not st.session_state.disruption_history:
@@ -958,6 +963,36 @@ if is_admin_mode:
 # Module 1: Orchestrator
 # -----------------------------------------------------------------------------
 elif selected_module == "Orchestrator":
+    # Friendly Status Banner (exactly one banner shown)
+    postgres_uri = os.environ.get("POSTGRES_DB_URI", "").strip()
+    if DEMO_MODE:
+        st.markdown(
+            """
+            <div class="alert-banner info">
+                🎭 <strong>Demo Mode:</strong> AI responses are simulated. Set DEMO_MODE=0 and POSTGRES_DB_URI for live Meta AI calls.
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+    elif not postgres_uri:
+        st.markdown(
+            """
+            <div class="alert-banner warning">
+                ⚠️ <strong>No database configured.</strong> Using local SQLite fallback. Add POSTGRES_DB_URI for persistent state across sessions.
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+    else:
+        st.markdown(
+            """
+            <div class="alert-banner success">
+                ✅ <strong>Live Mode:</strong> Connected to Meta AI and PostgreSQL.
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
     if st.session_state.disruption_history:
         latest_alert = st.session_state.disruption_history[-1]
         sev = latest_alert.get("severity", "low").lower()
@@ -1127,10 +1162,17 @@ elif selected_module == "Orchestrator":
                             st.session_state.auto_submit_prompt = transcript
                             st.rerun()
                     else:
-                        show_user_error(
-                            message=f"We had trouble processing your voice audio: {voice_result.get('intent', 'Audio input unclear')}.",
-                            suggestion="Ensure your microphone is connected, speak clearly within 3 feet, or type your instruction directly in the chat box."
-                        )
+                        err_intent = voice_result.get("intent", "Audio input unclear")
+                        if "META_API_KEY" in err_intent or "ValueError" in err_intent:
+                            show_user_error(
+                                message="⚠️ Voice transcription requires a META_API_KEY. Add it to your Render environment variables.",
+                                suggestion="Add META_API_KEY to your environment variables or .env file, or type your instruction directly in the chat box."
+                            )
+                        else:
+                            show_user_error(
+                                message=f"We had trouble processing your voice audio: {err_intent}.",
+                                suggestion="Ensure your microphone is connected, speak clearly within 3 feet, or type your instruction directly in the chat box."
+                            )
 
         # Text Logistics Command Input
         prompt = st.chat_input("Enter logistics instruction...")
