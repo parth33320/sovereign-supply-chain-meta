@@ -1,8 +1,10 @@
 import os
 import re
 import json
+import time
 import logging
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 from typing import Dict, Any, List
 import requests
 from langchain_openai import ChatOpenAI
@@ -63,18 +65,28 @@ def fetch_disruption_alert() -> Dict[str, Any]:
     Fetches supply chain RSS feeds, queries the Meta LLM for disruptions,
     and returns a structured alert dictionary:
     {"alert": bool, "severity": "low"|"medium"|"high", "summary": str}
+    Total cap: 8 seconds max for all RSS fetches combined.
     """
     headlines: List[str] = []
+    ex = ThreadPoolExecutor(max_workers=2)
     try:
-        for feed_url in RSS_FEEDS:
+        deadline = time.time() + 8
+        futures = [ex.submit(_fetch_feed_headlines, url, 5) for url in RSS_FEEDS]
+        for f in futures:
+            remaining = max(0, deadline - time.time())
             try:
-                headlines.extend(_fetch_feed_headlines(feed_url, limit=5))
-            except Exception as e:
-                logger.warning(f"Error fetching feed {feed_url}: {e}")
+                headlines.extend(f.result(timeout=min(remaining, 8)))
+            except Exception:
+                pass
+    except Exception:
+        return dict(DEFAULT_FALLBACK)
+    finally:
+        ex.shutdown(wait=False, cancel_futures=True)
 
-        if not headlines:
-            return dict(DEFAULT_FALLBACK)
+    if not headlines:
+        return dict(DEFAULT_FALLBACK)
 
+    try:
         system_prompt = """You are an expert supply chain risk analyst.
 Analyze the following recent headlines from supply chain and freight news feeds to determine if there are significant ongoing disruptions (e.g., strikes, port closures, severe weather, canal blockages, capacity shortages, geopolitical blockades).
 

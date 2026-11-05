@@ -39,14 +39,14 @@ def read_inventory(tenant_id: str) -> str:
     Args:
         tenant_id: The ID of the tenant (e.g., 'Tenant_A' or 'Tenant_B').
     """
-    query = f"SELECT * FROM inventory WHERE tenant_id = '{tenant_id}'"
-    if not is_safe_query(query):
-        return json.dumps({"error": "Unsafe query detected. Operation blocked."})
-
-    log_sql(query, tenant_id)
+    sql = "SELECT * FROM inventory WHERE tenant_id = ?"
+    log_sql(f"{sql} [param: {tenant_id}]", tenant_id)
 
     try:
-        rows = execute_query(query)
+        rows = execute_query(
+            sql,
+            params=[tenant_id]
+        )
     except Exception as e:
         return json.dumps({"error": str(e)})
 

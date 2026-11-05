@@ -35,14 +35,12 @@ def log_task(request_id: str, status: str, payload: str):
         conn.close()
 
 # DPO Logger
+from db import execute_mutation
 def log_dpo(prompt: str, chosen: str, rejected: str):
-    data = {
-        "prompt": prompt,
-        "chosen": chosen,
-        "rejected": rejected
-    }
-    with open("dpo_training_data.json", "a") as f:
-        f.write(json.dumps(data) + "\n")
+    execute_mutation(
+        "INSERT INTO dpo_logs (prompt, chosen, rejected) VALUES (?, ?, ?)",
+        [prompt, chosen, rejected]
+    )
 
 # State definition
 class AgentState(TypedDict, total=False):

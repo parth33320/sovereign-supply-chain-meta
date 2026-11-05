@@ -19,3 +19,5 @@ pydub
 pytest
 psycopg
 google-generativeai
+fastapi
+uvicorn
