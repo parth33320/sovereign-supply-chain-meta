@@ -20,6 +20,7 @@ from db import is_postgres_configured, get_db_connection
 
 SEED_DATA: List[Tuple[str, str, int, int, float, str]] = [
     # --- Tenant A (Electronics & Industrial Hardware) ---
+    ('Tenant_A', 'Widget-A', 50, 7, 8.20, 'SUP_APEX'),
     ('Tenant_A', 'Semiconductors', 500, 14, 1500.50, 'SUP_001'),
     ('Tenant_A', 'Copper Wire Spools', 2000, 7, 300.00, 'SUP_002'),
     ('Tenant_A', 'Lithium Batteries', 100, 21, 2500.00, 'SUP_003'),
@@ -82,6 +83,10 @@ def init_sqlite():
     ''')
 
     cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_inv_tenant_qty ON inventory(tenant_id, quantity);
+    ''')
+
+    cursor.execute('''
         CREATE TABLE IF NOT EXISTS task_queue (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             request_id TEXT NOT NULL,
@@ -103,6 +108,16 @@ def init_sqlite():
             spot_rate REAL NOT NULL,
             supplier_id TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'PENDING',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS dpo_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            prompt TEXT,
+            chosen TEXT,
+            rejected TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
@@ -134,6 +149,10 @@ def init_postgres(db_uri: str):
         ''')
 
         cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_inv_tenant_qty ON inventory(tenant_id, quantity);
+        ''')
+
+        cursor.execute('''
             CREATE TABLE IF NOT EXISTS task_queue (
                 id SERIAL PRIMARY KEY,
                 request_id TEXT NOT NULL,
@@ -159,6 +178,16 @@ def init_postgres(db_uri: str):
             )
         ''')
 
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS dpo_logs (
+                id SERIAL PRIMARY KEY,
+                prompt TEXT,
+                chosen TEXT,
+                rejected TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
         cursor.execute('DELETE FROM inventory')
         cursor.executemany('''
             INSERT INTO inventory (tenant_id, item_name, quantity, transit_time, spot_rate, supplier_id)
@@ -171,6 +200,13 @@ def init_postgres(db_uri: str):
 
 def init_db():
     init_sqlite()
+
+    # Always initialize portfolio database and seed demo data unconditionally
+    try:
+        from portfolio import init_portfolio_db
+        init_portfolio_db()
+    except Exception as e:
+        print(f"Warning: Failed to initialize portfolio DB ({e}).")
 
     db_uri = os.environ.get("POSTGRES_DB_URI")
     if db_uri and db_uri.strip() and HAS_PSYCOPG:

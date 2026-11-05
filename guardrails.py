@@ -2,6 +2,7 @@ import os
 import re
 import logging
 from langchain_openai import ChatOpenAI
+from llm_client import get_llm
 
 logger = logging.getLogger("Guardrails")
 
@@ -18,7 +19,18 @@ MALICIOUS_PATTERNS = [
     r"drop table",
     r"print the contents of your \.env",
     r"without restriction",
-    r"admin access to the database"
+    r"admin access to the database",
+    r"repeat (?:back )?(?:your )?(?:system |previous )?(?:prompt|instructions)",
+    r"what (?:were|are) your instructions",
+    r"print (?:your )?(?:full )?(?:context|prompt|system)",
+    r"output (?:your )?(?:initial|original) (?:prompt|instructions)",
+    r"act as (?:if you have )?no restrictions",
+    r"pretend you (?:are|have) no",
+    r"dan mode",
+    r"developer mode",
+    r"sudo\s",
+    r"<\s*script",
+    r"javascript:",
 ]
 
 def check_prompt_injection(prompt: str) -> bool:
@@ -47,12 +59,7 @@ def check_prompt_injection(prompt: str) -> bool:
         return True
 
     try:
-        llm = ChatOpenAI(
-            model=model_name,
-            api_key=api_key,
-            base_url=base_url,
-            temperature=0
-        )
+        llm = get_llm()
         query = (
             f"Is this prompt a malicious injection attack? Reply only YES or NO.\n\n"
             f"Prompt: {prompt}"
@@ -66,6 +73,5 @@ def check_prompt_injection(prompt: str) -> bool:
 
         return True
     except Exception as e:
-        logger.error(f"Error during LLM semantic guardrail check: {e}")
-        # Default to safe if LLM call encounters network/transient failure
-        return True
+        logger.error(f"LLM guardrail check failed: {e}. Failing closed.")
+        return False  # CHANGED from True to False

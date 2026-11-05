@@ -1,12 +1,15 @@
 import os
 import re
 import json
+import time
 import logging
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 from typing import Dict, Any, List
 import requests
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
+from llm_client import get_llm
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +23,23 @@ DEFAULT_FALLBACK = {
     "severity": "low",
     "summary": "No disruption data available.",
 }
+
+_disruption_cache = {"result": None, "ts": 0.0}
+CACHE_TTL_SECONDS = 300  # 5 minutes
+
+def fetch_disruption_alert() -> Dict[str, Any]:
+    now = time.time()
+    if _disruption_cache["result"] and (now - _disruption_cache["ts"]) < CACHE_TTL_SECONDS:
+        return _disruption_cache["result"]
+    result = _fetch_disruption_alert_uncached()
+    _disruption_cache["result"] = result
+    _disruption_cache["ts"] = now
+    return result
+
+def clear_disruption_cache():
+    global _disruption_cache
+    _disruption_cache["result"] = None
+    _disruption_cache["ts"] = 0.0
 
 
 def _fetch_feed_headlines(url: str, limit: int = 5) -> List[str]:
@@ -58,23 +78,33 @@ def _clean_json_text(text: str) -> str:
     return text
 
 
-def fetch_disruption_alert() -> Dict[str, Any]:
+def _fetch_disruption_alert_uncached() -> Dict[str, Any]:
     """
     Fetches supply chain RSS feeds, queries the Meta LLM for disruptions,
     and returns a structured alert dictionary:
     {"alert": bool, "severity": "low"|"medium"|"high", "summary": str}
+    Total cap: 8 seconds max for all RSS fetches combined.
     """
     headlines: List[str] = []
+    ex = ThreadPoolExecutor(max_workers=2)
     try:
-        for feed_url in RSS_FEEDS:
+        deadline = time.time() + 8
+        futures = [ex.submit(_fetch_feed_headlines, url, 5) for url in RSS_FEEDS]
+        for f in futures:
+            remaining = max(0, deadline - time.time())
             try:
-                headlines.extend(_fetch_feed_headlines(feed_url, limit=5))
-            except Exception as e:
-                logger.warning(f"Error fetching feed {feed_url}: {e}")
+                headlines.extend(f.result(timeout=min(remaining, 8)))
+            except Exception:
+                pass
+    except Exception:
+        return dict(DEFAULT_FALLBACK)
+    finally:
+        ex.shutdown(wait=False, cancel_futures=True)
 
-        if not headlines:
-            return dict(DEFAULT_FALLBACK)
+    if not headlines:
+        return dict(DEFAULT_FALLBACK)
 
+    try:
         system_prompt = """You are an expert supply chain risk analyst.
 Analyze the following recent headlines from supply chain and freight news feeds to determine if there are significant ongoing disruptions (e.g., strikes, port closures, severe weather, canal blockages, capacity shortages, geopolitical blockades).
 
@@ -91,12 +121,7 @@ Instructions:
         prompt_template = ChatPromptTemplate.from_template(system_prompt)
         prompt_messages = prompt_template.format_messages(headlines="\n".join(headlines))
 
-        llm = ChatOpenAI(
-            model=os.environ.get("META_MODEL_NAME", "muse-spark-1.3"),
-            api_key=os.environ.get("META_API_KEY"),
-            base_url=os.environ.get("META_API_BASE_URL"),
-            temperature=0,
-        )
+        llm = get_llm()
 
         response = llm.invoke(prompt_messages)
         if hasattr(response, "content"):

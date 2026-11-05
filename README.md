@@ -1,3 +1,22 @@
+## Quickstart
+```bash
+git clone <repo-url>
+cd sovereign-supply-chain-meta
+cp .env.example .env
+# Edit .env and add your META_API_KEY
+pip install -r requirements.txt && python init_db.py && streamlit run app.py
+```
+
+Then follow `demo-assets/README_DEMO.md` for the full demo walkthrough.
+
+### One-command quickstart
+```bash
+git clone <repo>
+cd sovereign-supply-chain-meta
+cp .env.example .env  # add your META_API_KEY
+DEMO_MODE=1 streamlit run app.py
+```
+
 # Sovereign Supply Chain Orchestrator
 
 [![Live Demo](https://img.shields.io/badge/Demo-Live%20on%20Render-brightgreen)](https://sovereign-supply-chain-meta.onrender.com)
@@ -16,6 +35,8 @@ Pre-existing: LangGraph supply chain skeleton with SQLite, Celery workers, and b
 ## Live Demo
 The live application is deployed and hosted on Render:
 - **Live Demo URL**: [https://sovereign-supply-chain-meta.onrender.com](https://sovereign-supply-chain-meta.onrender.com)
+
+*Note: Set `DEMO_MODE=1` for instant demo without database setup.*
 
 ---
 
@@ -133,12 +154,12 @@ Across sprints S1 through S14, we transformed the baseline skeleton into an inte
 
 This platform standardizes entirely on Meta AI foundation models:
 
-| Model | Purpose & Architectural Role |
-|---|---|
-| **`muse-spark-1.3`** | Core reasoning, semantic guardrail classification, live disruption radar synthesis, logistics reallocation planning, and multi-agent A2A negotiation (Buyer & Supplier personas). Default model across all LLM nodes. |
-| **`muse-voice-transcribe-1.0`** | Speech-to-text audio transcription engine for verbal logistics queries and hands-free warehouse commands via `voice_handler.py`. |
-| **`muse-image-1.0`** | Multimodal document processing model that extracts structured data from shipping invoices, bills of lading, and freight manifests. |
-| **`sam-3.1`** | Segment Anything Model 3.1 used for warehouse computer vision; segments shelf imagery to visually identify low-stock positions and empty SKU bins. |
+| Model | Purpose & Architectural Role | Endpoint / Usage |
+|---|---|---|
+| **`muse-spark-1.3`** | Core reasoning, semantic guardrail classification, live disruption radar synthesis, logistics reallocation planning, demand forecasting, and multi-agent A2A negotiation (Buyer & Supplier personas). Default model across all LLM nodes. | Orchestration, forecasting, A2A negotiation (`/chat/completions`) |
+| **`muse-voice-transcribe-1.0`** | Speech-to-text audio transcription engine for verbal logistics queries and hands-free warehouse commands via `voice_handler.py`. | Voice command input (`POST /v1/asr/transcribe`) |
+| **`muse-image-1.0`** | Multimodal document processing model that extracts structured data from shipping invoices, bills of lading, and freight manifests. | Invoice and document extraction (`/chat/completions`) |
+| **`sam-3.1`** | Segment Anything Model 3.1 used for warehouse computer vision; segments shelf imagery to visually identify low-stock positions and empty SKU bins. | Warehouse shelf image segmentation (`/chat/completions`) |
 
 ---
 
@@ -179,7 +200,7 @@ A simple, everyday guide for warehouse supervisors, logistics staff, and procure
   - If a specific item name was mistyped, look at the suggestion note (for example: *"Did you mean 'Semiconductors'?"*) and try re-submitting with the suggested spelling.
 
 ### Requesting Manager Approval for New Inventory
-- If you need to add, edit, or remove catalog items, open the manager portal by adding `?admin=1&password=sovereign` to your browser URL.
+- If you need to add, edit, or remove catalog items, open the manager portal by adding `?admin_token=<ADMIN_SECRET>` to your browser URL.
 - In the sidebar, select the **Admin** panel.
 - Go to the **➕ Add New Item** tab, type the SKU name, starting quantity, transit time in days, spot price, and supplier code.
 - Click **Submit for Approval**.
@@ -200,18 +221,31 @@ Clone the repository and copy the environment template:
 cp .env.example .env
 ```
 
+## Environment Variables
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `META_API_KEY` | Yes | none | Your Meta AI API key from dev.meta.ai |
+| `META_API_BASE_URL` | No | https://api.meta.ai/v1 | Meta API base URL |
+| `META_MODEL_NAME` | No | muse-spark-1.3 | Main orchestration model |
+| `DEMO_MODE` | No | 0 | Set to 1 for simulated demo without PostgreSQL |
+| `POSTGRES_DB_URI` | No | SQLite fallback | PostgreSQL for persistent state across sessions |
+| `CELERY_BROKER_URL` | No | redis://localhost:6379/0 | Redis message broker URL for Celery workers |
+| `CELERY_RESULT_BACKEND` | No | redis://localhost:6379/0 | Redis result backend URL for Celery workers |
+
 Configure the following variables in `.env`:
 ```env
 META_API_KEY=your_meta_api_key_here
 META_API_BASE_URL=https://api.meta.ai/v1
 META_MODEL_NAME=muse-spark-1.3
+DEMO_MODE=1
 
 # PostgreSQL LangGraph Checkpointer (optional for local fallback; required in production)
-POSTGRES_DB_URI=postgresql://postgres:postgres@localhost:5432/postgres
+# POSTGRES_DB_URI=postgresql://postgres:postgres@localhost:5432/postgres
 
 # Celery Redis Broker/Backend
-CELERY_BROKER_URL=redis://localhost:6379/0
-CELERY_RESULT_BACKEND=redis://localhost:6379/0
+# CELERY_BROKER_URL=redis://localhost:6379/0
+# CELERY_RESULT_BACKEND=redis://localhost:6379/0
 ```
 
 ### 2. Local Infrastructure (Docker)

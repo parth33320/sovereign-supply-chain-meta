@@ -5,9 +5,16 @@ from unittest.mock import patch, MagicMock
 
 # Attempt import of disruption_radar
 try:
-    from disruption_radar import fetch_disruption_alert
+    from disruption_radar import fetch_disruption_alert, clear_disruption_cache
 except ImportError:
     fetch_disruption_alert = None
+    clear_disruption_cache = lambda: None
+
+@pytest.fixture(autouse=True)
+def reset_cache_between_tests():
+    clear_disruption_cache()
+    yield
+    clear_disruption_cache()
 
 SAMPLE_RSS_XML = """<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
@@ -59,8 +66,8 @@ def test_fetch_disruption_alert_import():
 
 
 @patch("disruption_radar.requests.get")
-@patch("disruption_radar.ChatOpenAI")
-def test_fetch_disruption_alert_happy_path(mock_chat_openai_cls, mock_requests_get):
+@patch("disruption_radar.get_llm")
+def test_fetch_disruption_alert_happy_path(mock_get_llm, mock_requests_get):
     # Mock RSS response
     mock_resp = MagicMock()
     mock_resp.status_code = 200
@@ -72,7 +79,7 @@ def test_fetch_disruption_alert_happy_path(mock_chat_openai_cls, mock_requests_g
     mock_ai_message = MagicMock()
     mock_ai_message.content = '```json\n{"alert": true, "severity": "high", "summary": "Port strike and canal drought causing severe supply chain delays."}\n```'
     mock_llm_instance.invoke.return_value = mock_ai_message
-    mock_chat_openai_cls.return_value = mock_llm_instance
+    mock_get_llm.return_value = mock_llm_instance
 
     result = fetch_disruption_alert()
 
@@ -87,8 +94,8 @@ def test_fetch_disruption_alert_happy_path(mock_chat_openai_cls, mock_requests_g
 
 
 @patch("disruption_radar.requests.get")
-@patch("disruption_radar.ChatOpenAI")
-def test_fetch_disruption_alert_no_disruptions(mock_chat_openai_cls, mock_requests_get):
+@patch("disruption_radar.get_llm")
+def test_fetch_disruption_alert_no_disruptions(mock_get_llm, mock_requests_get):
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_resp.text = SAMPLE_BENIGN_RSS_XML
@@ -98,7 +105,7 @@ def test_fetch_disruption_alert_no_disruptions(mock_chat_openai_cls, mock_reques
     mock_ai_message = MagicMock()
     mock_ai_message.content = '{"alert": false, "severity": "low", "summary": "No active supply chain disruptions identified in recent news."}'
     mock_llm_instance.invoke.return_value = mock_ai_message
-    mock_chat_openai_cls.return_value = mock_llm_instance
+    mock_get_llm.return_value = mock_llm_instance
 
     result = fetch_disruption_alert()
 
@@ -138,8 +145,8 @@ def test_fetch_disruption_alert_invalid_xml(mock_requests_get):
 
 
 @patch("disruption_radar.requests.get")
-@patch("disruption_radar.ChatOpenAI")
-def test_fetch_disruption_alert_invalid_llm_json(mock_chat_openai_cls, mock_requests_get):
+@patch("disruption_radar.get_llm")
+def test_fetch_disruption_alert_invalid_llm_json(mock_get_llm, mock_requests_get):
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_resp.text = SAMPLE_RSS_XML
@@ -149,7 +156,7 @@ def test_fetch_disruption_alert_invalid_llm_json(mock_chat_openai_cls, mock_requ
     mock_ai_message = MagicMock()
     mock_ai_message.content = "I cannot fulfill this in JSON format."
     mock_llm_instance.invoke.return_value = mock_ai_message
-    mock_chat_openai_cls.return_value = mock_llm_instance
+    mock_get_llm.return_value = mock_llm_instance
 
     result = fetch_disruption_alert()
 

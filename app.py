@@ -15,12 +15,6 @@ from voice_handler import process_voice_input
 from warehouse_vision import analyze_shelf_image
 from document_vision import extract_document_data, format_logistics_instruction
 from demand_forecaster import forecast_sku_stockouts
-from portfolio import (
-    create_initiative,
-    get_wsjf_ranked_backlog,
-    get_evms_snapshot,
-    get_connection as get_portfolio_connection,
-)
 from graph import get_graph_with_postgres, log_dpo
 from langchain_core.messages import HumanMessage, AIMessage
 from db import execute_query, execute_mutation, get_db_connection
@@ -387,6 +381,12 @@ div[data-testid="stSidebar"] .stRadio label:has(input:checked) {
     font-size:0.85rem !important;
 }
 
+
+.alert-banner.success {
+    background-color: #0f2e24;
+    border-color: #10b981;
+    color: #34d399;
+}
 </style>
 """
 st.markdown(ENTERPRISE_CSS, unsafe_allow_html=True)
@@ -494,6 +494,36 @@ def render_agent_progress(task_status: str):
         """, unsafe_allow_html=True)
 
 
+
+FRIENDLY_ERRORS = {
+    "connection": "⚠️ Cannot reach the database right now. Try again in 30 seconds.",
+    "timeout": "⚠️ The AI model took too long to respond. Please retry your request.",
+    "guardrail": "⚠️ Your request was blocked by security filters. See Example Inputs below for accepted phrasing.",
+    "upload": "⚠️ File could not be processed. Ensure it is a clear PNG/JPG/WEBP under 1MB.",
+    "default": "⚠️ Something went wrong. Please retry or contact your system administrator."
+}
+
+def friendly_error(e: Exception) -> str:
+    msg = str(e).lower()
+    if "connect" in msg or "database" in msg:
+        return FRIENDLY_ERRORS["connection"]
+    if "timeout" in msg or "timed out" in msg:
+        return FRIENDLY_ERRORS["timeout"]
+    if "guardrail" in msg or "blocked" in msg:
+        return FRIENDLY_ERRORS["guardrail"]
+    if "upload" in msg or "image" in msg:
+        return FRIENDLY_ERRORS["upload"]
+    return FRIENDLY_ERRORS["default"]
+
+RATE_LIMIT_SECONDS = 10
+
+def check_rate_limit(tenant_id: str) -> bool:
+    key = f"last_dispatch_{tenant_id}"
+    last = st.session_state.get(key, 0)
+    if time.time() - last < RATE_LIMIT_SECONDS:
+        return False
+    st.session_state[key] = time.time()
+    return True
 
 def show_user_error(message: str, suggestion: str):
     """
@@ -617,22 +647,29 @@ is_dev_mode = (
     or os.environ.get("DEV_MODE") == "1"
 )
 
-# Check manager admin panel URL (?admin=1) and password gate
-is_admin_param = (st.query_params.get("admin") == "1")
-is_authorized_admin = is_admin_param and (st.query_params.get("password") == "sovereign")
+ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "")
+
+def is_admin_authenticated() -> bool:
+    if not ADMIN_SECRET:
+        return False
+    params = st.query_params
+    token = params.get("admin_token", "")
+    return token == ADMIN_SECRET
+
+is_authorized_admin = is_admin_authenticated()
 is_admin_mode = is_authorized_admin
 
-if is_admin_param and not is_authorized_admin:
+if ("admin_token" in st.query_params or st.query_params.get("admin") == "1") and not is_authorized_admin:
     show_user_error(
         "Unauthorized access.",
-        "Add ?admin=1&password=sovereign to the URL to access the Admin panel."
+        "Provide a valid ?admin_token=<token> to access the Admin panel."
     )
     st.stop()
 
 if 'active_nav_module' not in st.session_state:
     st.session_state.active_nav_module = "Admin" if is_authorized_admin else "Orchestrator"
 
-# Navigation Rail (Left Sidebar) - Admin only appears when both admin=1 & password=sovereign are in URL
+# Navigation Rail (Left Sidebar) - Admin only appears when admin_token is valid
 with st.sidebar:
     st.markdown(
         """
@@ -756,10 +793,7 @@ def execute_agent_synchronous(dispatched_prompt: str, tenant_id: str, request_id
 
                 st.session_state.pending_plan = drafted_plan
         except Exception as e:
-            show_user_error(
-                message=f"Orchestration engine encountered a system error: {e}",
-                suggestion="Please check backend service connectivity or try submitting your logistics instruction again."
-            )
+            st.error(friendly_error(e))
 
 
 # Load gold standard inputs once for example collapsibles
@@ -821,12 +855,14 @@ if is_dev_mode and st.session_state.get("active_dev_subview"):
                 for log in logs:
                     st.code(f"[{log.get('tenant_id')}] {log.get('query')}")
             except Exception as e:
-                show_user_error(
-                    message=f"Failed to retrieve database activity logs: {e}",
-                    suggestion="Verify database credentials or initialize tables via init_db.py."
-                )
+                st.error(friendly_error(e))
 
     elif subview == "Analytics Dashboard":
+        try:
+            from portfolio import get_evms_snapshot
+        except Exception:
+            pass
+
         st.subheader("Analytics Dashboard")
         with st.expander("Disruption Alert History", expanded=True):
             if not st.session_state.disruption_history:
@@ -874,6 +910,10 @@ if st.session_state.get("auto_submit_prompt"):
         st.session_state.prefilled_prompt = ""
         st.session_state.show_guardrail_help = True
     else:
+        if not check_rate_limit(tenant_id):
+            st.warning("⏳ Please wait a few seconds before sending another request.")
+            st.stop()
+
         st.session_state.chat_history.append({"role": "user", "content": to_submit})
         request_id = str(uuid.uuid4())
         dispatched_prompt = to_submit
@@ -944,7 +984,7 @@ if st.session_state.disruption_history:
             """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# Module 0: Manager Admin Panel (accessible directly via ?admin=1&password=sovereign)
+# Module 0: Manager Admin Panel (accessible directly via ?admin_token=<UUID>)
 # -----------------------------------------------------------------------------
 if is_admin_mode:
     st.markdown(f"### ⚙️ Manager Admin Panel — Inventory Governance ({tenant_id})")
@@ -963,10 +1003,7 @@ if is_admin_mode:
         else:
             st.info(f"No inventory records found for {tenant_id}.")
     except Exception as e:
-        show_user_error(
-            message=f"Failed to fetch catalog data: {e}",
-            suggestion="Run init_db.py to seed initial catalog inventory."
-        )
+        st.error(friendly_error(e))
         inventory_rows = []
 
     st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
@@ -1071,7 +1108,7 @@ if is_admin_mode:
             [tenant_id]
         )
     except Exception as e:
-        show_user_error(f"Error fetching pending requests: {e}", "Verify the admin_requests table schema.")
+        st.error(friendly_error(e))
         pending_requests = []
 
     if not pending_requests:
@@ -1156,6 +1193,36 @@ if is_admin_mode:
 # Module 1: Orchestrator
 # -----------------------------------------------------------------------------
 elif selected_module == "Orchestrator":
+    # Friendly Status Banner (exactly one banner shown)
+    postgres_uri = os.environ.get("POSTGRES_DB_URI", "").strip()
+    if DEMO_MODE:
+        st.markdown(
+            """
+            <div class="alert-banner info">
+                🎭 <strong>Demo Mode:</strong> AI responses are simulated. Set DEMO_MODE=0 and POSTGRES_DB_URI for live Meta AI calls.
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+    elif not postgres_uri:
+        st.markdown(
+            """
+            <div class="alert-banner warning">
+                ⚠️ <strong>No database configured.</strong> Using local SQLite fallback. Add POSTGRES_DB_URI for persistent state across sessions.
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+    else:
+        st.markdown(
+            """
+            <div class="alert-banner success">
+                ✅ <strong>Live Mode:</strong> Connected to Meta AI and PostgreSQL.
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
     if st.session_state.disruption_history:
         latest_alert = st.session_state.disruption_history[-1]
         sev = latest_alert.get("severity", "low").lower()
@@ -1367,10 +1434,17 @@ elif selected_module == "Orchestrator":
                             st.session_state.auto_submit_prompt = transcript
                             st.rerun()
                     else:
-                        show_user_error(
-                            message=f"We had trouble processing your voice audio: {voice_result.get('intent', 'Audio input unclear')}.",
-                            suggestion="Ensure your microphone is connected, speak clearly within 3 feet, or type your instruction directly in the chat box."
-                        )
+                        err_intent = voice_result.get("intent", "Audio input unclear")
+                        if "META_API_KEY" in err_intent or "ValueError" in err_intent:
+                            show_user_error(
+                                message="⚠️ Voice transcription requires a META_API_KEY. Add it to your Render environment variables.",
+                                suggestion="Add META_API_KEY to your environment variables or .env file, or type your instruction directly in the chat box."
+                            )
+                        else:
+                            show_user_error(
+                                message=f"We had trouble processing your voice audio: {err_intent}.",
+                                suggestion="Ensure your microphone is connected, speak clearly within 3 feet, or type your instruction directly in the chat box."
+                            )
 
         # Fix 11: Guardrail Help Card
         if st.session_state.get("show_guardrail_help"):
@@ -1465,10 +1539,7 @@ elif selected_module == "Warehouse":
                             st.session_state.shelf_context = analysis
                             st.rerun()
                         except Exception as e:
-                            show_user_error(
-                                message=f"Computer vision model failed to segment shelf image: {e}",
-                                suggestion="Verify lighting conditions, ensure the rack barcode is visible, or select an example scenario above."
-                            )
+                            st.error(friendly_error(e))
 
     with col_ctx:
         st.markdown(
@@ -1569,10 +1640,7 @@ elif selected_module == "Documents":
                             st.session_state.prefilled_prompt = format_logistics_instruction(extraction)
                             st.rerun()
                         except Exception as e:
-                            show_user_error(
-                                message=f"Unable to extract text from document: {e}",
-                                suggestion="Ensure the document is upright, well-lit, and text is sharp, or test with an example invoice line item above."
-                            )
+                            st.error(friendly_error(e))
 
     with col_doc_view:
         st.markdown(
