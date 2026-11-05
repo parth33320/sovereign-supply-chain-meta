@@ -12,6 +12,7 @@ import sqlite3
 from typing import Any, Dict, List
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
+from llm_client import get_llm
 
 
 def get_trend_data(db_path: str = "mock_sap.db") -> List[str]:
@@ -44,6 +45,23 @@ def get_trend_data(db_path: str = "mock_sap.db") -> List[str]:
             conn.close()
             return [r["payload"] for r in rows if r.get("payload")]
         else:
+            if db_path and db_path != "mock_sap.db":
+                direct_conn = sqlite3.connect(db_path)
+                cursor = direct_conn.cursor()
+                cursor.execute(
+                    """
+                    SELECT payload FROM task_queue
+                    WHERE created_at >= datetime('now', '-30 days')
+                    ORDER BY created_at ASC
+                    """
+                )
+                rows = cursor.fetchall()
+                if not rows:
+                    cursor.execute("SELECT payload FROM task_queue ORDER BY created_at ASC")
+                    rows = cursor.fetchall()
+                direct_conn.close()
+                return [r[0] for r in rows if r[0]]
+
             cursor = conn.cursor()
             cursor.execute(
                 """
@@ -76,12 +94,7 @@ def forecast_sku_stockouts(db_path: str = "mock_sap.db") -> List[Dict[str, Any]]
 
     trend_summary = "\n".join(f"- {p}" for p in payloads)
 
-    llm = ChatOpenAI(
-        model=os.environ.get("META_MODEL_NAME", "muse-spark-1.3"),
-        api_key=os.environ.get("META_API_KEY", "dummy_key"),
-        base_url=os.environ.get("META_API_BASE_URL", "https://api.meta.ai/v1"),
-        temperature=0,
-    )
+    llm = get_llm()
 
     prompt = (
         f"Based on this reallocation history, which SKUs will stockout in the next 7 days? "

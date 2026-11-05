@@ -455,22 +455,29 @@ is_dev_mode = (
     or os.environ.get("DEV_MODE") == "1"
 )
 
-# Check manager admin panel URL (?admin=1) and password gate
-is_admin_param = (st.query_params.get("admin") == "1")
-is_authorized_admin = is_admin_param and (st.query_params.get("password") == "sovereign")
+ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "")
+
+def is_admin_authenticated() -> bool:
+    if not ADMIN_SECRET:
+        return False
+    params = st.query_params
+    token = params.get("admin_token", "")
+    return token == ADMIN_SECRET
+
+is_authorized_admin = is_admin_authenticated()
 is_admin_mode = is_authorized_admin
 
-if is_admin_param and not is_authorized_admin:
+if ("admin_token" in st.query_params or st.query_params.get("admin") == "1") and not is_authorized_admin:
     show_user_error(
         "Unauthorized access.",
-        "Add ?admin=1&password=sovereign to the URL to access the Admin panel."
+        "Provide a valid ?admin_token=<token> to access the Admin panel."
     )
     st.stop()
 
 if 'active_nav_module' not in st.session_state:
     st.session_state.active_nav_module = "Admin" if is_authorized_admin else "Orchestrator"
 
-# Navigation Rail (Left Sidebar) - Admin only appears when both admin=1 & password=sovereign are in URL
+# Navigation Rail (Left Sidebar) - Admin only appears when admin_token is valid
 with st.sidebar:
     st.markdown(
         """
@@ -742,7 +749,7 @@ if st.session_state.get("auto_submit_prompt"):
 
 
 # -----------------------------------------------------------------------------
-# Module 0: Manager Admin Panel (accessible directly via ?admin=1&password=sovereign)
+# Module 0: Manager Admin Panel (accessible directly via ?admin_token=<UUID>)
 # -----------------------------------------------------------------------------
 if is_admin_mode:
     st.markdown(f"### ⚙️ Manager Admin Panel — Inventory Governance ({tenant_id})")

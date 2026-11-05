@@ -82,6 +82,10 @@ def init_sqlite():
     ''')
 
     cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_inv_tenant_qty ON inventory(tenant_id, quantity);
+    ''')
+
+    cursor.execute('''
         CREATE TABLE IF NOT EXISTS task_queue (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             request_id TEXT NOT NULL,
@@ -141,6 +145,10 @@ def init_postgres(db_uri: str):
                 spot_rate DOUBLE PRECISION NOT NULL,
                 supplier_id TEXT NOT NULL
             )
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_inv_tenant_qty ON inventory(tenant_id, quantity);
         ''')
 
         cursor.execute('''

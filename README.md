@@ -179,7 +179,7 @@ A simple, everyday guide for warehouse supervisors, logistics staff, and procure
   - If a specific item name was mistyped, look at the suggestion note (for example: *"Did you mean 'Semiconductors'?"*) and try re-submitting with the suggested spelling.
 
 ### Requesting Manager Approval for New Inventory
-- If you need to add, edit, or remove catalog items, open the manager portal by adding `?admin=1&password=sovereign` to your browser URL.
+- If you need to add, edit, or remove catalog items, open the manager portal by adding `?admin_token=<ADMIN_SECRET>` to your browser URL.
 - In the sidebar, select the **Admin** panel.
 - Go to the **➕ Add New Item** tab, type the SKU name, starting quantity, transit time in days, spot price, and supplier code.
 - Click **Submit for Approval**.

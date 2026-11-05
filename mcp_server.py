@@ -33,23 +33,15 @@ def log_sql(query: str, tenant_id: str):
         conn.close()
 
 @mcp.tool()
-def read_inventory(tenant_id: str) -> str:
-    """Read inventory for a specific tenant.
-
-    Args:
-        tenant_id: The ID of the tenant (e.g., 'Tenant_A' or 'Tenant_B').
-    """
-    sql = "SELECT * FROM inventory WHERE tenant_id = ?"
-    log_sql(f"{sql} [param: {tenant_id}]", tenant_id)
-
-    try:
-        rows = execute_query(
-            sql,
-            params=[tenant_id]
-        )
-    except Exception as e:
-        return json.dumps({"error": str(e)})
-
+def read_inventory(tenant_id: str,
+                   low_stock_only: bool = False,
+                   limit: int = 50) -> str:
+    base = "SELECT id, item_name, quantity, transit_time, spot_rate, supplier_id FROM inventory WHERE tenant_id = ?"
+    params = [tenant_id]
+    if low_stock_only:
+        base += " AND quantity < 100"
+    base += f" ORDER BY quantity ASC LIMIT {limit}"
+    rows = execute_query(base, params=params)
     return json.dumps(rows)
 
 if __name__ == "__main__":
