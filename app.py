@@ -395,10 +395,6 @@ if DEMO_MODE and st.query_params.get("demo_hitl") == "1":
         {"role": "buyer_agent", "request": [{"sku": "SKU-STEEL-BEAMS", "qty": 0}], "response": "Procurement Buyer RFQ: Request restock of 500 units SKU-STEEL-BEAMS. Max lead time: 5 days."},
         {"role": "supplier_agent", "request": "Procurement Buyer RFQ: Request restock of 500 units SKU-STEEL-BEAMS. Max lead time: 5 days.", "response": {"restock_quantity": 500, "price_per_unit": 42.50, "lead_time_days": 3}}
     ]
-if 'active_nav_module' not in st.session_state:
-    st.session_state.active_nav_module = "Orchestrator"
-if 'blocked_unknown_item' not in st.session_state:
-    st.session_state.blocked_unknown_item = None
 
 # Check intentional developer mode (?dev=1 or DEV_MODE=1)
 is_dev_mode = (
@@ -406,13 +402,17 @@ is_dev_mode = (
     or os.environ.get("DEV_MODE") == "1"
 )
 
-# Check manager admin panel (?admin=1)
+# Check manager admin panel URL (?admin=1)
 is_admin_mode = (st.query_params.get("admin") == "1")
+if is_admin_mode:
+    if st.query_params.get("password") != "sovereign":
+        st.error("Unauthorized")
+        st.stop()
 
 if 'active_nav_module' not in st.session_state:
     st.session_state.active_nav_module = "Orchestrator"
 
-# Navigation Rail (Left Sidebar)
+# Navigation Rail (Left Sidebar) - "Admin" removed from navigation rail completely
 with st.sidebar:
     st.markdown(
         """
@@ -425,9 +425,6 @@ with st.sidebar:
     )
 
     modules = ["Orchestrator", "Warehouse", "Documents"]
-    if is_admin_mode:
-        modules.append("Admin")
-
     current_idx = modules.index(st.session_state.active_nav_module) if st.session_state.active_nav_module in modules else 0
     selected_module = st.radio(
         "Navigation",
@@ -511,8 +508,6 @@ def execute_agent_synchronous(dispatched_prompt: str, tenant_id: str, request_id
             if result:
                 final_messages = result.get("messages", [])
                 drafted_plan = result.get("drafted_plan", "")
-                status = result.get("status", "")
-                unknown_item = result.get("unknown_item")
 
                 for m in final_messages:
                     if isinstance(m, AIMessage):
@@ -530,13 +525,7 @@ def execute_agent_synchronous(dispatched_prompt: str, tenant_id: str, request_id
                                         "summary": summary
                                     })
 
-                if status == "item_not_found" and unknown_item:
-                    st.session_state.blocked_unknown_item = {
-                        "item": unknown_item,
-                        "source": "Voice/Text Orchestrator Input"
-                    }
-                else:
-                    st.session_state.pending_plan = drafted_plan
+                st.session_state.pending_plan = drafted_plan
         except Exception as e:
             show_user_error(
                 message=f"Orchestration engine encountered a system error: {e}",
@@ -689,615 +678,9 @@ if st.session_state.get("auto_submit_prompt"):
 
 
 # -----------------------------------------------------------------------------
-# Manager Approval HITL Panel (Triggered when input is blocked due to unknown item)
+# Module 0: Manager Admin Panel (accessible directly via ?admin=1&password=sovereign)
 # -----------------------------------------------------------------------------
-if st.session_state.get("blocked_unknown_item"):
-    blocked_info = st.session_state.blocked_unknown_item
-    unrecognized_item = blocked_info.get("item", "Unknown Item")
-    source_info = blocked_info.get("source", "System Input")
-
-    st.markdown(
-        f"""
-        <div class="control-card" style="border: 1px solid #f59e0b; background: #1c1917;">
-            <div class="control-card-header" style="border-bottom: 1px solid #451a03; color: #fbbf24;">
-                <span>⚠️ MANAGER APPROVAL REQUIRED — UNRECOGNIZED ITEM</span>
-                <span style="font-size: 0.75rem; color: #f59e0b; background: #451a03; padding: 2px 8px; border-radius: 4px;">BLOCKED</span>
-            </div>
-            <div style="font-size: 0.9rem; margin-bottom: 0.75rem; color: #fef3c7;">
-                An unrecognized item was detected from <strong>{source_info}</strong> and blocked by inventory governance:
-            </div>
-            <div style="background: #292524; padding: 0.75rem; border-radius: 6px; margin-bottom: 1rem; border-left: 4px solid #f59e0b;">
-                <span style="color: #94a3b8; font-size: 0.82rem; text-transform: uppercase;">Unrecognized Item / SKU:</span><br/>
-                <strong style="font-size: 1.1rem; color: #f8fafc;">{unrecognized_item}</strong>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    col_mg_app, col_mg_cancel = st.columns([1, 1])
-    with col_mg_app:
-        if st.button("Request Manager Approval to Add", type="primary", key="manager_approval_add_btn", use_container_width=True):
-            log_dpo(
-                prompt=f"Manager approval request to add new inventory item: {unrecognized_item} (tenant: {tenant_id})",
-                chosen="APPROVED",
-                rejected="REJECTED"
-            )
-            st.session_state.blocked_unknown_item = None
-            st.success(f"Manager approval requested to add item '{unrecognized_item}'. Logged successfully.")
-            st.rerun()
-
-    with col_mg_cancel:
-        if st.button("Cancel", key="manager_approval_cancel_btn", use_container_width=True):
-            st.session_state.blocked_unknown_item = None
-            st.info("Manager approval request canceled.")
-            st.rerun()
-
-    st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
-
-
-# -----------------------------------------------------------------------------
-# Module 1: Orchestrator
-# -----------------------------------------------------------------------------
-if selected_module == "Orchestrator":
-    if st.session_state.disruption_history:
-        latest_alert = st.session_state.disruption_history[-1]
-        sev = latest_alert.get("severity", "low").lower()
-        banner_class = "critical" if sev == "high" else ("warning" if sev == "medium" else "info")
-        st.markdown(
-            f"""
-            <div class="alert-banner {banner_class}">
-                <strong>⚡ LOGISTICS DISRUPTION ALERT ({sev.upper()}):</strong> {latest_alert.get('summary', '')}
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-    if is_paused:
-        col_main, col_hitl = st.columns([2, 1])
-    else:
-        col_main = st.container()
-        col_hitl = None
-
-    if col_hitl is not None:
-        with col_hitl:
-            st.markdown(
-                """
-                <div class="control-card-header">
-                    <span>⚠️ AWAITING HUMAN APPROVAL</span>
-                    <span style="font-size: 0.75rem; color: #f59e0b; background: #35210c; padding: 2px 8px; border-radius: 4px;">PAUSED</span>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-
-            if pending_plan_content:
-                st.markdown("**Proposed Logistics Plan:**")
-                st.info(pending_plan_content)
-
-            if pending_po:
-                supplier = pending_po.get("supplier", "Unknown Supplier")
-                sku = pending_po.get("sku", "N/A")
-                quantity = pending_po.get("quantity", pending_po.get("restock_quantity", 0))
-                price = pending_po.get("price_per_unit", pending_po.get("unit_price", 0.0))
-                lead_time = pending_po.get("lead_time_days", "N/A")
-
-                st.markdown(
-                    f"""
-                    <div style="background: #161f30; border: 1px solid #232b3e; border-radius: 6px; padding: 0.85rem; margin-bottom: 0.85rem;">
-                        <div style="font-size: 0.78rem; font-weight: 700; color: #3b82f6; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">
-                            📦 Purchase Order Summary
-                        </div>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; font-size: 0.84rem;">
-                            <div><span style="color: #94a3b8;">Supplier:</span> <strong style="color: #f8fafc;">{supplier}</strong></div>
-                            <div><span style="color: #94a3b8;">SKU:</span> <strong style="color: #f8fafc;">{sku}</strong></div>
-                            <div><span style="color: #94a3b8;">Quantity:</span> <strong style="color: #f8fafc;">{quantity:,} units</strong></div>
-                            <div><span style="color: #94a3b8;">Price / Unit:</span> <strong style="color: #34d399;">${price:,.2f}</strong></div>
-                            <div><span style="color: #94a3b8;">Lead Time:</span> <strong style="color: #f8fafc;">{lead_time} days</strong></div>
-                        </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-
-            if a2a_transcript:
-                with st.expander("📄 A2A Negotiation Transcript (JSON)", expanded=False):
-                    for exchange in a2a_transcript:
-                        st.json(exchange)
-
-            st.markdown("<div style='height: 0.5rem;'></div>", unsafe_allow_html=True)
-            col_app, col_rej = st.columns(2)
-            with col_app:
-                if st.button("Approve", type="primary", key="hitl_approve_btn", use_container_width=True):
-                    log_dpo(
-                        st.session_state.get('pending_prompt', ''),
-                        st.session_state.get('demo_pending_plan', st.session_state.get('pending_plan', '')),
-                        ""
-                    )
-                    if DEMO_MODE:
-                        st.session_state.demo_paused_for_hitl = False
-                        st.session_state.chat_history.append({"role": "assistant", "content": "Plan Approved and Executed."})
-                        st.success("Plan Approved and Executed.")
-                        st.rerun()
-                    else:
-                        graph.update_state(config, {"status": "approved"})
-                        for event in graph.stream(None, config):
-                            pass
-                        st.session_state.chat_history.append({"role": "assistant", "content": "Plan Approved and Executed."})
-                        st.success("Plan Approved and Executed.")
-                        st.rerun()
-
-            with col_rej:
-                if st.button("Reject", key="hitl_reject_btn", use_container_width=True):
-                    log_dpo(
-                        st.session_state.get('pending_prompt', ''),
-                        "",
-                        st.session_state.get('demo_pending_plan', st.session_state.get('pending_plan', ''))
-                    )
-                    if DEMO_MODE:
-                        st.session_state.demo_paused_for_hitl = False
-                        st.session_state.chat_history.append({"role": "assistant", "content": "Plan Rejected."})
-                        show_user_error(
-                            message="The proposed logistics plan was rejected by the operator.",
-                            suggestion="Submit a revised command specifying different quantity or supplier requirements."
-                        )
-                        st.rerun()
-                    else:
-                        graph.update_state(config, {"status": "rejected"})
-                        for event in graph.stream(None, config):
-                            pass
-                        st.session_state.chat_history.append({"role": "assistant", "content": "Plan Rejected."})
-                        show_user_error(
-                            message="The proposed logistics plan was rejected by the operator.",
-                            suggestion="Submit a revised command specifying different quantity or supplier requirements."
-                        )
-                        st.rerun()
-
-    # Main Conversation Area
-    with col_main:
-        chat_container = st.container()
-        with chat_container:
-            if not st.session_state.chat_history:
-                st.markdown("""
-<div style="text-align: center; padding: 2rem 1rem; color: #64748b; border: 1px dashed #232b3e; border-radius: 8px;">
-    <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">💬</div>
-    <div style="font-weight: 600; color: #94a3b8; margin-bottom: 0.5rem;">Orchestrator Ready</div>
-    <div style="font-size: 0.82rem; color: #475569;">Try: <em>"Emergency stockout on microcontrollers, initiate immediate supplier negotiation"</em></div>
-    <div style="font-size: 0.82rem; color: #475569; margin-top: 0.25rem;">Or expand <strong>📋 Example Inputs</strong> below to trigger gold standard demo commands.</div>
-</div>
-""", unsafe_allow_html=True)
-            for msg in st.session_state.chat_history:
-                with st.chat_message(msg["role"]):
-                    st.write(msg["content"])
-
-        st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
-
-        if st.session_state.get("prefilled_prompt"):
-            st.info(f"📋 **Draft Logistics Instruction from Document:**\n\n_{st.session_state.prefilled_prompt}_")
-            if st.button("Send Instruction to Orchestrator", key="send_prefilled_instruction_btn", type="primary"):
-                st.session_state.auto_submit_prompt = st.session_state.prefilled_prompt
-                st.session_state.prefilled_prompt = ""
-                st.rerun()
-
-        # Collapsible Example Inputs Expander (20 Voice Commands)
-        voice_examples = [x for x in GOLD_INPUTS if x.get("type") == "voice"]
-        if voice_examples:
-            with st.expander("📋 Example Inputs (20 Voice Commands)", expanded=False):
-                st.caption("Click **Use** next to any command to auto-populate and immediately dispatch it to the Orchestrator.")
-                for i, ex in enumerate(voice_examples):
-                    c_txt, c_btn = st.columns([5, 1])
-                    with c_txt:
-                        st.markdown(f"**{i+1}.** _{ex.get('input')}_")
-                        st.caption(f"Expected: {ex.get('expected_outcome')}")
-                    with c_btn:
-                        if st.button("Use", key=f"use_voice_ex_{i}", use_container_width=True):
-                            st.session_state.auto_submit_prompt = ex.get("input")
-                            st.rerun()
-
-        # Operational Voice Command Input
-        voice_audio = st.audio_input("Record voice instruction", key="voice_audio_input")
-        if voice_audio is not None:
-            audio_bytes = voice_audio.read()
-            audio_id = hash(audio_bytes)
-            if st.session_state.get("last_processed_audio_id") != audio_id:
-                st.session_state.last_processed_audio_id = audio_id
-                with st.spinner("Transcribing voice command with muse-voice-transcribe-1.0..."):
-                    voice_result = process_voice_input(audio_bytes)
-                    if voice_result.get("status") == "ok":
-                        transcript = voice_result.get("transcription", "").strip()
-                        if transcript:
-                            st.session_state.auto_submit_prompt = transcript
-                            st.rerun()
-                            if not check_prompt_injection(transcript):
-                                st.session_state.waf_count += 1
-                                st.session_state.waf_history.append({"timestamp": time.strftime("%H:%M:%S"), "count": 1})
-                                st.error("SECURITY ALERT: Malicious prompt detected and blocked by Semantic Bouncer.")
-                            else:
-                                st.session_state.chat_history.append({"role": "user", "content": transcript})
-                                request_id = str(uuid.uuid4())
-                                dispatched_prompt = transcript
-                                if st.session_state.get("shelf_context") and st.session_state["shelf_context"].get("summary"):
-                                    summary_text = st.session_state["shelf_context"]["summary"]
-                                    dispatched_prompt = f"[VISUAL SHELF ANALYSIS: {summary_text}]\n{transcript}"
-
-                                st.session_state.pending_prompt = dispatched_prompt
-                                if DEMO_MODE:
-                                    from graph import extract_item_candidates
-                                    from mcp_server import read_inventory
-                                    inv_json = read_inventory(tenant_id)
-                                    inv_items = json.loads(inv_json)
-                                    valid_names = [itm.get("item_name", "").strip() for itm in inv_items if itm.get("item_name")]
-                                    valid_names_lower = {name.lower(): name for name in valid_names}
-                                    candidates = extract_item_candidates(transcript)
-                                    unknown_found = None
-                                    for c in candidates:
-                                        c_lower = c.lower()
-                                        if c_lower not in valid_names_lower and not any(c_lower in v or v in c_lower for v in valid_names_lower):
-                                            unknown_found = c
-                                            break
-
-                                    if unknown_found:
-                                        err_msg = f"Item '{unknown_found}' not found in inventory. Please retry or request manager approval to add new item"
-                                        st.session_state.chat_history.append({"role": "assistant", "content": err_msg})
-                                        st.session_state.blocked_unknown_item = {
-                                            "item": unknown_found,
-                                            "source": "Voice/Text Orchestrator Input"
-                                        }
-                                    else:
-                                        resp_plan = (
-                                            f"Orchestrator Analysis for '{transcript}':\n"
-                                            f"• Tenant: {tenant_id}\n"
-                                            f"• Stock level verified across regional hubs.\n"
-                                            f"• Draft reallocation route: Warehouse-West to Distribution-East.\n"
-                                            f"• Optimal carrier dispatch generated with ETA 24 hours."
-                                        )
-                                        st.session_state.chat_history.append({"role": "assistant", "content": resp_plan})
-                                        st.session_state.demo_pending_plan = resp_plan
-                                else:
-                                    execute_agent_synchronous(dispatched_prompt, tenant_id, request_id)
-                                st.rerun()
-                    else:
-                        show_user_error(
-                            message=f"We had trouble processing your voice audio: {voice_result.get('intent', 'Audio input unclear')}.",
-                            suggestion="Ensure your microphone is connected, speak clearly within 3 feet, or type your instruction directly in the chat box."
-                        )
-
-        # Text Logistics Command Input
-        prompt = st.chat_input("Enter logistics instruction...")
-        if prompt:
-            st.session_state.auto_submit_prompt = prompt
-            st.rerun()
-            if not check_prompt_injection(prompt):
-                st.session_state.waf_count += 1
-                st.session_state.waf_history.append({"timestamp": time.strftime("%H:%M:%S"), "count": 1})
-                st.error("SECURITY ALERT: Malicious prompt detected and blocked by Semantic Bouncer.")
-            else:
-                st.session_state.chat_history.append({"role": "user", "content": prompt})
-                request_id = str(uuid.uuid4())
-                dispatched_prompt = prompt
-                if st.session_state.get("shelf_context") and st.session_state["shelf_context"].get("summary"):
-                    summary_text = st.session_state["shelf_context"]["summary"]
-                    dispatched_prompt = f"[VISUAL SHELF ANALYSIS: {summary_text}]\n{prompt}"
-
-                st.session_state.pending_prompt = dispatched_prompt
-                if DEMO_MODE:
-                    from graph import extract_item_candidates
-                    from mcp_server import read_inventory
-                    inv_json = read_inventory(tenant_id)
-                    inv_items = json.loads(inv_json)
-                    valid_names = [itm.get("item_name", "").strip() for itm in inv_items if itm.get("item_name")]
-                    valid_names_lower = {name.lower(): name for name in valid_names}
-                    candidates = extract_item_candidates(prompt)
-                    unknown_found = None
-                    for c in candidates:
-                        c_lower = c.lower()
-                        if c_lower not in valid_names_lower and not any(c_lower in v or v in c_lower for v in valid_names_lower):
-                            unknown_found = c
-                            break
-
-                    if unknown_found:
-                        err_msg = f"Item '{unknown_found}' not found in inventory. Please retry or request manager approval to add new item"
-                        st.session_state.chat_history.append({"role": "assistant", "content": err_msg})
-                        st.session_state.blocked_unknown_item = {
-                            "item": unknown_found,
-                            "source": "Voice/Text Orchestrator Input"
-                        }
-                    else:
-                        resp_plan = (
-                            f"Orchestrator Analysis for '{prompt}':\n"
-                            f"• Tenant: {tenant_id}\n"
-                            f"• Stock level verified across regional hubs.\n"
-                            f"• Draft reallocation route: Warehouse-West to Distribution-East.\n"
-                            f"• Optimal carrier dispatch generated with ETA 24 hours."
-                        )
-                        st.session_state.chat_history.append({"role": "assistant", "content": resp_plan})
-                        st.session_state.demo_pending_plan = resp_plan
-                        st.session_state.demo_paused_for_hitl = True
-                        st.session_state.demo_pending_po = {
-                            "po_id": "PO-948201",
-                            "items": [{"sku": "SKU-STEEL-BEAMS", "qty": 500}],
-                            "restock_quantity": 500,
-                            "price_per_unit": 42.50,
-                            "lead_time_days": 3,
-                            "supplier": "Apex Logistics Supplier AI"
-                        }
-                        st.session_state.pending_prompt = dispatched_prompt
-                    resp_plan = (
-                        f"Orchestrator Analysis for '{prompt}':\n"
-                        f"• Tenant: {tenant_id}\n"
-                        f"• Stock level verified across regional hubs.\n"
-                        f"• Draft reallocation route: Warehouse-West to Distribution-East.\n"
-                        f"• Optimal carrier dispatch generated with ETA 24 hours."
-                    )
-                    st.session_state.chat_history.append({"role": "assistant", "content": resp_plan})
-                    st.session_state.demo_pending_plan = resp_plan
-                    st.session_state.demo_paused_for_hitl = True
-                    st.session_state.demo_pending_po = {
-                        "po_id": "PO-948201",
-                        "items": [{"sku": "SKU-STEEL-BEAMS", "qty": 500}],
-                        "restock_quantity": 500,
-                        "price_per_unit": 42.50,
-                        "lead_time_days": 3,
-                        "supplier": "Apex Logistics Supplier AI"
-                    }
-                    st.session_state.pending_prompt = dispatched_prompt
-                else:
-                    execute_agent_synchronous(dispatched_prompt, tenant_id, request_id)
-                st.rerun()
-
-
-
-# -----------------------------------------------------------------------------
-# Module 2: Warehouse Vision
-# -----------------------------------------------------------------------------
-elif selected_module == "Warehouse":
-    st.markdown("### 📦 Warehouse Vision & Inventory Segmentation")
-    st.markdown("Automated stock segmentation powered by Meta SAM 3.1. Upload shelf imagery to detect low-stock or empty SKU bins.")
-
-    # Collapsible Example Inputs for Shelf Images
-    shelf_examples = [x for x in GOLD_INPUTS if x.get("type") == "shelf"]
-    if shelf_examples:
-        with st.expander("📋 Example Inputs (20 Shelf Inspection Scenarios)", expanded=False):
-            st.caption("Click **Use** to inject the visual scenario directly into the active shelf context.")
-            for i, ex in enumerate(shelf_examples):
-                c_txt, c_btn = st.columns([5, 1])
-                with c_txt:
-                    st.markdown(f"**{i+1}.** {ex.get('input')}")
-                    st.caption(f"Expected: {ex.get('expected_outcome')}")
-                with c_btn:
-                    if st.button("Use", key=f"use_shelf_ex_{i}", use_container_width=True):
-                        is_empty = "empty" in ex.get('input').lower() or "vacant" in ex.get('input').lower() or "devoid" in ex.get('input').lower()
-                        fill_lvl = 0.0 if is_empty else 0.75
-                        status = "empty" if is_empty else "ok"
-                        st.session_state.shelf_context = {
-                            "summary": ex.get("input"),
-                            "items": [{"item": "Inspected SKU", "fill_level": fill_lvl, "status": status}]
-                        }
-                        st.success("Shelf scenario applied to active visual context!")
-                        st.rerun()
-
-    col_up, col_ctx = st.columns([1, 1])
-
-    with col_up:
-        st.markdown(
-            """
-            <div class="control-card-header">
-                <span>UPLOAD SHELF CAMERA FEED</span>
-                <span style="font-size: 0.75rem; color: #94a3b8;">MAX 1MB</span>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-        uploaded_image = st.file_uploader(
-            "Upload Shelf Image",
-            type=["png", "jpg", "jpeg", "webp"],
-            key="shelf_image_uploader"
-        )
-        if uploaded_image is not None:
-            if uploaded_image.size > 1_000_000:
-                show_user_error(
-                    message="The uploaded shelf photo exceeds the 1MB file size limit.",
-                    suggestion="Please compress the image or take a lower resolution photo before uploading."
-                )
-            else:
-                image_bytes = uploaded_image.read()
-                image_id = hash(image_bytes)
-                if st.session_state.get("last_uploaded_image_id") != image_id:
-                    st.session_state.last_uploaded_image_id = image_id
-                    with st.spinner("Analyzing shelf image with SAM 3.1..."):
-                        try:
-                            analysis = analyze_shelf_image(image_bytes)
-                            st.session_state.shelf_context = analysis
-                            st.rerun()
-                        except Exception as e:
-                            show_user_error(
-                                message=f"Computer vision model failed to segment shelf image: {e}",
-                                suggestion="Verify lighting conditions, ensure the rack barcode is visible, or select an example scenario above."
-                            )
-                        analysis = analyze_shelf_image(image_bytes, tenant_id=tenant_id)
-                        if "error" in analysis:
-                            st.session_state.shelf_context = None
-                            st.session_state.blocked_unknown_item = {
-                                "item": analysis.get("unknown_item", "Unknown Item"),
-                                "source": "Warehouse Shelf Vision"
-                            }
-                            st.error(analysis["error"])
-                        else:
-                            st.session_state.shelf_context = analysis
-                            st.rerun()
-
-    with col_ctx:
-        st.markdown(
-            """
-            <div class="control-card-header">
-                <span>ACTIVE VISUAL CONTEXT</span>
-                <span style="font-size: 0.75rem; color: #34d399;">SAM 3.1 ACTIVE</span>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-        if st.session_state.get("shelf_context"):
-            ctx = st.session_state.shelf_context
-            st.markdown(f"**Analysis Summary:**\n\n{ctx.get('summary', 'No summary generated.')}")
-
-            items = ctx.get("items", [])
-            if items:
-                table_items = []
-                for itm in items:
-                    fill_pct = int(itm.get("fill_level", 0.0) * 100)
-                    table_items.append({
-                        "Item SKU": itm.get("item"),
-                        "Fill Level": f"{fill_pct}%",
-                        "Status": itm.get("status", "ok").upper()
-                    })
-                st.dataframe(pd.DataFrame(table_items), use_container_width=True, hide_index=True)
-
-            st.caption("Active context is automatically appended to subsequent Orchestrator instructions.")
-            if st.button("Clear Shelf Context", key="clear_shelf_context_btn"):
-                st.session_state.shelf_context = None
-                st.session_state.last_uploaded_image_id = None
-                st.rerun()
-        else:
-            st.info("No active shelf image analyzed. Upload an image or select an example scenario above.")
-
-
-# -----------------------------------------------------------------------------
-# Module 3: Documents
-# -----------------------------------------------------------------------------
-elif selected_module == "Documents":
-    st.markdown("### 📄 Document & Invoice Extraction")
-    st.markdown("Automated structured data extraction powered by Meta muse-image-1.0. Upload invoices, bills of lading, and freight manifests.")
-
-    # Collapsible Example Inputs for Invoice Line Items
-    invoice_examples = [x for x in GOLD_INPUTS if x.get("type") == "invoice"]
-    if invoice_examples:
-        with st.expander("📋 Example Inputs (20 Invoice Line Items)", expanded=False):
-            st.caption("Click **Use** to immediately populate and stage the extracted logistics data.")
-            for i, ex in enumerate(invoice_examples):
-                c_txt, c_btn = st.columns([5, 1])
-                with c_txt:
-                    st.markdown(f"**{i+1}.** {ex.get('input')}")
-                    st.caption(f"Expected: {ex.get('expected_outcome')}")
-                with c_btn:
-                    if st.button("Use", key=f"use_inv_ex_{i}", use_container_width=True):
-                        st.session_state.extracted_document = {
-                            "supplier": "FastFreight Logistics",
-                            "items": [{"description": ex.get("input")[:50], "quantity": 100, "unit_price": 45.0}],
-                            "dates": ["2026-11-05"],
-                            "raw_summary": ex.get("input")
-                        }
-                        st.session_state.prefilled_prompt = f"Process incoming shipment from FastFreight Logistics: receive 100x items based on '{ex.get('input')[:60]}' into inventory."
-                        st.success("Invoice example loaded into structured extraction view!")
-                        st.rerun()
-
-    col_doc_up, col_doc_view = st.columns([1, 1])
-
-    with col_doc_up:
-        st.markdown(
-            """
-            <div class="control-card-header">
-                <span>UPLOAD INVOICE / BOL DOCUMENT</span>
-                <span style="font-size: 0.75rem; color: #94a3b8;">MAX 2MB</span>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-        uploaded_doc = st.file_uploader(
-            "Upload Invoice or Shipping Document",
-            type=["png", "jpg", "jpeg", "webp"],
-            key="document_image_uploader"
-        )
-        if uploaded_doc is not None:
-            if uploaded_doc.size > 2_000_000:
-                show_user_error(
-                    message="The uploaded document exceeds the 2MB size limit.",
-                    suggestion="Please scan the document at 200 DPI or compress the PDF/image before uploading."
-                )
-            else:
-                doc_bytes = uploaded_doc.read()
-                doc_id = hash(doc_bytes)
-                if st.session_state.get("last_uploaded_doc_id") != doc_id:
-                    st.session_state.last_uploaded_doc_id = doc_id
-                    with st.spinner("Extracting document data with muse-image-1.0..."):
-                        try:
-                            extraction = extract_document_data(doc_bytes)
-                            st.session_state.extracted_document = extraction
-                            st.session_state.prefilled_prompt = format_logistics_instruction(extraction)
-                            st.rerun()
-                        except Exception as e:
-                            show_user_error(
-                                message=f"Unable to extract text from document: {e}",
-                                suggestion="Ensure the document is upright, well-lit, and text is sharp, or test with an example invoice line item above."
-                            )
-                        extraction = extract_document_data(doc_bytes, tenant_id=tenant_id)
-                        if "error" in extraction:
-                            st.session_state.extracted_document = None
-                            st.session_state.prefilled_prompt = ""
-                            st.session_state.blocked_unknown_item = {
-                                "item": extraction.get("unknown_item", "Unknown Item"),
-                                "source": "Document/Invoice Ingestion"
-                            }
-                            st.error(extraction["error"])
-                        else:
-                            st.session_state.extracted_document = extraction
-                            st.session_state.prefilled_prompt = format_logistics_instruction(extraction)
-                            st.rerun()
-
-    with col_doc_view:
-        st.markdown(
-            """
-            <div class="control-card-header">
-                <span>STRUCTURED EXTRACTION</span>
-                <span style="font-size: 0.75rem; color: #3b82f6;">MUSE-IMAGE-1.0</span>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-        if st.session_state.get("extracted_document"):
-            doc_data = st.session_state.extracted_document
-            col_d1, col_d2 = st.columns(2)
-            with col_d1:
-                st.markdown(f"**Supplier:** {doc_data.get('supplier') or 'Not specified'}")
-                dates = doc_data.get("dates", [])
-                st.markdown(f"**Dates:** {', '.join(dates) if dates else 'Not specified'}")
-            with col_d2:
-                st.markdown(f"**Summary:** {doc_data.get('raw_summary') or 'None'}")
-
-            items = doc_data.get("items", [])
-            if items:
-                st.markdown("**Line Items:**")
-                doc_table = []
-                for itm in items:
-                    doc_table.append({
-                        "Description": itm.get('description', 'Item'),
-                        "Quantity": itm.get('quantity', 1),
-                        "Unit Price": f"${itm.get('unit_price')}" if itm.get('unit_price') is not None else "N/A"
-                    })
-                st.dataframe(pd.DataFrame(doc_table), use_container_width=True, hide_index=True)
-
-            if st.session_state.get("prefilled_prompt"):
-                st.markdown("**Generated Logistics Instruction:**")
-                st.info(st.session_state.prefilled_prompt)
-
-            col_b1, col_b2 = st.columns(2)
-            with col_b1:
-                if st.button("Clear Document", key="clear_extracted_doc_btn"):
-                    st.session_state.extracted_document = None
-                    st.session_state.prefilled_prompt = ""
-                    st.session_state.last_uploaded_doc_id = None
-                    st.rerun()
-            with col_b2:
-                if st.button("Open in Orchestrator", type="primary", key="open_in_orchestrator_btn"):
-                    st.session_state.active_nav_module = "Orchestrator"
-                    st.rerun()
-        else:
-            st.info("No document uploaded. Upload a document or select an example invoice line item above.")
-
-
-# -----------------------------------------------------------------------------
-# Module 4: Manager Admin Panel (?admin=1)
-# -----------------------------------------------------------------------------
-elif selected_module == "Admin":
+if is_admin_mode:
     st.markdown(f"### ⚙️ Manager Admin Panel — Inventory Governance ({tenant_id})")
     st.markdown("Authorized managers can stage catalog modifications (Add, Edit, Delete). Changes enter the pending approvals queue and require sign-off before committing to the database.")
 
@@ -1502,3 +885,413 @@ elif selected_module == "Admin":
                         )
                         st.warning(f"Request #{req_id} ({action}) rejected.")
                         st.rerun()
+
+# -----------------------------------------------------------------------------
+# Module 1: Orchestrator
+# -----------------------------------------------------------------------------
+elif selected_module == "Orchestrator":
+    if st.session_state.disruption_history:
+        latest_alert = st.session_state.disruption_history[-1]
+        sev = latest_alert.get("severity", "low").lower()
+        banner_class = "critical" if sev == "high" else ("warning" if sev == "medium" else "info")
+        st.markdown(
+            f"""
+            <div class="alert-banner {banner_class}">
+                <strong>⚡ LOGISTICS DISRUPTION ALERT ({sev.upper()}):</strong> {latest_alert.get('summary', '')}
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    if is_paused:
+        col_main, col_hitl = st.columns([2, 1])
+    else:
+        col_main = st.container()
+        col_hitl = None
+
+    if col_hitl is not None:
+        with col_hitl:
+            st.markdown(
+                """
+                <div class="control-card-header">
+                    <span>⚠️ AWAITING HUMAN APPROVAL</span>
+                    <span style="font-size: 0.75rem; color: #f59e0b; background: #35210c; padding: 2px 8px; border-radius: 4px;">PAUSED</span>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+            if pending_plan_content:
+                st.markdown("**Proposed Logistics Plan:**")
+                st.info(pending_plan_content)
+
+            if pending_po:
+                supplier = pending_po.get("supplier", "Unknown Supplier")
+                sku = pending_po.get("sku", "N/A")
+                quantity = pending_po.get("quantity", pending_po.get("restock_quantity", 0))
+                price = pending_po.get("price_per_unit", pending_po.get("unit_price", 0.0))
+                lead_time = pending_po.get("lead_time_days", "N/A")
+
+                st.markdown(
+                    f"""
+                    <div style="background: #161f30; border: 1px solid #232b3e; border-radius: 6px; padding: 0.85rem; margin-bottom: 0.85rem;">
+                        <div style="font-size: 0.78rem; font-weight: 700; color: #3b82f6; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">
+                            📦 Purchase Order Summary
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; font-size: 0.84rem;">
+                            <div><span style="color: #94a3b8;">Supplier:</span> <strong style="color: #f8fafc;">{supplier}</strong></div>
+                            <div><span style="color: #94a3b8;">SKU:</span> <strong style="color: #f8fafc;">{sku}</strong></div>
+                            <div><span style="color: #94a3b8;">Quantity:</span> <strong style="color: #f8fafc;">{quantity:,} units</strong></div>
+                            <div><span style="color: #94a3b8;">Price / Unit:</span> <strong style="color: #34d399;">${price:,.2f}</strong></div>
+                            <div><span style="color: #94a3b8;">Lead Time:</span> <strong style="color: #f8fafc;">{lead_time} days</strong></div>
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+
+            if a2a_transcript:
+                with st.expander("📄 A2A Negotiation Transcript (JSON)", expanded=False):
+                    for exchange in a2a_transcript:
+                        st.json(exchange)
+
+            st.markdown("<div style='height: 0.5rem;'></div>", unsafe_allow_html=True)
+            col_app, col_rej = st.columns(2)
+            with col_app:
+                if st.button("Approve", type="primary", key="hitl_approve_btn", use_container_width=True):
+                    log_dpo(
+                        st.session_state.get('pending_prompt', ''),
+                        st.session_state.get('demo_pending_plan', st.session_state.get('pending_plan', '')),
+                        ""
+                    )
+                    if DEMO_MODE:
+                        st.session_state.demo_paused_for_hitl = False
+                        st.session_state.chat_history.append({"role": "assistant", "content": "Plan Approved and Executed."})
+                        st.success("Plan Approved and Executed.")
+                        st.rerun()
+                    else:
+                        graph.update_state(config, {"status": "approved"})
+                        for event in graph.stream(None, config):
+                            pass
+                        st.session_state.chat_history.append({"role": "assistant", "content": "Plan Approved and Executed."})
+                        st.success("Plan Approved and Executed.")
+                        st.rerun()
+
+            with col_rej:
+                if st.button("Reject", key="hitl_reject_btn", use_container_width=True):
+                    log_dpo(
+                        st.session_state.get('pending_prompt', ''),
+                        "",
+                        st.session_state.get('demo_pending_plan', st.session_state.get('pending_plan', ''))
+                    )
+                    if DEMO_MODE:
+                        st.session_state.demo_paused_for_hitl = False
+                        st.session_state.chat_history.append({"role": "assistant", "content": "Plan Rejected."})
+                        show_user_error(
+                            message="The proposed logistics plan was rejected by the operator.",
+                            suggestion="Submit a revised command specifying different quantity or supplier requirements."
+                        )
+                        st.rerun()
+                    else:
+                        graph.update_state(config, {"status": "rejected"})
+                        for event in graph.stream(None, config):
+                            pass
+                        st.session_state.chat_history.append({"role": "assistant", "content": "Plan Rejected."})
+                        show_user_error(
+                            message="The proposed logistics plan was rejected by the operator.",
+                            suggestion="Submit a revised command specifying different quantity or supplier requirements."
+                        )
+                        st.rerun()
+
+    # Main Conversation Area
+    with col_main:
+        chat_container = st.container()
+        with chat_container:
+            if not st.session_state.chat_history:
+                st.markdown("""
+<div style="text-align: center; padding: 2rem 1rem; color: #64748b; border: 1px dashed #232b3e; border-radius: 8px;">
+    <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">💬</div>
+    <div style="font-weight: 600; color: #94a3b8; margin-bottom: 0.5rem;">Orchestrator Ready</div>
+    <div style="font-size: 0.82rem; color: #475569;">Try: <em>"Emergency stockout on microcontrollers, initiate immediate supplier negotiation"</em></div>
+    <div style="font-size: 0.82rem; color: #475569; margin-top: 0.25rem;">Or expand <strong>📋 Example Inputs</strong> below to trigger gold standard demo commands.</div>
+</div>
+""", unsafe_allow_html=True)
+            for msg in st.session_state.chat_history:
+                with st.chat_message(msg["role"]):
+                    st.write(msg["content"])
+
+        st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
+
+        if st.session_state.get("prefilled_prompt"):
+            st.info(f"📋 **Draft Logistics Instruction from Document:**\n\n_{st.session_state.prefilled_prompt}_")
+            if st.button("Send Instruction to Orchestrator", key="send_prefilled_instruction_btn", type="primary"):
+                st.session_state.auto_submit_prompt = st.session_state.prefilled_prompt
+                st.session_state.prefilled_prompt = ""
+                st.rerun()
+
+        # Collapsible Example Inputs Expander (20 Voice Commands)
+        voice_examples = [x for x in GOLD_INPUTS if x.get("type") == "voice"]
+        if voice_examples:
+            with st.expander("📋 Example Inputs (20 Voice Commands)", expanded=False):
+                st.caption("Click **Use** next to any command to auto-populate and immediately dispatch it to the Orchestrator.")
+                for i, ex in enumerate(voice_examples):
+                    c_txt, c_btn = st.columns([5, 1])
+                    with c_txt:
+                        st.markdown(f"**{i+1}.** _{ex.get('input')}_")
+                        st.caption(f"Expected: {ex.get('expected_outcome')}")
+                    with c_btn:
+                        if st.button("Use", key=f"use_voice_ex_{i}", use_container_width=True):
+                            st.session_state.auto_submit_prompt = ex.get("input")
+                            st.rerun()
+
+        # Operational Voice Command Input
+        voice_audio = st.audio_input("Record voice instruction", key="voice_audio_input")
+        if voice_audio is not None:
+            audio_bytes = voice_audio.read()
+            audio_id = hash(audio_bytes)
+            if st.session_state.get("last_processed_audio_id") != audio_id:
+                st.session_state.last_processed_audio_id = audio_id
+                with st.spinner("Transcribing voice command with muse-voice-transcribe-1.0..."):
+                    voice_result = process_voice_input(audio_bytes)
+                    if voice_result.get("status") == "ok":
+                        transcript = voice_result.get("transcription", "").strip()
+                        if transcript:
+                            st.session_state.auto_submit_prompt = transcript
+                            st.rerun()
+                    else:
+                        show_user_error(
+                            message=f"We had trouble processing your voice audio: {voice_result.get('intent', 'Audio input unclear')}.",
+                            suggestion="Ensure your microphone is connected, speak clearly within 3 feet, or type your instruction directly in the chat box."
+                        )
+
+        # Text Logistics Command Input
+        prompt = st.chat_input("Enter logistics instruction...")
+        if prompt:
+            st.session_state.auto_submit_prompt = prompt
+            st.rerun()
+
+
+# -----------------------------------------------------------------------------
+# Module 2: Warehouse Vision
+# -----------------------------------------------------------------------------
+elif selected_module == "Warehouse":
+    st.markdown("### 📦 Warehouse Vision & Inventory Segmentation")
+    st.markdown("Automated stock segmentation powered by Meta SAM 3.1. Upload shelf imagery to detect low-stock or empty SKU bins.")
+
+    # Collapsible Example Inputs for Shelf Images
+    shelf_examples = [x for x in GOLD_INPUTS if x.get("type") == "shelf"]
+    if shelf_examples:
+        with st.expander("📋 Example Inputs (20 Shelf Inspection Scenarios)", expanded=False):
+            st.caption("Click **Use** to inject the visual scenario directly into the active shelf context.")
+            for i, ex in enumerate(shelf_examples):
+                c_txt, c_btn = st.columns([5, 1])
+                with c_txt:
+                    st.markdown(f"**{i+1}.** {ex.get('input')}")
+                    st.caption(f"Expected: {ex.get('expected_outcome')}")
+                with c_btn:
+                    if st.button("Use", key=f"use_shelf_ex_{i}", use_container_width=True):
+                        is_empty = "empty" in ex.get('input').lower() or "vacant" in ex.get('input').lower() or "devoid" in ex.get('input').lower()
+                        fill_lvl = 0.0 if is_empty else 0.75
+                        status = "empty" if is_empty else "ok"
+                        st.session_state.shelf_context = {
+                            "summary": ex.get("input"),
+                            "items": [{"item": "Inspected SKU", "fill_level": fill_lvl, "status": status}]
+                        }
+                        st.success("Shelf scenario applied to active visual context!")
+                        st.rerun()
+
+    col_up, col_ctx = st.columns([1, 1])
+
+    with col_up:
+        st.markdown(
+            """
+            <div class="control-card-header">
+                <span>UPLOAD SHELF CAMERA FEED</span>
+                <span style="font-size: 0.75rem; color: #94a3b8;">MAX 1MB</span>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        uploaded_image = st.file_uploader(
+            "Upload Shelf Image",
+            type=["png", "jpg", "jpeg", "webp"],
+            key="shelf_image_uploader"
+        )
+        if uploaded_image is not None:
+            if uploaded_image.size > 1_000_000:
+                show_user_error(
+                    message="The uploaded shelf photo exceeds the 1MB file size limit.",
+                    suggestion="Please compress the image or take a lower resolution photo before uploading."
+                )
+            else:
+                image_bytes = uploaded_image.read()
+                image_id = hash(image_bytes)
+                if st.session_state.get("last_uploaded_image_id") != image_id:
+                    st.session_state.last_uploaded_image_id = image_id
+                    with st.spinner("Analyzing shelf image with SAM 3.1..."):
+                        try:
+                            analysis = analyze_shelf_image(image_bytes)
+                            st.session_state.shelf_context = analysis
+                            st.rerun()
+                        except Exception as e:
+                            show_user_error(
+                                message=f"Computer vision model failed to segment shelf image: {e}",
+                                suggestion="Verify lighting conditions, ensure the rack barcode is visible, or select an example scenario above."
+                            )
+
+    with col_ctx:
+        st.markdown(
+            """
+            <div class="control-card-header">
+                <span>ACTIVE VISUAL CONTEXT</span>
+                <span style="font-size: 0.75rem; color: #34d399;">SAM 3.1 ACTIVE</span>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        if st.session_state.get("shelf_context"):
+            ctx = st.session_state.shelf_context
+            st.markdown(f"**Analysis Summary:**\n\n{ctx.get('summary', 'No summary generated.')}")
+
+            items = ctx.get("items", [])
+            if items:
+                table_items = []
+                for itm in items:
+                    fill_pct = int(itm.get("fill_level", 0.0) * 100)
+                    table_items.append({
+                        "Item SKU": itm.get("item"),
+                        "Fill Level": f"{fill_pct}%",
+                        "Status": itm.get("status", "ok").upper()
+                    })
+                st.dataframe(pd.DataFrame(table_items), use_container_width=True, hide_index=True)
+
+            st.caption("Active context is automatically appended to subsequent Orchestrator instructions.")
+            if st.button("Clear Shelf Context", key="clear_shelf_context_btn"):
+                st.session_state.shelf_context = None
+                st.session_state.last_uploaded_image_id = None
+                st.rerun()
+        else:
+            st.info("No active shelf image analyzed. Upload an image or select an example scenario above.")
+
+
+# -----------------------------------------------------------------------------
+# Module 3: Documents
+# -----------------------------------------------------------------------------
+elif selected_module == "Documents":
+    st.markdown("### 📄 Document & Invoice Extraction")
+    st.markdown("Automated structured data extraction powered by Meta muse-image-1.0. Upload invoices, bills of lading, and freight manifests.")
+
+    # Collapsible Example Inputs for Invoice Line Items
+    invoice_examples = [x for x in GOLD_INPUTS if x.get("type") == "invoice"]
+    if invoice_examples:
+        with st.expander("📋 Example Inputs (20 Invoice Line Items)", expanded=False):
+            st.caption("Click **Use** to immediately populate and stage the extracted logistics data.")
+            for i, ex in enumerate(invoice_examples):
+                c_txt, c_btn = st.columns([5, 1])
+                with c_txt:
+                    st.markdown(f"**{i+1}.** {ex.get('input')}")
+                    st.caption(f"Expected: {ex.get('expected_outcome')}")
+                with c_btn:
+                    if st.button("Use", key=f"use_inv_ex_{i}", use_container_width=True):
+                        st.session_state.extracted_document = {
+                            "supplier": "FastFreight Logistics",
+                            "items": [{"description": ex.get("input")[:50], "quantity": 100, "unit_price": 45.0}],
+                            "dates": ["2026-11-05"],
+                            "raw_summary": ex.get("input")
+                        }
+                        st.session_state.prefilled_prompt = f"Process incoming shipment from FastFreight Logistics: receive 100x items based on '{ex.get('input')[:60]}' into inventory."
+                        st.success("Invoice example loaded into structured extraction view!")
+                        st.rerun()
+
+    col_doc_up, col_doc_view = st.columns([1, 1])
+
+    with col_doc_up:
+        st.markdown(
+            """
+            <div class="control-card-header">
+                <span>UPLOAD INVOICE / BOL DOCUMENT</span>
+                <span style="font-size: 0.75rem; color: #94a3b8;">MAX 2MB</span>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        uploaded_doc = st.file_uploader(
+            "Upload Invoice or Shipping Document",
+            type=["png", "jpg", "jpeg", "webp"],
+            key="document_image_uploader"
+        )
+        if uploaded_doc is not None:
+            if uploaded_doc.size > 2_000_000:
+                show_user_error(
+                    message="The uploaded document exceeds the 2MB size limit.",
+                    suggestion="Please scan the document at 200 DPI or compress the PDF/image before uploading."
+                )
+            else:
+                doc_bytes = uploaded_doc.read()
+                doc_id = hash(doc_bytes)
+                if st.session_state.get("last_uploaded_doc_id") != doc_id:
+                    st.session_state.last_uploaded_doc_id = doc_id
+                    with st.spinner("Extracting document data with muse-image-1.0..."):
+                        try:
+                            extraction = extract_document_data(doc_bytes)
+                            st.session_state.extracted_document = extraction
+                            st.session_state.prefilled_prompt = format_logistics_instruction(extraction)
+                            st.rerun()
+                        except Exception as e:
+                            show_user_error(
+                                message=f"Unable to extract text from document: {e}",
+                                suggestion="Ensure the document is upright, well-lit, and text is sharp, or test with an example invoice line item above."
+                            )
+
+    with col_doc_view:
+        st.markdown(
+            """
+            <div class="control-card-header">
+                <span>STRUCTURED EXTRACTION</span>
+                <span style="font-size: 0.75rem; color: #3b82f6;">MUSE-IMAGE-1.0</span>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        if st.session_state.get("extracted_document"):
+            doc_data = st.session_state.extracted_document
+            col_d1, col_d2 = st.columns(2)
+            with col_d1:
+                st.markdown(f"**Supplier:** {doc_data.get('supplier') or 'Not specified'}")
+                dates = doc_data.get("dates", [])
+                st.markdown(f"**Dates:** {', '.join(dates) if dates else 'Not specified'}")
+            with col_d2:
+                st.markdown(f"**Summary:** {doc_data.get('raw_summary') or 'None'}")
+
+            items = doc_data.get("items", [])
+            if items:
+                st.markdown("**Line Items:**")
+                doc_table = []
+                for itm in items:
+                    doc_table.append({
+                        "Description": itm.get('description', 'Item'),
+                        "Quantity": itm.get('quantity', 1),
+                        "Unit Price": f"${itm.get('unit_price')}" if itm.get('unit_price') is not None else "N/A"
+                    })
+                st.dataframe(pd.DataFrame(doc_table), use_container_width=True, hide_index=True)
+
+            if st.session_state.get("prefilled_prompt"):
+                st.markdown("**Generated Logistics Instruction:**")
+                st.info(st.session_state.prefilled_prompt)
+
+            col_b1, col_b2 = st.columns(2)
+            with col_b1:
+                if st.button("Clear Document", key="clear_extracted_doc_btn"):
+                    st.session_state.extracted_document = None
+                    st.session_state.prefilled_prompt = ""
+                    st.session_state.last_uploaded_doc_id = None
+                    st.rerun()
+            with col_b2:
+                if st.button("Open in Orchestrator", type="primary", key="open_in_orchestrator_btn"):
+                    st.session_state.active_nav_module = "Orchestrator"
+                    st.rerun()
+        else:
+            st.info("No document uploaded. Upload a document or select an example invoice line item above.")
+
+
+# -----------------------------------------------------------------------------

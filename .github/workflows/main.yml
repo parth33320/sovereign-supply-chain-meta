@@ -30,4 +30,4 @@ jobs:
 
     - name: Run Supply Chain Eval Suite
       run: |
-        PYTHONPATH=. pytest tests/test_evals.py -s -v
+        PYTHONPATH=. python -m pytest tests/test_evals.py -s -v
