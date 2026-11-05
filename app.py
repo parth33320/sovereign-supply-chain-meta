@@ -32,11 +32,38 @@ DEMO_MODE = os.environ.get("DEMO_MODE") == "1"
 
 # Page Configuration
 st.set_page_config(
-    page_title="Sovereign Supply Chain Orchestrator",
-    page_icon="🛡️",
+    page_title="Sovereign Supply Chain",
+    page_icon="🏭",
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+st.markdown("""
+<div id="ssc-loader" style="
+    position:fixed;inset:0;background:#0d1117;
+    display:flex;flex-direction:column;
+    align-items:center;justify-content:center;
+    z-index:999999;transition:opacity 0.4s ease;">
+  <div style="font-size:1.4rem;color:#58a6ff;
+      font-weight:600;font-family:sans-serif;">
+    Sovereign Supply Chain
+  </div>
+  <div style="color:#8b949e;font-size:0.85rem;
+      margin-top:8px;font-family:sans-serif;">
+    Initializing AI agents...
+  </div>
+</div>
+<script>
+  window.addEventListener('load', function() {
+    setTimeout(function() {
+      var el = document.getElementById('ssc-loader');
+      if (el) { el.style.opacity='0';
+        setTimeout(function(){el.remove();},400); }
+    }, 800);
+  });
+</script>
+""", unsafe_allow_html=True)
+
 
 st.markdown("""
 <style>
@@ -298,9 +325,174 @@ button[kind="secondary"]:hover, .stButton > button:not([kind="primary"]):hover {
     border-color: #3b82f6;
     color: #93c5fd;
 }
+/* Fix 4: Active radio navigation state */
+div[data-testid="stSidebar"] .stRadio label:has(input:checked) {
+    background: #21262d !important;
+    border-left: 3px solid #58a6ff !important;
+    border-radius: 0 6px 6px 0 !important;
+    color: #58a6ff !important;
+    padding-left: 12px !important;
+}
+
+/* Fix 13: Streamlit widget style normalization */
+.stSelectbox > div > div {
+    background:#161b22 !important;
+    border:1px solid #30363d !important;
+    border-radius:6px !important;
+    color:#e6edf3 !important;
+}
+.stFileUploader > div {
+    background:#161b22 !important;
+    border:1px dashed #30363d !important;
+    border-radius:8px !important;
+}
+.stFileUploader label {
+    color:#8b949e !important;
+    font-size:0.85rem !important;
+}
+.stRadio > div {
+    gap:4px !important;
+}
+.stRadio label {
+    color:#8b949e !important;
+    font-size:0.9rem !important;
+    padding:8px 12px !important;
+    border-radius:6px !important;
+    cursor:pointer !important;
+    transition:background 0.15s !important;
+}
+.stRadio label:hover {
+    background:#21262d !important;
+    color:#e6edf3 !important;
+}
+.stChatInput textarea {
+    background:#161b22 !important;
+    border:1px solid #30363d !important;
+    border-radius:8px !important;
+    color:#e6edf3 !important;
+    font-size:0.9rem !important;
+}
+.stChatInput textarea:focus {
+    border-color:#58a6ff !important;
+    box-shadow:0 0 0 2px rgba(88,166,255,0.15) !important;
+}
+.stSpinner > div {
+    border-top-color:#58a6ff !important;
+}
+.streamlit-expanderHeader {
+    background:#161b22 !important;
+    border:1px solid #30363d !important;
+    border-radius:6px !important;
+    color:#8b949e !important;
+    font-size:0.85rem !important;
+}
+
 </style>
 """
 st.markdown(ENTERPRISE_CSS, unsafe_allow_html=True)
+
+st.markdown("""
+<script>
+  var lastScroll = 0;
+  window.addEventListener('scroll',
+    function(){ lastScroll = window.scrollY; });
+  var observer = new MutationObserver(function(){
+    if(lastScroll > 0){
+      window.scrollTo(0, lastScroll);
+    }
+  });
+  observer.observe(document.body,
+    {childList:true, subtree:true});
+</script>
+""", unsafe_allow_html=True)
+
+
+def show_toast(message: str, kind: str = "success", duration: int = 3):
+    colors = {
+        "success": ("#3fb950", "✅"),
+        "error":   ("#f85149", "⚠️"),
+        "info":    ("#58a6ff", "ℹ️"),
+        "warning": ("#e3b341", "⚡"),
+    }
+    color, icon = colors.get(kind, colors["info"])
+    st.markdown(f"""
+    <div id="ssc-toast" style="
+        position:fixed;bottom:24px;right:24px;
+        background:#161b22;border:1px solid {color};
+        border-left:4px solid {color};
+        border-radius:8px;padding:12px 20px;
+        font-family:sans-serif;font-size:0.875rem;
+        color:#e6edf3;z-index:99999;
+        box-shadow:0 4px 12px rgba(0,0,0,0.4);
+        animation:slideIn 0.3s ease;">
+      {icon} {message}
+    </div>
+    <style>
+      @keyframes slideIn {{
+        from {{transform:translateX(100px);opacity:0;}}
+        to  {{transform:translateX(0);opacity:1;}}
+      }}
+    </style>
+    <script>
+      setTimeout(function(){{
+        var t=document.getElementById('ssc-toast');
+        if(t){{t.style.opacity='0';
+          t.style.transition='opacity 0.3s';
+          setTimeout(function(){{t.remove();}},{duration*1000});}}
+      }},{duration*1000});
+    </script>
+    """, unsafe_allow_html=True)
+
+
+PERSISTENT_KEYS = [
+    "messages", "chat_history", "thread_id", "task_id",
+    "shelf_context", "hitl_approved", "dispatch_ts"
+]
+
+
+def switch_module(new_module: str):
+    current = st.session_state.get("active_module")
+    if current != new_module:
+        if current == "Warehouse":
+            st.session_state.pop("shelf_upload_result", None)
+        elif current == "Invoice":
+            st.session_state.pop("invoice_result", None)
+        st.session_state["active_module"] = new_module
+
+
+AGENT_STEPS = [
+    "Checking disruption radar",
+    "Fetching inventory",
+    "Analyzing demand",
+    "Drafting plan",
+    "Awaiting your approval"
+]
+
+
+def render_agent_progress(task_status: str):
+    if task_status in ("PENDING", "STARTED"):
+        elapsed = time.time() - st.session_state.get("dispatch_ts", time.time())
+        step_idx = min(int(elapsed / 3), len(AGENT_STEPS) - 1)
+        progress_pct = (step_idx + 1) / len(AGENT_STEPS)
+
+        st.markdown(f"""
+        <div class="ssc-card" style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px;margin:16px 0;">
+          <div class="ssc-section-header" style="font-size:0.75rem;color:#58a6ff;font-weight:600;letter-spacing:0.08em;margin-bottom:8px;">AI AGENTS WORKING</div>
+          <div style="color:#e6edf3;font-size:0.9rem;margin-bottom:12px;">
+            ⚡ {AGENT_STEPS[step_idx]}...
+          </div>
+          <div style="background:#21262d;border-radius:4px;height:6px;">
+            <div style="background:#58a6ff;border-radius:4px;height:6px;
+              width:{int(progress_pct*100)}%;
+              transition:width 0.5s ease;">
+            </div>
+          </div>
+          <div style="color:#8b949e;font-size:0.75rem;margin-top:8px;">
+            Step {step_idx+1} of {len(AGENT_STEPS)}
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
 
 
 def show_user_error(message: str, suggestion: str):
@@ -469,6 +661,7 @@ with st.sidebar:
         label_visibility="collapsed",
         key="main_nav_radio"
     )
+    switch_module(selected_module)
     st.session_state.active_nav_module = selected_module
 
     st.markdown("<div style='height: 1.5rem;'></div>", unsafe_allow_html=True)
@@ -676,10 +869,10 @@ if st.session_state.get("auto_submit_prompt"):
     elif not check_prompt_injection(to_submit):
         st.session_state.waf_count += 1
         st.session_state.waf_history.append({"timestamp": time.strftime("%H:%M:%S"), "count": 1})
-        show_user_error(
-            message="Your instruction triggered our sovereign supply chain security guardrails.",
-            suggestion="Ensure your message contains only valid operational supply chain instructions and does not attempt system override commands."
-        )
+        show_toast("Request blocked. See suggestions below.", "warning")
+        st.session_state["prefill_prompt"] = ""
+        st.session_state.prefilled_prompt = ""
+        st.session_state.show_guardrail_help = True
     else:
         st.session_state.chat_history.append({"role": "user", "content": to_submit})
         request_id = str(uuid.uuid4())
@@ -712,6 +905,43 @@ if st.session_state.get("auto_submit_prompt"):
             execute_agent_synchronous(dispatched_prompt, tenant_id, request_id)
         st.rerun()
 
+
+# Fix 4: Breadcrumb at top of main content area
+module_name = st.session_state.get("active_module", selected_module)
+st.markdown(f"""
+<div style="font-size:0.75rem;color:#8b949e;
+    margin-bottom:16px;font-family:sans-serif;">
+  🏭 Sovereign Supply Chain
+  <span style="margin:0 6px;color:#30363d;">›</span>
+  <span style="color:#e6edf3;">{module_name}</span>
+</div>
+""", unsafe_allow_html=True)
+
+# Fix 12: Disruption alert as elevated banner
+if st.session_state.disruption_history:
+    disruption_alert = st.session_state.disruption_history[-1]
+    if disruption_alert and disruption_alert.get("alert"):
+        sev = disruption_alert.get("severity", "low").lower()
+        if sev in ("high", "medium"):
+            color = "#f85149" if sev == "high" else "#e3b341"
+            st.markdown(f"""
+            <div style="background:#161b22;border:1px solid {color};
+                border-left:4px solid {color};border-radius:8px;
+                padding:12px 16px;margin-bottom:16px;
+                display:flex;align-items:center;gap:12px;">
+              <span style="color:{color};font-size:1rem;">⚠️</span>
+              <div>
+                <span style="color:{color};font-weight:600;
+                    font-size:0.8rem;text-transform:uppercase;">
+                  {sev.upper()} DISRUPTION ALERT
+                </span>
+                <span style="color:#8b949e;font-size:0.85rem;
+                    margin-left:12px;">
+                  {disruption_alert.get('summary','')}
+                </span>
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
 # Module 0: Manager Admin Panel (accessible directly via ?admin=1&password=sovereign)
@@ -947,25 +1177,30 @@ elif selected_module == "Orchestrator":
 
     if col_hitl is not None:
         with col_hitl:
-            st.markdown(
-                """
-                <div class="control-card-header">
-                    <span>⚠️ AWAITING HUMAN APPROVAL</span>
-                    <span style="font-size: 0.75rem; color: #f59e0b; background: #35210c; padding: 2px 8px; border-radius: 4px;">PAUSED</span>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
+            po_num = pending_po.get("po_number", pending_po.get("id", "PO-2025-001")) if pending_po else "PO-2025-001"
+            supp = pending_po.get("supplier", "Supplier B") if pending_po else "Supplier B"
+            qty = pending_po.get("quantity", pending_po.get("restock_quantity", 500)) if pending_po else 500
+            price_val = pending_po.get("price_per_unit", pending_po.get("unit_price", 10.0)) if pending_po else 10.0
+            amt = f"${qty * price_val:,.2f}" if isinstance(qty, (int, float)) and isinstance(price_val, (int, float)) else "$5,000.00"
+            summary_txt = pending_plan_content if pending_plan_content else "Emergency Restock Order for Microcontrollers"
 
-            if pending_plan_content:
-                st.markdown("**Proposed Logistics Plan:**")
-                st.info(pending_plan_content)
+            # Fix 7: HITL Card Visual Elevation
+            st.markdown(f"""
+            <div style="background:#161b22;border:1px solid #e3b341;border-left:4px solid #e3b341;border-radius:8px;padding:20px;margin:16px 0;">
+                <div style="font-size:0.75rem;color:#e3b341;text-transform:uppercase;letter-spacing:0.08em;font-weight:600;margin-bottom:12px;">
+                    ⏸ AWAITING YOUR APPROVAL
+                </div>
+                <div style="color:#e6edf3;font-size:0.9rem;margin-bottom:16px;">
+                    {summary_txt}
+                </div>
+                <div style="color:#8b949e;font-size:0.8rem;">
+                    PO {po_num} · {supp} · {amt}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
             if pending_po:
-                supplier = pending_po.get("supplier", "Unknown Supplier")
                 sku = pending_po.get("sku", "N/A")
-                quantity = pending_po.get("quantity", pending_po.get("restock_quantity", 0))
-                price = pending_po.get("price_per_unit", pending_po.get("unit_price", 0.0))
                 lead_time = pending_po.get("lead_time_days", "N/A")
 
                 st.markdown(
@@ -975,10 +1210,10 @@ elif selected_module == "Orchestrator":
                             📦 Purchase Order Summary
                         </div>
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; font-size: 0.84rem;">
-                            <div><span style="color: #94a3b8;">Supplier:</span> <strong style="color: #f8fafc;">{supplier}</strong></div>
+                            <div><span style="color: #94a3b8;">Supplier:</span> <strong style="color: #f8fafc;">{supp}</strong></div>
                             <div><span style="color: #94a3b8;">SKU:</span> <strong style="color: #f8fafc;">{sku}</strong></div>
-                            <div><span style="color: #94a3b8;">Quantity:</span> <strong style="color: #f8fafc;">{quantity:,} units</strong></div>
-                            <div><span style="color: #94a3b8;">Price / Unit:</span> <strong style="color: #34d399;">${price:,.2f}</strong></div>
+                            <div><span style="color: #94a3b8;">Quantity:</span> <strong style="color: #f8fafc;">{qty:,} units</strong></div>
+                            <div><span style="color: #94a3b8;">Price / Unit:</span> <strong style="color: #34d399;">${price_val:,.2f}</strong></div>
                             <div><span style="color: #94a3b8;">Lead Time:</span> <strong style="color: #f8fafc;">{lead_time} days</strong></div>
                         </div>
                     </div>
@@ -994,32 +1229,43 @@ elif selected_module == "Orchestrator":
             st.markdown("<div style='height: 0.5rem;'></div>", unsafe_allow_html=True)
             col_app, col_rej = st.columns(2)
             with col_app:
-                if st.button("Approve", type="primary", key="hitl_approve_btn", use_container_width=True):
+                if st.button("✅ Approve", type="primary", key="hitl_approve_btn", use_container_width=True):
+                    # Fix 8: Success State After Approve
+                    st.markdown("""
+                    <div style="background:#0d1117;border:1px solid #3fb950;border-left:4px solid #3fb950;border-radius:8px;padding:20px;margin:16px 0;text-align:center;">
+                        <div style="font-size:1.4rem;margin-bottom:8px;">✅</div>
+                        <div style="color:#3fb950;font-weight:600;font-size:0.95rem;">Plan Approved</div>
+                        <div style="color:#8b949e;font-size:0.8rem;margin-top:4px;">
+                            Executing with AI agents...
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    show_toast("Plan approved", "success")
                     log_dpo(
                         st.session_state.get('pending_prompt', ''),
                         st.session_state.get('demo_pending_plan', st.session_state.get('pending_plan', '')),
                         ""
                     )
+                    st.session_state["hitl_approved"] = True
                     if DEMO_MODE:
                         st.session_state.demo_paused_for_hitl = False
                         st.session_state.chat_history.append({"role": "assistant", "content": "Plan Approved and Executed."})
-                        st.success("Plan Approved and Executed.")
                         st.rerun()
                     else:
                         graph.update_state(config, {"status": "approved"})
                         for event in graph.stream(None, config):
                             pass
                         st.session_state.chat_history.append({"role": "assistant", "content": "Plan Approved and Executed."})
-                        st.success("Plan Approved and Executed.")
                         st.rerun()
 
             with col_rej:
-                if st.button("Reject", key="hitl_reject_btn", use_container_width=True):
+                if st.button("✗ Reject", key="hitl_reject_btn", use_container_width=True):
                     log_dpo(
                         st.session_state.get('pending_prompt', ''),
                         "",
                         st.session_state.get('demo_pending_plan', st.session_state.get('pending_plan', ''))
                     )
+                    show_toast("Plan rejected", "warning")
                     if DEMO_MODE:
                         st.session_state.demo_paused_for_hitl = False
                         st.session_state.chat_history.append({"role": "assistant", "content": "Plan Rejected."})
@@ -1045,13 +1291,39 @@ elif selected_module == "Orchestrator":
         with chat_container:
             if not st.session_state.chat_history:
                 st.markdown("""
-<div style="text-align: center; padding: 2rem 1rem; color: #64748b; border: 1px dashed #232b3e; border-radius: 8px;">
-    <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">💬</div>
-    <div style="font-weight: 600; color: #94a3b8; margin-bottom: 0.5rem;">Orchestrator Ready</div>
-    <div style="font-size: 0.82rem; color: #475569;">Try: <em>"Emergency stockout on microcontrollers, initiate immediate supplier negotiation"</em></div>
-    <div style="font-size: 0.82rem; color: #475569; margin-top: 0.25rem;">Or expand <strong>📋 Example Inputs</strong> below to trigger gold standard demo commands.</div>
-</div>
-""", unsafe_allow_html=True)
+                <div class="ssc-card" style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:24px;margin-bottom:16px;">
+                  <div style="font-size:1.15rem;font-weight:700;color:#f8fafc;margin-bottom:8px;">
+                    👋 Welcome to Sovereign Supply Chain
+                  </div>
+                  <div style="color:#8b949e;font-size:0.875rem;margin-bottom:16px;">
+                    Try one of these to get started:
+                  </div>
+                </div>
+                """, unsafe_allow_html=True)
+                col_onb1, col_onb2, col_onb3 = st.columns(3)
+                with col_onb1:
+                    if st.button("🔴 Check Widget-A stockout", use_container_width=True, key="onb_btn_1"):
+                        st.session_state["prefill_prompt"] = "Check Widget-A stockout"
+                        st.session_state.prefilled_prompt = "Check Widget-A stockout"
+                        st.session_state.auto_submit_prompt = "Check Widget-A stockout"
+                        st.rerun()
+                with col_onb2:
+                    if st.button("📦 Reorder Semiconductors", use_container_width=True, key="onb_btn_2"):
+                        st.session_state["prefill_prompt"] = "Reorder Semiconductors"
+                        st.session_state.prefilled_prompt = "Reorder Semiconductors"
+                        st.session_state.auto_submit_prompt = "Reorder Semiconductors"
+                        st.rerun()
+                with col_onb3:
+                    if st.button("🤝 Negotiate with Supplier B", use_container_width=True, key="onb_btn_3"):
+                        st.session_state["prefill_prompt"] = "Negotiate with Supplier B"
+                        st.session_state.prefilled_prompt = "Negotiate with Supplier B"
+                        st.session_state.auto_submit_prompt = "Negotiate with Supplier B"
+                        st.rerun()
+                st.markdown("""
+                <div style="color:#8b949e;font-size:0.85rem;margin-top:12px;margin-bottom:16px;">
+                  Or type your own warehouse command ↓
+                </div>
+                """, unsafe_allow_html=True)
             for msg in st.session_state.chat_history:
                 with st.chat_message(msg["role"]):
                     st.write(msg["content"])
@@ -1100,10 +1372,33 @@ elif selected_module == "Orchestrator":
                             suggestion="Ensure your microphone is connected, speak clearly within 3 feet, or type your instruction directly in the chat box."
                         )
 
+        # Fix 11: Guardrail Help Card
+        if st.session_state.get("show_guardrail_help"):
+            st.markdown("""
+            <div class="ssc-card" style="border-color:#e3b341;border:1px solid #e3b341;border-radius:8px;padding:16px;margin:16px 0;background:#161b22;">
+              <div class="ssc-section-header" style="color:#e3b341;font-weight:600;font-size:0.8rem;letter-spacing:0.08em;margin-bottom:8px;">
+                ⚡ WHAT TO TRY INSTEAD
+              </div>
+              <div style="color:#8b949e;font-size:0.85rem;line-height:1.8;">
+                ✓ "Check stock levels for Semiconductors"<br>
+                ✓ "Reorder 500 units of Widget-A"<br>
+                ✓ "Emergency stockout on Microcontrollers"<br>
+                <a href="#" style="color:#58a6ff;font-size:0.8rem;">
+                  See all 20 example inputs ↓
+                </a>
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # Fix 5: Agent Progress Indicator
+        task_status = st.session_state.get("task_status", "IDLE")
+        render_agent_progress(task_status)
+
         # Text Logistics Command Input
         prompt = st.chat_input("Enter logistics instruction...")
         if prompt:
             st.session_state.auto_submit_prompt = prompt
+            st.session_state["dispatch_ts"] = time.time()
             st.rerun()
 
 
