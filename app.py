@@ -305,7 +305,7 @@ st.markdown(ENTERPRISE_CSS, unsafe_allow_html=True)
 
 def show_user_error(message: str, suggestion: str):
     """
-    Renders a styled error card in plain English with a 'What to do next' suggestion.
+    Renders a styled HTML card with a ⚠️ icon, plain-English error headline, and a 'What to do next:' line.
     Replaces raw st.error calls across the application.
     """
     card_html = f"""
@@ -324,10 +324,35 @@ def show_user_error(message: str, suggestion: str):
     st.markdown(card_html, unsafe_allow_html=True)
 
 
+def suggest_similar_item(item_name: str, tenant_id: str) -> Optional[str]:
+    """
+    Finds the closest matching inventory item name for tenant_id using difflib.get_close_matches
+    against inventory item names fetched from the database with cutoff=0.5.
+    """
+    try:
+        rows = execute_query("SELECT item_name FROM inventory WHERE tenant_id = ?", [tenant_id])
+        item_names = [r["item_name"] for r in rows]
+    except Exception:
+        return None
+
+    if not item_names:
+        return None
+
+    mapping = {name.lower(): name for name in item_names}
+    # Direct case-insensitive match
+    if item_name.lower() in mapping:
+        return mapping[item_name.lower()]
+
+    matches = difflib.get_close_matches(item_name.lower(), mapping.keys(), n=1, cutoff=0.5)
+    if matches:
+        return mapping[matches[0]]
+    return None
+
+
 def check_missing_item_and_suggest(user_input: str, tenant_id: str) -> Optional[Tuple[str, str]]:
     """
     Checks if an item name mentioned in the user prompt is absent from inventory,
-    and returns a suggestion with the closest match if found.
+    and returns an error message and suggestion with the closest match if found.
     """
     try:
         rows = execute_query("SELECT item_name FROM inventory WHERE tenant_id = ?", [tenant_id])
@@ -337,16 +362,14 @@ def check_missing_item_and_suggest(user_input: str, tenant_id: str) -> Optional[
 
     words = re.findall(r"[A-Za-z0-9\-]+", user_input)
     lower_inventory = {name.lower(): name for name in item_names}
-    lower_inventory["widget-a"] = "Widget-A"
 
     for word in words:
         if len(word) >= 4 and word.lower() not in lower_inventory:
-            matches = difflib.get_close_matches(word.lower(), lower_inventory.keys(), n=1, cutoff=0.5)
-            if matches:
-                suggested_name = lower_inventory[matches[0]]
+            closest_match = suggest_similar_item(word, tenant_id)
+            if closest_match:
                 return (
-                    f"We couldn't find '{word}' in your inventory. Did you mean '{suggested_name}'?",
-                    f"Try saying or typing '{suggested_name}' again, or contact your manager in the Admin panel to add '{word}' to the catalog."
+                    f"Item not found: We couldn't find '{word}' in your inventory.",
+                    f"Did you mean '{closest_match}'? Try saying or typing '{closest_match}' again, or request adding '{word}' in the Admin panel."
                 )
     return None
 
@@ -402,17 +425,22 @@ is_dev_mode = (
     or os.environ.get("DEV_MODE") == "1"
 )
 
-# Check manager admin panel URL (?admin=1)
-is_admin_mode = (st.query_params.get("admin") == "1")
-if is_admin_mode:
-    if st.query_params.get("password") != "sovereign":
-        st.error("Unauthorized")
-        st.stop()
+# Check manager admin panel URL (?admin=1) and password gate
+is_admin_param = (st.query_params.get("admin") == "1")
+is_authorized_admin = is_admin_param and (st.query_params.get("password") == "sovereign")
+is_admin_mode = is_authorized_admin
+
+if is_admin_param and not is_authorized_admin:
+    show_user_error(
+        "Unauthorized access.",
+        "Add ?admin=1&password=sovereign to the URL to access the Admin panel."
+    )
+    st.stop()
 
 if 'active_nav_module' not in st.session_state:
-    st.session_state.active_nav_module = "Orchestrator"
+    st.session_state.active_nav_module = "Admin" if is_authorized_admin else "Orchestrator"
 
-# Navigation Rail (Left Sidebar) - "Admin" removed from navigation rail completely
+# Navigation Rail (Left Sidebar) - Admin only appears when both admin=1 & password=sovereign are in URL
 with st.sidebar:
     st.markdown(
         """
@@ -425,6 +453,14 @@ with st.sidebar:
     )
 
     modules = ["Orchestrator", "Warehouse", "Documents"]
+    if is_authorized_admin:
+        modules.append("Admin")
+        if st.session_state.active_nav_module not in modules or st.session_state.get("_admin_default_set") is None:
+            st.session_state.active_nav_module = "Admin"
+            st.session_state._admin_default_set = True
+    elif st.session_state.active_nav_module == "Admin":
+        st.session_state.active_nav_module = "Orchestrator"
+
     current_idx = modules.index(st.session_state.active_nav_module) if st.session_state.active_nav_module in modules else 0
     selected_module = st.radio(
         "Navigation",
