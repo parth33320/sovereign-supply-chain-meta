@@ -81,18 +81,31 @@ def _parse_llm_response(content: str) -> Dict[str, Any]:
     }
 
 
-def analyze_shelf_image(image_bytes: bytes) -> Dict[str, Any]:
+def analyze_shelf_image(image_bytes: bytes, tenant_id: str = "Tenant_A") -> Dict[str, Any]:
     """
     Analyzes a warehouse shelf image using SAM 3.1 via Meta API.
     If the sam-3.1 model fails (e.g., 404 or unsupported), falls back to muse-spark-1.3.
 
+    Cross-checks detected item names against inventory DB for tenant_id using read_inventory.
+    If any item is not found, returns an error dict with message:
+    "Item '[name]' not found in inventory. Upload rejected."
+
     Inputs:
         image_bytes (bytes): Raw bytes of the shelf image.
+        tenant_id (str): Tenant ID to verify inventory against (default: "Tenant_A").
 
     Outputs:
         Dict[str, Any]:
             {
                 "items": [{"item": str, "fill_level": float, "status": "low"|"ok"|"empty"}],
+                "summary": str
+            }
+            or error dict:
+            {
+                "error": "Item '[name]' not found in inventory. Upload rejected.",
+                "message": "Item '[name]' not found in inventory. Upload rejected.",
+                "unknown_item": str,
+                "items": [],
                 "summary": str
             }
 
@@ -136,6 +149,7 @@ def analyze_shelf_image(image_bytes: bytes) -> Dict[str, Any]:
     )
 
     # First attempt: SAM 3.1
+    parsed = None
     try:
         llm = ChatOpenAI(
             model="sam-3.1",
@@ -144,24 +158,57 @@ def analyze_shelf_image(image_bytes: bytes) -> Dict[str, Any]:
             temperature=0
         )
         response = llm.invoke([message])
-        return _parse_llm_response(response.content)
+        parsed = _parse_llm_response(response.content)
     except Exception as exc:
         logger.warning(f"SAM 3.1 model call failed ({exc}). Falling back to muse-spark-1.3.")
 
-    # Fallback attempt: muse-spark-1.3
+    if parsed is None:
+        # Fallback attempt: muse-spark-1.3
+        try:
+            fallback_model = os.environ.get("META_MODEL_NAME", "muse-spark-1.3")
+            llm_fallback = ChatOpenAI(
+                model=fallback_model,
+                api_key=api_key,
+                base_url=base_url,
+                temperature=0
+            )
+            response = llm_fallback.invoke([message])
+            parsed = _parse_llm_response(response.content)
+        except Exception as exc:
+            logger.error(f"Fallback vision model call failed: {exc}")
+            return {
+                "items": [],
+                "summary": f"Vision analysis error: {str(exc)}"
+            }
+
+    # Cross-check detected SKUs/items against inventory DB
+    from mcp_server import read_inventory
     try:
-        fallback_model = os.environ.get("META_MODEL_NAME", "muse-spark-1.3")
-        llm_fallback = ChatOpenAI(
-            model=fallback_model,
-            api_key=api_key,
-            base_url=base_url,
-            temperature=0
-        )
-        response = llm_fallback.invoke([message])
-        return _parse_llm_response(response.content)
-    except Exception as exc:
-        logger.error(f"Fallback vision model call failed: {exc}")
-        return {
-            "items": [],
-            "summary": f"Vision analysis error: {str(exc)}"
-        }
+        inv_json = read_inventory(tenant_id)
+        inventory_items = json.loads(inv_json)
+        if isinstance(inventory_items, list):
+            valid_names = [itm.get("item_name", "").strip() for itm in inventory_items if itm.get("item_name")]
+            valid_names_lower = {name.lower(): name for name in valid_names}
+
+            for item_entry in parsed.get("items", []):
+                detected_name = str(item_entry.get("item", "")).strip()
+                if not detected_name:
+                    continue
+                d_lower = detected_name.lower()
+                is_matched = (
+                    d_lower in valid_names_lower
+                    or any(d_lower in v or v in d_lower for v in valid_names_lower)
+                )
+                if not is_matched:
+                    err_msg = f"Item '{detected_name}' not found in inventory. Upload rejected."
+                    return {
+                        "error": err_msg,
+                        "message": err_msg,
+                        "unknown_item": detected_name,
+                        "items": [],
+                        "summary": err_msg
+                    }
+    except Exception as e:
+        logger.warning(f"Error checking inventory for shelf image items: {e}")
+
+    return parsed
