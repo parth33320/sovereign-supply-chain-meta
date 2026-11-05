@@ -93,20 +93,35 @@ def _parse_document_response(content: str) -> Dict[str, Any]:
     }
 
 
-def extract_document_data(image_bytes: bytes) -> Dict[str, Any]:
+def extract_document_data(image_bytes: bytes, tenant_id: str = "Tenant_A") -> Dict[str, Any]:
     """
     Extracts structured fields (supplier, items, quantities, dates) from an invoice
     or shipping document image using muse-image-1.0 via Meta API.
     Falls back to META_MODEL_NAME (default muse-spark-1.3) if muse-image-1.0 is unavailable.
 
+    Cross-checks extracted line items against inventory DB for tenant_id using read_inventory.
+    If any item is not found, returns an error dict with message:
+    "SKU '[name]' not found in inventory. Manager approval required to add new item."
+
     Inputs:
         image_bytes (bytes): Raw bytes of the document image.
+        tenant_id (str): Tenant ID to verify inventory against (default: "Tenant_A").
 
     Outputs:
         Dict[str, Any]:
             {
                 "supplier": str,
                 "items": [{"description": str, "quantity": int|float, "unit_price": float|None}],
+                "dates": list[str],
+                "raw_summary": str
+            }
+            or error dict:
+            {
+                "error": "SKU '[name]' not found in inventory. Manager approval required to add new item.",
+                "message": "SKU '[name]' not found in inventory. Manager approval required to add new item.",
+                "unknown_item": str,
+                "supplier": str,
+                "items": [],
                 "dates": list[str],
                 "raw_summary": str
             }
@@ -155,6 +170,7 @@ def extract_document_data(image_bytes: bytes) -> Dict[str, Any]:
     )
 
     # Primary attempt: muse-image-1.0
+    parsed = None
     try:
         llm = ChatOpenAI(
             model="muse-image-1.0",
@@ -163,29 +179,64 @@ def extract_document_data(image_bytes: bytes) -> Dict[str, Any]:
             temperature=0
         )
         response = llm.invoke([message])
-        return _parse_document_response(response.content)
+        parsed = _parse_document_response(response.content)
     except Exception as exc:
         logger.warning(f"muse-image-1.0 model call failed ({exc}). Falling back to META_MODEL_NAME.")
 
-    # Fallback attempt: muse-spark-1.3
+    if parsed is None:
+        # Fallback attempt: muse-spark-1.3
+        try:
+            fallback_model = os.environ.get("META_MODEL_NAME", "muse-spark-1.3")
+            llm_fallback = ChatOpenAI(
+                model=fallback_model,
+                api_key=api_key,
+                base_url=base_url,
+                temperature=0
+            )
+            response = llm_fallback.invoke([message])
+            parsed = _parse_document_response(response.content)
+        except Exception as exc:
+            logger.error(f"Fallback document vision model call failed: {exc}")
+            return {
+                "supplier": "",
+                "items": [],
+                "dates": [],
+                "raw_summary": f"Document extraction error: {str(exc)}"
+            }
+
+    # Cross-check extracted line items against inventory DB
+    from mcp_server import read_inventory
     try:
-        fallback_model = os.environ.get("META_MODEL_NAME", "muse-spark-1.3")
-        llm_fallback = ChatOpenAI(
-            model=fallback_model,
-            api_key=api_key,
-            base_url=base_url,
-            temperature=0
-        )
-        response = llm_fallback.invoke([message])
-        return _parse_document_response(response.content)
-    except Exception as exc:
-        logger.error(f"Fallback document vision model call failed: {exc}")
-        return {
-            "supplier": "",
-            "items": [],
-            "dates": [],
-            "raw_summary": f"Document extraction error: {str(exc)}"
-        }
+        inv_json = read_inventory(tenant_id)
+        inventory_items = json.loads(inv_json)
+        if isinstance(inventory_items, list):
+            valid_names = [itm.get("item_name", "").strip() for itm in inventory_items if itm.get("item_name")]
+            valid_names_lower = {name.lower(): name for name in valid_names}
+
+            for itm in parsed.get("items", []):
+                desc = str(itm.get("description", "")).strip()
+                if not desc:
+                    continue
+                d_lower = desc.lower()
+                is_matched = (
+                    d_lower in valid_names_lower
+                    or any(d_lower in v or v in d_lower for v in valid_names_lower)
+                )
+                if not is_matched:
+                    err_msg = f"SKU '{desc}' not found in inventory. Manager approval required to add new item."
+                    return {
+                        "error": err_msg,
+                        "message": err_msg,
+                        "unknown_item": desc,
+                        "supplier": parsed.get("supplier", ""),
+                        "items": [],
+                        "dates": parsed.get("dates", []),
+                        "raw_summary": err_msg
+                    }
+    except Exception as e:
+        logger.warning(f"Error checking inventory for document items: {e}")
+
+    return parsed
 
 
 def format_logistics_instruction(extracted: Dict[str, Any]) -> str:
