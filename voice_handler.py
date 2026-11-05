@@ -18,6 +18,7 @@ Inputs and Outputs:
     - 'status': 'ok' | 'error'
 """
 
+import json
 import io
 import os
 import tempfile
@@ -144,7 +145,6 @@ def process_voice_input(audio_bytes: bytes) -> dict:
             f"{base_url}/asr/transcribe",
             headers={"Authorization": f"Bearer {api_key}"},
             files={"audio": ("audio.wav", wav_bytes, "audio/wav")},
-            data={"model": "muse-voice-transcribe-1.0"},
             timeout=30,
         )
         resp.raise_for_status()
