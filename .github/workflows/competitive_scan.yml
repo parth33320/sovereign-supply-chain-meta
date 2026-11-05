@@ -1,0 +1,67 @@
+name: Weekly Competitive Scan & Self-Improvement
+
+on:
+  schedule:
+    # Run every Monday at 06:00 UTC
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  competitive-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests google-generativeai
+
+      - name: Run Competitive Scan and Generate Proposal
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          python scripts/run_competitive_scan.py
+
+      - name: Create Pull Request with Improvement Proposal
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          DATE_STR=$(date +%Y-%m-%d)
+          BRANCH_NAME="competitive-scan-${DATE_STR}"
+
+          # Configure git
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Check for changes
+          if [ -n "$(git status --porcelain docs/improvement_proposals/)" ]; then
+            git checkout -b "$BRANCH_NAME"
+            git add docs/improvement_proposals/
+            git commit -m "feat(intel): weekly competitive scan proposal for ${DATE_STR}"
+            git push origin "$BRANCH_NAME" --force
+
+            gh pr create \
+              --title "Autonomous Innovation Proposal: ${DATE_STR}" \
+              --body "### Competitive Intelligence Scan (${DATE_STR})
+This PR contains an autonomously generated supply chain improvement proposal based on competitive release notes from **ServiceNow**, **SAP**, and **Salesforce** powered by **Google Gemini 1.5 Flash**.
+
+- **Proposal File:** \`docs/improvement_proposals/${DATE_STR}.md\`
+- **Status:** Awaiting Human Review and Approval prior to code modification.
+
+Please review the proposed features and architecture recommendations before approving." \
+              --base main \
+              --head "$BRANCH_NAME"
+          else
+            echo "No new proposals generated or changes detected."
+          fi

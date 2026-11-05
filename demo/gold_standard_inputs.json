@@ -1,0 +1,302 @@
+[
+  {
+    "type": "voice",
+    "input": "Emergency stockout on microcontrollers, initiate immediate supplier negotiation",
+    "expected_outcome": "Trigger A2A negotiation flow and generate purchase order for microcontrollers."
+  },
+  {
+    "type": "voice",
+    "input": "Check stock levels for copper wire spools across all regional distribution hubs",
+    "expected_outcome": "Query current copper wire inventory and report 2000 units available."
+  },
+  {
+    "type": "voice",
+    "input": "Rebalance lithium battery inventory from Warehouse East to Assembly Facility West",
+    "expected_outcome": "Generate stock reallocation route with optimized transport ETA."
+  },
+  {
+    "type": "voice",
+    "input": "Hydraulic actuators are depleted, execute automated RFQ with secondary suppliers",
+    "expected_outcome": "Initiate autonomous A2A procurement for hydraulic actuators."
+  },
+  {
+    "type": "voice",
+    "input": "Request expedited shipment of 500 semiconductors from primary vendor",
+    "expected_outcome": "Draft expedited carrier allocation and update dispatch timeline."
+  },
+  {
+    "type": "voice",
+    "input": "Verify spot rate and transit time for structural steel plates shipment",
+    "expected_outcome": "Retrieve spot rate $800.25 and 30-day transit estimate from database."
+  },
+  {
+    "type": "voice",
+    "input": "Forecast 7-day stockout probabilities for all Tenant A components",
+    "expected_outcome": "Generate proactive demand forecast and flag critical component risks."
+  },
+  {
+    "type": "voice",
+    "input": "Reallocate 1000 anti-static ESD bags to packaging line 3 immediately",
+    "expected_outcome": "Create intra-facility transfer work order for packaging supplies."
+  },
+  {
+    "type": "voice",
+    "input": "Audit polymer resin pellet inventory for upcoming automotive production run",
+    "expected_outcome": "Display on-hand quantity of 5000 units and supplier details."
+  },
+  {
+    "type": "voice",
+    "input": "Brass snap buttons are completely out of stock, trigger procurement bidding",
+    "expected_outcome": "Trigger A2A autonomous RFQ for Tenant B brass snap buttons."
+  },
+  {
+    "type": "voice",
+    "input": "Confirm arrival of 3000 units of organic cotton yarn at inbound dock 4",
+    "expected_outcome": "Log shipment receipt and reconcile incoming bill of lading."
+  },
+  {
+    "type": "voice",
+    "input": "Elastic waistband webbing stockout detected, find available alternate supplier",
+    "expected_outcome": "Initiate automated supplier negotiation for elastic webbing."
+  },
+  {
+    "type": "voice",
+    "input": "Transfer 500 waterproof membrane rolls to outerwear fabrication hub",
+    "expected_outcome": "Generate transfer manifest and calculate dispatch ETA."
+  },
+  {
+    "type": "voice",
+    "input": "Report transit delay impact for synthetic textile dye container",
+    "expected_outcome": "Assess 12-day transit time and buffer stock reserves."
+  },
+  {
+    "type": "voice",
+    "input": "Verify on-hand quantity of heavy-duty metal zippers in Tenant B warehouse",
+    "expected_outcome": "Confirm 10000 units available with spot rate $50.00."
+  },
+  {
+    "type": "voice",
+    "input": "Review supplier SLA compliance for raw indigo denim fabric shipments",
+    "expected_outcome": "Fetch supplier SUP_009 performance metrics and historical lead times."
+  },
+  {
+    "type": "voice",
+    "input": "Optimize outbound freight carrier selection for 350 technical parkas",
+    "expected_outcome": "Evaluate lowest cost carrier dispatch meeting 14-day delivery target."
+  },
+  {
+    "type": "voice",
+    "input": "Check safety stock threshold for recycled polyester fiber reserves",
+    "expected_outcome": "Calculate replenishment point based on 4000 units on hand."
+  },
+  {
+    "type": "voice",
+    "input": "Issue replenishment purchase order for 5000 recyclable shipping boxes",
+    "expected_outcome": "Draft purchase order for packaging boxes from vendor SUP_010."
+  },
+  {
+    "type": "voice",
+    "input": "Execute emergency logistics reroute to avoid coastal typhoon corridor",
+    "expected_outcome": "Re-route in-transit freight through inland rail corridor."
+  },
+  {
+    "type": "invoice",
+    "input": "Line Item 1: 500x Semiconductors @ $1,500.50/unit from Global Microtech (SUP_001). Invoice INV-2026-081.",
+    "expected_outcome": "Extract supplier Global Microtech, SKU Semiconductors, qty 500, unit price $1500.50, and prepare receipt instruction."
+  },
+  {
+    "type": "invoice",
+    "input": "Line Item 1: 2,000x Copper Wire Spools @ $300.00/unit from Continental Cable Works. BOL #CCW-9941.",
+    "expected_outcome": "Extract supplier Continental Cable Works, SKU Copper Wire Spools, qty 2000, and format logistics intake."
+  },
+  {
+    "type": "invoice",
+    "input": "Line Item 1: 100x Lithium Battery Packs @ $2,500.00/unit from Voltaic Power Systems. Invoice #VPS-4412.",
+    "expected_outcome": "Extract hazardous materials freight record and update battery stock ledger."
+  },
+  {
+    "type": "invoice",
+    "input": "Line Item 1: 10,000x Structural Steel Plates @ $800.25/unit from Apex Foundry Group. Manifest #AFG-770.",
+    "expected_outcome": "Extract bulk heavy freight line items and schedule crane unloading slot."
+  },
+  {
+    "type": "invoice",
+    "input": "Line Item 1: 5,000x Polymer Resin Pellets (50kg sacks) @ $120.00/sack from PetroChem Direct.",
+    "expected_outcome": "Extract raw material shipment and assign silo storage location."
+  },
+  {
+    "type": "invoice",
+    "input": "Line Item 1: 3,200x Aluminum Extrusions @ $410.00/unit from AlumaCraft Industrial. Invoice #AL-501.",
+    "expected_outcome": "Extract metal components and reconcile against purchase order."
+  },
+  {
+    "type": "invoice",
+    "input": "Line Item 1: 50,000x Ceramic Capacitors @ $15.00/reel from Nippon Chipsets. Packing Slip #NC-1002.",
+    "expected_outcome": "Extract micro-electronics reel count and verify cleanroom bin location."
+  },
+  {
+    "type": "invoice",
+    "input": "Line Item 1: 1,200x Optical Infrared Sensors @ $220.00/unit from OptoVision Systems. Bill of Lading #OV-3301.",
+    "expected_outcome": "Extract sensor inventory data and prepare QA inspection ticket."
+  },
+  {
+    "type": "invoice",
+    "input": "Line Item 1: 45x Industrial Control Panels @ $4,800.00/unit from Rockwell Automation. Invoice #RA-8821.",
+    "expected_outcome": "Extract high-value finished goods and trigger asset tagging workflow."
+  },
+  {
+    "type": "invoice",
+    "input": "Line Item 1: 850x Brushless DC Motors @ $340.00/unit from MagnaDrive Dynamics. Invoice #MD-4410.",
+    "expected_outcome": "Extract motor inventory and queue QA electrical test."
+  },
+  {
+    "type": "invoice",
+    "input": "Line Item 1: 3,000x Organic Cotton Yarn Cones @ $200.00/cone from Indus Valley Mills. Commercial Invoice #IV-6612.",
+    "expected_outcome": "Extract textile raw materials and route to weaving preparatory bay."
+  },
+  {
+    "type": "invoice",
+    "input": "Line Item 1: 500x Synthetic Textile Dye Drums @ $450.75/drum from ChromaColor Specialty. BOL #CC-809.",
+    "expected_outcome": "Extract chemical goods manifest and verify spill containment protocol."
+  },
+  {
+    "type": "invoice",
+    "input": "Line Item 1: 10,000x Heavy-Duty Metal Zippers @ $50.00/gross from YKK Fasteners. Invoice #YKK-9014.",
+    "expected_outcome": "Extract notions inventory and log intake into trim department bins."
+  },
+  {
+    "type": "invoice",
+    "input": "Line Item 1: 1,500x Raw Indigo Denim Fabric Bolts @ $600.00/bolt from Cone Denim Mills. Invoice #CD-3309.",
+    "expected_outcome": "Extract fabric bolts and verify roll yardage certificates."
+  },
+  {
+    "type": "invoice",
+    "input": "Line Item 1: 800x Waterproof Breathable Membrane Rolls @ $750.00/roll from GoreTech Materials.",
+    "expected_outcome": "Extract technical textile shipment and generate temperature-controlled storage slip."
+  },
+  {
+    "type": "invoice",
+    "input": "Line Item 1: 4,000x Recycled Polyester Fiber Bales @ $180.00/bale from EcoFiber Tech. Invoice #EF-7120.",
+    "expected_outcome": "Extract sustainable fiber delivery and update recycled content audit logs."
+  },
+  {
+    "type": "invoice",
+    "input": "Line Item 1: 350x All-Weather Technical Parkas @ $210.00/unit from Alpine Outerwear. Manifest #AO-2026.",
+    "expected_outcome": "Extract finished apparel goods and generate cross-dock shipping labels."
+  },
+  {
+    "type": "invoice",
+    "input": "Line Item 1: 1,200x Reinforced Workwear Trousers @ $85.00/unit from IronThread Garments.",
+    "expected_outcome": "Extract garment shipment and route to regional fulfillment staging."
+  },
+  {
+    "type": "invoice",
+    "input": "Line Item 1: 8,000x Corrugated Master Shipping Cartons @ $20.00/bundle from Smurfit Kappa. Invoice #SK-304.",
+    "expected_outcome": "Extract packaging replenishment and replenish packing line racks."
+  },
+  {
+    "type": "invoice",
+    "input": "Line Item 1: 12,000x Biodegradable Polybags @ $8.50/pack from GreenPackaging Solutions.",
+    "expected_outcome": "Extract retail packaging consumables and update supply chain sustainability score."
+  },
+  {
+    "type": "shelf",
+    "input": "High-density pallet rack in Aisle 4 showing full inventory of semiconductor wafer carriers at 95% capacity.",
+    "expected_outcome": "Classify bin status as OK with 95% fill level and log optimal inventory state."
+  },
+  {
+    "type": "shelf",
+    "input": "Bin B-12 designated for 32-bit Microcontrollers is completely vacant with zero stock detected.",
+    "expected_outcome": "Segment empty bin, identify SKU Microcontrollers, flag EMPTY status, and trigger stockout warning."
+  },
+  {
+    "type": "shelf",
+    "input": "Shelf Bay 7 showing Copper Wire Spool rack at 20% capacity with only three spools remaining.",
+    "expected_outcome": "Flag low stock status (<30% threshold) and suggest automated replenishment."
+  },
+  {
+    "type": "shelf",
+    "input": "Storage Zone C-1 showing structural steel plate cantilever rack loaded to 85% safe working capacity.",
+    "expected_outcome": "Confirm safe working load and segment steel plate inventory as OK."
+  },
+  {
+    "type": "shelf",
+    "input": "Bin A-04 for Hydraulic Actuators is entirely devoid of product, barcode label clearly visible.",
+    "expected_outcome": "Detect empty actuator bin and propose immediate A2A restock negotiation."
+  },
+  {
+    "type": "shelf",
+    "input": "Lithium battery fire-safe locker showing 40% fill level with organized tier placement.",
+    "expected_outcome": "Detect battery packs, verify compliance, and report status OK."
+  },
+  {
+    "type": "shelf",
+    "input": "Raw material bay 2 showing polymer resin sacks stacked evenly at 75% fill level.",
+    "expected_outcome": "Segment bulk sacks and calculate on-hand volume estimate."
+  },
+  {
+    "type": "shelf",
+    "input": "Electronics carousel tray 14 for ceramic capacitors showing 15% fill level with depleted reels.",
+    "expected_outcome": "Segment low-fill reel tray and issue reorder advisory."
+  },
+  {
+    "type": "shelf",
+    "input": "Assembly kit staging shelf 3 with optical sensors loaded to 60% capacity in antistatic bins.",
+    "expected_outcome": "Classify optical sensors status as OK and confirm kitting readiness."
+  },
+  {
+    "type": "shelf",
+    "input": "Finished goods rack 9 holding 40 industrial control panels at 80% pallet capacity.",
+    "expected_outcome": "Segment finished panel units and confirm readiness for outbound freight."
+  },
+  {
+    "type": "shelf",
+    "input": "Fabric warehouse bay 1 displaying cotton yarn cone pallets loaded to 90% capacity.",
+    "expected_outcome": "Segment textile cone pallets and record status as OK."
+  },
+  {
+    "type": "shelf",
+    "input": "Notions storage bin T-08 for brass snap buttons is empty with no visible containers.",
+    "expected_outcome": "Flag Tenant B brass snap buttons bin as EMPTY and trigger stockout alert."
+  },
+  {
+    "type": "shelf",
+    "input": "Denim roll cantilever rack showing 25% capacity with only four fabric bolts remaining.",
+    "expected_outcome": "Detect low fabric stock (<30%) and notify production planner."
+  },
+  {
+    "type": "shelf",
+    "input": "Webbing dispenser rack W-02 for elastic waistband material is completely vacant.",
+    "expected_outcome": "Flag elastic waistband webbing as EMPTY and queue A2A negotiation prompt."
+  },
+  {
+    "type": "shelf",
+    "input": "Dye storage containment shelf showing chemical drum bund at 50% capacity with 4 drums.",
+    "expected_outcome": "Segment chemical dye drums, verify secondary containment, and report status OK."
+  },
+  {
+    "type": "shelf",
+    "input": "Zipper spool rack Z-05 organized with assorted metal zippers at 70% fill level.",
+    "expected_outcome": "Classify zipper inventory as OK and log adequate buffer reserves."
+  },
+  {
+    "type": "shelf",
+    "input": "Finished outerwear rack 12 holding technical parkas in polybags at 85% capacity.",
+    "expected_outcome": "Confirm apparel finished goods inventory and record high stock availability."
+  },
+  {
+    "type": "shelf",
+    "input": "Waterproof membrane roll shelf showing 18% remaining capacity on bottom cradle.",
+    "expected_outcome": "Identify low membrane inventory and calculate days-to-stockout projection."
+  },
+  {
+    "type": "shelf",
+    "input": "Packaging material mezzanine showing corrugated box bundles stacked to 80% height.",
+    "expected_outcome": "Segment box bundles and confirm packaging buffer for shipping operations."
+  },
+  {
+    "type": "shelf",
+    "input": "High-visibility vest staging bin containing 150 packaged vests at 65% capacity.",
+    "expected_outcome": "Classify safety apparel stock as OK with sufficient fulfillment depth."
+  }
+]

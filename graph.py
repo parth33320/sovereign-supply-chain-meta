@@ -13,15 +13,26 @@ from demand_forecaster import forecast_sku_stockouts
 
 # Ensure task logging function
 def log_task(request_id: str, status: str, payload: str):
-    conn = sqlite3.connect('mock_sap.db')
-    cursor = conn.cursor()
-    cursor.execute("CREATE TABLE IF NOT EXISTS task_queue (id INTEGER PRIMARY KEY AUTOINCREMENT, request_id TEXT, status TEXT, payload TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
-    cursor.execute(
-        "INSERT INTO task_queue (request_id, status, payload) VALUES (?, ?, ?)",
-        (request_id, status, payload)
-    )
-    conn.commit()
-    conn.close()
+    from db import get_db_connection
+    conn, engine = get_db_connection()
+    try:
+        if engine == "postgres":
+            with conn.cursor() as cur:
+                cur.execute("CREATE TABLE IF NOT EXISTS task_queue (id SERIAL PRIMARY KEY, request_id TEXT, status TEXT, payload TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+                cur.execute(
+                    "INSERT INTO task_queue (request_id, status, payload) VALUES (%s, %s, %s)",
+                    (request_id, status, payload)
+                )
+        else:
+            cursor = conn.cursor()
+            cursor.execute("CREATE TABLE IF NOT EXISTS task_queue (id INTEGER PRIMARY KEY AUTOINCREMENT, request_id TEXT, status TEXT, payload TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+            cursor.execute(
+                "INSERT INTO task_queue (request_id, status, payload) VALUES (?, ?, ?)",
+                (request_id, status, payload)
+            )
+            conn.commit()
+    finally:
+        conn.close()
 
 # DPO Logger
 def log_dpo(prompt: str, chosen: str, rejected: str):
@@ -41,95 +52,12 @@ class AgentState(TypedDict, total=False):
     inventory_data: List[Dict[str, Any]]
     drafted_plan: str
     status: str
-    unknown_item: str
     # Sprint-3 additions
     a2a_transcript: List[Dict[str, Any]] # running negotiation log
     pending_po: Dict[str, Any] # final Purchase Order
     # CEO-to-click portfolio additions
     work_item_id: str
     last_saving: Any
-
-def extract_item_candidates(user_message: str) -> List[str]:
-    """
-    Extracts potential item or SKU names from user's message.
-    """
-    import re
-    candidates = []
-
-    # Quoted items: 'Item Name' or "Item Name"
-    quoted = re.findall(r"['\"]([^'\"]+)['\"]", user_message)
-    for q in quoted:
-        if q.strip():
-            candidates.append(q.strip())
-
-    # Explicit SKU/item labels like "SKU: XYZ", "item: XYZ", "sku-1234", "SKU_1234"
-    explicit = re.findall(r"\b(?:sku|item|part|product)(?:\s*(?:name|id|code)?\s*[:#\-]?\s*|\s+)([A-Za-z0-9_\-]+(?:\s+[A-Za-z0-9_\-]+)*)", user_message, re.IGNORECASE)
-    for exp in explicit:
-        cleaned = exp.strip()
-        cleaned = re.sub(r"[.,;!?]+$", "", cleaned).strip()
-        cleaned = re.split(r"\s+(?:in|from|to|for|with|and|or|at)\s+", cleaned, flags=re.IGNORECASE)[0].strip()
-        if cleaned:
-            candidates.append(cleaned)
-
-    # Patterns like "units of X", "pieces of X", "reallocate X", "order X", "restock X"
-    quantified = re.findall(r"\b(?:units|boxes|pallets|pieces|quantity)\s+of\s+([A-Za-z0-9_\-]+(?:\s+[A-Za-z0-9_\-]+)*)", user_message, re.IGNORECASE)
-    for q_item in quantified:
-        cleaned = q_item.strip()
-        cleaned = re.sub(r"[.,;!?]+$", "", cleaned).strip()
-        cleaned = re.split(r"\s+(?:in|from|to|for|with|and|or|at)\s+", cleaned, flags=re.IGNORECASE)[0].strip()
-        if cleaned:
-            candidates.append(cleaned)
-
-    # Patterns like SKU-[A-Z0-9-]+
-    skus = re.findall(r"\b[A-Za-z0-9]+(?:-[A-Za-z0-9]+)+\b", user_message)
-    for s in skus:
-        if s.lower() not in ["meta-api", "tenant-a", "tenant-b", "pre-commit", "post-hitl"]:
-            candidates.append(s)
-
-    seen = set()
-    unique_candidates = []
-    for c in candidates:
-        if c.lower() not in seen:
-            seen.add(c.lower())
-            unique_candidates.append(c)
-
-    return unique_candidates
-
-def validate_inventory_items(state: AgentState) -> Dict:
-    """
-    Validates any item/SKU extracted from the user message against inventory_data.
-    If an item is specified but not found in inventory_data, returns an AIMessage:
-    'Item '[name]' not found in inventory. Please retry or request manager approval to add new item'
-    and sets status to 'item_not_found'.
-    """
-    inventory = state.get("inventory_data", [])
-    messages = list(state.get("messages", []))
-
-    user_message = next((m.content for m in reversed(messages) if isinstance(m, HumanMessage)), "")
-    if not user_message:
-        return {}
-
-    inventory_names = [item.get("item_name", "").strip() for item in inventory if item.get("item_name")]
-    inventory_names_lower = {name.lower(): name for name in inventory_names}
-
-    candidates = extract_item_candidates(user_message)
-
-    for candidate in candidates:
-        cand_lower = candidate.lower()
-        if cand_lower in inventory_names_lower:
-            continue
-        if any(cand_lower in name_lower or name_lower in cand_lower for name_lower in inventory_names_lower):
-            continue
-
-        msg_text = f"Item '{candidate}' not found in inventory. Please retry or request manager approval to add new item"
-        messages.append(AIMessage(content=msg_text))
-        return {
-            "messages": messages,
-            "status": "item_not_found",
-            "unknown_item": candidate
-        }
-
-    return {"status": state.get("status", "init")}
 
 # Node 1: Global Oracle (Prescriptive Analytics Stub)
 def global_oracle(state: AgentState) -> Dict:
@@ -278,13 +206,10 @@ def execute_plan(state: AgentState) -> Dict:
 
     return {"messages": messages, "status": "executed"}
 
-import asyncio
-async def a2a_negotiate(state: AgentState) -> Dict:
+def a2a_negotiate_sync(state: AgentState) -> Dict:
     """
-    Simulates a multi-agent handshake between a Buyer Agent and a Supplier Agent
-    using two distinct Meta model personas.
-    The LLM calls are wrapped with asyncio.to_thread() so we never block the
-    event loop.
+    Synchronous implementation of multi-agent handshake between a Buyer Agent
+    and a Supplier Agent using two distinct Meta model personas.
     """
     from langchain_openai import ChatOpenAI
     from langchain_core.prompts import ChatPromptTemplate
@@ -313,10 +238,7 @@ async def a2a_negotiate(state: AgentState) -> Dict:
         ("human", "Stockout items:\n{stockouts}")
     ])
     buyer_chain = buyer_prompt_tmpl | llm
-
-    rfq_str = await asyncio.to_thread(
-        lambda: buyer_chain.invoke({"stockouts": stockouts_str}).content
-    )
+    rfq_str = buyer_chain.invoke({"stockouts": stockouts_str}).content
 
     a2a_transcript.append({
         "role": "buyer_agent",
@@ -331,10 +253,7 @@ async def a2a_negotiate(state: AgentState) -> Dict:
         ("human", "Request for Quotation:\n{rfq}")
     ])
     supplier_chain = supplier_prompt_tmpl | llm
-
-    quote_str = await asyncio.to_thread(
-        lambda: supplier_chain.invoke({"rfq": rfq_str}).content
-    )
+    quote_str = supplier_chain.invoke({"rfq": rfq_str}).content
 
     try:
         quote_json = json.loads(quote_str)
@@ -357,6 +276,11 @@ async def a2a_negotiate(state: AgentState) -> Dict:
     })
     messages.append(AIMessage(content=f"Supplier Agent quote received: {quote_json}"))
     return {"a2a_transcript": a2a_transcript, "messages": messages}
+
+async def a2a_negotiate(state: AgentState) -> Dict:
+    """Async wrapper around a2a_negotiate_sync."""
+    import asyncio
+    return await asyncio.to_thread(lambda: a2a_negotiate_sync(state))
 
 def draft_po(state: AgentState) -> Dict:
     """
@@ -424,31 +348,24 @@ builder = StateGraph(AgentState)
 builder.add_node("global_oracle", global_oracle)
 builder.add_node("forecast_demand", forecast_demand)
 builder.add_node("fetch_inventory", fetch_inventory)
-builder.add_node("validate_inventory_items", validate_inventory_items)
 builder.add_node("draft_plan", draft_plan)
 builder.add_node("human_review", human_review)
 builder.add_node("execute_plan", execute_plan)
-builder.add_node("a2a_negotiate", a2a_negotiate)
+builder.add_node("a2a_negotiate", a2a_negotiate_sync)
 builder.add_node("draft_po", draft_po)
 
 builder.set_entry_point("global_oracle")
 builder.add_edge("global_oracle", "forecast_demand")
 builder.add_edge("forecast_demand", "fetch_inventory")
-builder.add_edge("fetch_inventory", "validate_inventory_items")
-
-def route_after_validation(state: AgentState):
-    if state.get("status") == "item_not_found":
-        return "end"
-    return route_intent(state)
 
 builder.add_conditional_edges(
-    "validate_inventory_items",
-    route_after_validation,
-    {
-        "a2a_negotiate": "a2a_negotiate",
-        "draft_plan": "draft_plan",
-        "end": END
-    }
+"fetch_inventory",
+route_intent,
+{
+"a2a_negotiate": "a2a_negotiate",
+"draft_plan": "draft_plan",
+"end": END
+}
 )
 
 builder.add_edge("a2a_negotiate", "draft_po")
@@ -471,13 +388,17 @@ def get_graph():
     return builder.compile(interrupt_before=["human_review"])
 
 def get_graph_with_postgres():
+    DB_URI = os.environ.get("POSTGRES_DB_URI")
+    if not DB_URI or not DB_URI.strip():
+        # Fall back to in-memory/standard graph without Postgres checkpointer when POSTGRES_DB_URI is not set
+        return builder.compile(interrupt_before=["human_review"])
+
     connection_kwargs = {
         "autocommit": True,
         "prepare_threshold": 0,
         "sslmode": "require",
     }
 
-    DB_URI = os.environ.get("POSTGRES_DB_URI", "postgresql://postgres:postgres@localhost:5432/postgres")
     pool = ConnectionPool(conninfo=DB_URI, max_size=20, kwargs=connection_kwargs)
     checkpointer = PostgresSaver(pool)
     checkpointer.setup()

@@ -1,9 +1,8 @@
-import sqlite3
 import random
+from db import get_db_connection
 
 def generate_load():
-    conn = sqlite3.connect('mock_sap.db')
-    cursor = conn.cursor()
+    conn, engine = get_db_connection()
 
     edge_case_data = []
     for i in range(1000):
@@ -16,12 +15,20 @@ def generate_load():
 
         edge_case_data.append((tenant_id, f"Edge_Item_{i}", quantity, transit_time, spot_rate, supplier_id))
 
-    cursor.executemany('''
-        INSERT INTO inventory (tenant_id, item_name, quantity, transit_time, spot_rate, supplier_id)
-        VALUES (?, ?, ?, ?, ?, ?)
-    ''', edge_case_data)
+    if engine == "postgres":
+        with conn.cursor() as cursor:
+            cursor.executemany('''
+                INSERT INTO inventory (tenant_id, item_name, quantity, transit_time, spot_rate, supplier_id)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            ''', edge_case_data)
+    else:
+        cursor = conn.cursor()
+        cursor.executemany('''
+            INSERT INTO inventory (tenant_id, item_name, quantity, transit_time, spot_rate, supplier_id)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', edge_case_data)
+        conn.commit()
 
-    conn.commit()
     conn.close()
     print("Injected 1,000 synthetic edge-case rows into the database.")
 

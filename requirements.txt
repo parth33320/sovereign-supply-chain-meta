@@ -16,3 +16,6 @@ gtts
 moviepy
 playwright
 pydub
+pytest
+psycopg
+google-generativeai
