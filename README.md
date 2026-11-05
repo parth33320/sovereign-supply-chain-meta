@@ -142,6 +142,51 @@ This platform standardizes entirely on Meta AI foundation models:
 
 ---
 
+## User Guide (Non-Technical)
+
+A simple, everyday guide for warehouse supervisors, logistics staff, and procurement specialists.
+
+### Orchestrator Chat & Voice Commands
+- Select **Orchestrator** in the left sidebar navigation rail.
+- Pick your active company profile using the **Active Tenant** dropdown at the top (`Tenant_A` or `Tenant_B`).
+- Type your logistics question or instructions in the bottom chat bar, or click the microphone button to record a voice instruction.
+- **Example Prompts**:
+  - *"Check stock levels for Semiconductors and flag any stockouts."*
+  - *"Reallocate 500 units of Copper Wire Spools from Warehouse East to West."*
+  - *"Emergency stockout on Microcontrollers, initiate immediate supplier restock negotiation."*
+- You can also click **📋 Example Inputs (20 Voice Commands)** and hit **Use** on any preset scenario to test commands immediately.
+- When the AI generates a purchase order or reallocation plan, review the details in the review card and click **Approve** or **Reject**.
+
+### Warehouse Shelf Inspection
+- Select **Warehouse** in the left sidebar.
+- Click **Upload Shelf Image** to upload a photo of your storage shelves (PNG, JPG, or WEBP under 1MB).
+- The visual inspection tool identifies rack occupancy and flags low-stock or empty SKU bins.
+- The inspection summary is saved to your session and automatically attached to your next Orchestrator chat message.
+- To test without taking photos, expand **📋 Example Inputs (20 Shelf Inspection Scenarios)** and click **Use** next to any pre-loaded scenario.
+
+### Uploading Documents and Invoices
+- Select **Documents** in the left sidebar.
+- Click **Upload Invoice or Shipping Document** to submit a packing slip, bill of lading, or supplier invoice (under 2MB).
+- The system extracts supplier name, invoice dates, quantities, and line item costs into a readable table.
+- A draft logistics instruction is automatically written for you. Click **Open in Orchestrator** to review and dispatch it into the supply chain flow.
+- You can also test with **📋 Example Inputs (20 Invoice Line Items)** by clicking **Use** on any line item.
+
+### What to Do When Blocked by Guardrails
+- If a warning card titled **⚠️ Action Needed** appears stating that your instruction was blocked by security guardrails:
+  - Do not try to override system settings, ask for passwords, or run technical code commands.
+  - Keep your requests strictly focused on everyday warehouse operations: checking stock, requesting restocks, or moving inventory.
+  - Review the sample queries in `demo/gold_standard_inputs.json` (or expand the **Example Inputs** list in the chat) to see gold standard phrasing that is always accepted.
+  - If a specific item name was mistyped, look at the suggestion note (for example: *"Did you mean 'Semiconductors'?"*) and try re-submitting with the suggested spelling.
+
+### Requesting Manager Approval for New Inventory
+- If you need to add, edit, or remove catalog items, open the manager portal by adding `?admin=1&password=sovereign` to your browser URL.
+- In the sidebar, select the **Admin** panel.
+- Go to the **➕ Add New Item** tab, type the SKU name, starting quantity, transit time in days, spot price, and supplier code.
+- Click **Submit for Approval**.
+- The request appears in the **Pending Approvals Queue**. A manager can review the item details and click **Approve** to commit the item to the database, or **Reject** to decline it.
+
+---
+
 ## Setup & Deployment Instructions
 
 ### Prerequisites
