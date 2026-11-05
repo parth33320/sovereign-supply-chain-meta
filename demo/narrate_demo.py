@@ -8,13 +8,13 @@ from moviepy import VideoFileClip, AudioFileClip, CompositeAudioClip
 NARRATION = [
     (0,   "What if one voice command could save your company $12,000 — today?"),
     (8,   "A warehouse manager says: Emergency. Widget-A is running out. Get me the best price now."),
-    (28,  "muse-voice-transcribe-1.0 captures the command. No keyboard. No ticket. AI activates instantly."),
-    (45,  "sam-3.1 scans the warehouse shelf. Widget-A is at twelve percent. Critical. Humans hadn't checked yet."),
-    (68,  "muse-spark-1.3 forecasts a stockout in fourteen days. Cost of inaction: eight thousand dollars in emergency fees."),
-    (90,  "Two AI agents negotiate. Buyer agent versus Supplier agent. muse-spark-1.3 runs both sides. Deal locked: eight dollars twenty per unit, saving one hundred dollars versus opening offer."),
-    (130, "muse-image-1.0 reads the invoice. AI prepares the purchase order. One human clicks Approve."),
-    (155, "Result: twelve thousand two hundred dollars saved in week one. Fourteen hours of procurement work automated. On track for a fifty thousand dollar Q4 target."),
-    (168, "Four Meta Llama models. One voice command. Zero stockouts. Sovereign Supply Chain AI."),
+    (30,  "muse-voice-transcribe-1.0 captures the command. No keyboard. No ticket. AI activates instantly."),
+    (47,  "sam-3.1 scans the warehouse shelf. Widget-A is at twelve percent. Critical. Humans hadn't checked yet."),
+    (70,  "muse-spark-1.3 forecasts a stockout in fourteen days. Cost of inaction: eight thousand dollars."),
+    (93,  "Two AI agents negotiate. Buyer agent versus Supplier agent. muse-spark-1.3 runs both sides. Deal locked: eight dollars twenty per unit."),
+    (133, "muse-image-1.0 reads the invoice. AI prepares the purchase order. One human clicks Approve."),
+    (157, "Result: twelve thousand two hundred dollars saved in week one. Fourteen hours of procurement work automated."),
+    (170, "Four Meta Llama models. One voice command. Zero stockouts. Sovereign Supply Chain AI."),
 ]
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
