@@ -20,6 +20,7 @@ Inputs and Outputs:
 
 import io
 import os
+import tempfile
 import logging
 from typing import Dict, Any
 import requests
@@ -101,22 +102,40 @@ def extract_logistics_intent(transcription: str) -> str:
 def process_voice_input(audio_bytes: bytes) -> dict:
     """
     Transcribes audio using Meta muse-voice-transcribe-1.0.
-    Converts WebM (from st.audio_input) to 16kHz mono WAV before sending.
+    Writes to a named temp file first (required for ffmpeg WebM seek).
     """
     if not audio_bytes:
         return {"status": "error", "intent": "No audio bytes received."}
 
-    # Step 1: WebM → WAV (16kHz, mono, 16-bit PCM)
+    tmp_in = None
+    tmp_out = None
     try:
-        segment = AudioSegment.from_file(io.BytesIO(audio_bytes), format="webm")
+        # Write raw audio to disk — ffmpeg needs a seekable file for EBML/WebM
+        with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as f:
+            f.write(audio_bytes)
+            tmp_in = f.name
+
+        # Let ffmpeg auto-detect format; resample to 16kHz mono 16-bit PCM
+        segment = AudioSegment.from_file(tmp_in)
         segment = segment.set_frame_rate(16000).set_channels(1).set_sample_width(2)
-        wav_buf = io.BytesIO()
-        segment.export(wav_buf, format="wav")
-        wav_bytes = wav_buf.getvalue()
+
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            tmp_out = f.name
+        segment.export(tmp_out, format="wav")
+
+        with open(tmp_out, "rb") as f:
+            wav_bytes = f.read()
+
     except Exception as e:
         return {"status": "error", "intent": f"Audio conversion error: {e}"}
+    finally:
+        for p in [tmp_in, tmp_out]:
+            if p and os.path.exists(p):
+                try:
+                    os.unlink(p)
+                except OSError:
+                    pass
 
-    # Step 2: POST WAV to Meta ASR
     api_key = os.environ.get("META_API_KEY")
     base_url = os.environ.get("META_API_BASE_URL", "https://api.meta.ai/v1")
 
