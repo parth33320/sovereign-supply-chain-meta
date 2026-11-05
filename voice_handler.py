@@ -147,8 +147,7 @@ def process_voice_input(audio_bytes: bytes) -> dict:
         resp.raise_for_status()
         body = resp.json()
         logger.warning(f"ASR BODY: {body}")
-        turns = body.get("turns", [])
-        transcription = (body.get("text") or body.get("transcription") or body.get("transcript") or " ".join(t.get("transcript","") for t in turns)).strip()
+        transcription = (body.get("text") or body.get("transcription") or body.get("transcript") or " ".join(t.get("transcript","") for t in body.get("turns", []))).strip()
         if not transcription:
             return {"status": "error", "intent": "Empty transcription returned."}
         return {"status": "ok", "transcription": transcription}
