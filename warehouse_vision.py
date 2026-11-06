@@ -1,4 +1,3 @@
-from api_resilience import with_rate_limit_retry
 """
 Warehouse Vision Module (S10)
 =============================
@@ -82,7 +81,6 @@ def _parse_llm_response(content: str) -> Dict[str, Any]:
     }
 
 
-@with_rate_limit_retry(max_retries=3, base_delay=2)
 def analyze_shelf_image(image_bytes: bytes) -> Dict[str, Any]:
     """
     Analyzes a warehouse shelf image using SAM 3.1 via Meta API.

@@ -1,4 +1,3 @@
-from api_resilience import with_rate_limit_retry
 """
 Voice Handler Module (S4)
 =========================
@@ -34,7 +33,6 @@ from langchain_core.prompts import ChatPromptTemplate
 logger = logging.getLogger(__name__)
 
 
-@with_rate_limit_retry(max_retries=3, base_delay=2)
 def transcribe_audio(audio_bytes: bytes) -> str:
     if not audio_bytes or not isinstance(audio_bytes, (bytes, bytearray)):
         raise ValueError("Invalid or empty audio bytes provided for transcription.")
