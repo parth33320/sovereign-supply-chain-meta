@@ -54,6 +54,8 @@ def test_app_shelf_image_file_too_large():
 
     has_err = len(at.error) > 0 or any("exceeds the 1MB file size limit" in m.value or "user-error-card" in m.value for m in at.markdown)
     assert has_err, "Expected an error or user error card when uploading shelf image > 1MB"
+    assert len(at.error) > 0
+    assert any("File is" in err.value or "File too large" in err.value for err in at.error)
 
 
 def test_app_shelf_image_upload_and_context_injection():

@@ -19,10 +19,54 @@ from graph import get_graph_with_postgres, log_dpo
 from langchain_core.messages import HumanMessage, AIMessage
 from db import execute_query, execute_mutation, get_db_connection
 
+
+def render_with_error_boundary(render_fn, module_name):
+    try:
+        render_fn()
+    except Exception as e:
+        st.markdown(f"""
+        <div style="background:#381216; border:1px solid #ef4444;
+        border-radius:8px; padding:1.5rem; text-align:center;
+        margin:2rem 0;">
+            <div style="font-size:1.5rem;">⚠️</div>
+            <h3 style="color:#fca5a5;">Something went wrong in {module_name}</h3>
+            <p style="color:#94a3b8; font-size:0.85rem;">
+                {str(e)[:200]}
+            </p>
+            <p style="color:#64748b; font-size:0.8rem;">
+                Refresh the page or contact support if this persists.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+        import traceback
+        import logging
+        logging.getLogger(__name__).error(
+            f"Module {module_name} crashed: {traceback.format_exc()}"
+        )
+
 # Load environment variables
 load_dotenv()
 
 DEMO_MODE = os.environ.get("DEMO_MODE", "1") == "1"
+import logging
+import traceback
+from logging_config import setup_logging
+from security import (
+    sanitize_text_input,
+    check_xss_patterns,
+    validate_file_upload,
+    IMAGE_MAGIC_BYTES,
+    MAX_PROMPT_LENGTH,
+)
+from health import check_system_health
+
+setup_logging()
+
+
+DEMO_MODE = os.environ.get("DEMO_MODE") == "1"
+
+if "system_health" not in st.session_state:
+    st.session_state.system_health = check_system_health()
 
 _api_key = os.environ.get("META_API_KEY")
 if not DEMO_MODE and not _api_key:
@@ -51,7 +95,7 @@ if not DEMO_MODE and not _api_key:
 
 # Page Configuration
 st.set_page_config(
-    page_title="Sovereign Supply Chain",
+    page_title="Sovereign Supply Chain Orchestrator",
     page_icon="🏭",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -59,6 +103,58 @@ st.set_page_config(
 
 st.markdown("""
 <!-- ssc-loader removed -->
+<a href="#main-content" class="skip-link" style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;z-index:9999999;background:#2563eb;color:#ffffff;padding:8px 16px;text-decoration:none;border-radius:4px;">Skip to main content</a>
+<style>
+.skip-link:focus {
+    position: static !important;
+    width: auto !important;
+    height: auto !important;
+    display: inline-block !important;
+    margin: 8px !important;
+}
+:focus-visible {
+    outline: 2px solid #3b82f6 !important;
+    outline-offset: 2px !important;
+}
+.stCaption, [data-testid="stCaptionContainer"] {
+    color: #cbd5e1 !important;
+}
+@keyframes sscLoaderFade {
+    0% { opacity: 1; visibility: visible; }
+    70% { opacity: 1; }
+    100% { opacity: 0; visibility: hidden; }
+}
+#ssc-loader {
+    animation: sscLoaderFade 1.2s forwards;
+    pointer-events: none;
+}
+</style>
+<div id="main-content"></div>
+""", unsafe_allow_html=True)
+st.markdown("""
+<div id="ssc-loader" style="
+    position:fixed;inset:0;background:#0d1117;
+    display:flex;flex-direction:column;
+    align-items:center;justify-content:center;
+    z-index:999999;transition:opacity 0.4s ease;">
+  <div style="font-size:1.4rem;color:#58a6ff;
+      font-weight:600;font-family:sans-serif;">
+    Sovereign Supply Chain
+  </div>
+  <div style="color:#8b949e;font-size:0.85rem;
+      margin-top:8px;font-family:sans-serif;">
+    Initializing AI agents...
+  </div>
+</div>
+<script>
+  window.addEventListener('load', function() {
+    setTimeout(function() {
+      var el = document.getElementById('ssc-loader');
+      if (el) { el.style.opacity='0';
+        setTimeout(function(){el.remove();},400); }
+    }, 800);
+  });
+</script>
 """, unsafe_allow_html=True)
 
 
@@ -399,6 +495,47 @@ div[data-testid="stSidebar"] .stRadio label:has(input:checked) {
     border-color: #10b981;
     color: #34d399;
 }
+
+/* HITL Pulsing Amber Animation */
+@keyframes pulse-border {
+  0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4); }
+  70% { box-shadow: 0 0 0 8px rgba(245, 158, 11, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+}
+
+.hitl-panel {
+  animation: pulse-border 2s infinite;
+  border: 1px solid #f59e0b !important;
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+/* Mobile Responsive Styles */
+@media (max-width: 768px) {
+    /* Stack columns vertically on mobile */
+    [data-testid="column"] {
+        min-width: 100% !important;
+        width: 100% !important;
+    }
+
+    /* Larger tap targets for buttons */
+    .stButton > button {
+        min-height: 3rem !important;
+        font-size: 1rem !important;
+        width: 100% !important;
+    }
+
+    /* Readable font on small screens */
+    .stMarkdown p {
+        font-size: 0.95rem !important;
+        line-height: 1.6 !important;
+    }
+
+    /* Hide sidebar text labels on very small screens */
+    .st-emotion-cache-sidebar .stCaption {
+        display: none !important;
+    }
+}
 </style>
 """
 st.markdown(ENTERPRISE_CSS, unsafe_allow_html=True)
@@ -658,6 +795,48 @@ def check_missing_item_and_suggest(user_input: str, tenant_id: str) -> Optional[
 
 
 # State Initialization
+
+# Session state corruption guard (Prompt 7)
+REQUIRED_SESSION_TYPES = {
+    "chat_history": list,
+    "waf_count": int,
+    "disruption_history": list,
+    "demo_paused_for_hitl": bool,
+}
+for key, expected_type in REQUIRED_SESSION_TYPES.items():
+    if key in st.session_state:
+        if not isinstance(st.session_state[key], expected_type):
+            del st.session_state[key]
+
+# Conversation truncation guard (Prompt 7)
+if 'chat_history' in st.session_state:
+    MAX_CHAT_HISTORY = 50
+    if len(st.session_state.chat_history) > MAX_CHAT_HISTORY:
+        st.session_state.chat_history = st.session_state.chat_history[-MAX_CHAT_HISTORY:]
+        st.info("💾 Conversation truncated to last 50 messages to maintain performance.")
+
+# Session expiry warning after 30 mins inactivity (Prompt 7)
+if "last_activity" not in st.session_state:
+    st.session_state.last_activity = time.time()
+elapsed = time.time() - st.session_state.last_activity
+if elapsed > 1800:
+    st.warning("⏱️ Session has been idle for 30 minutes. Some state may have been reset.")
+st.session_state.last_activity = time.time()
+
+# Stale HITL state guard - 10 minutes timeout (Prompt 7)
+if st.session_state.get("demo_paused_for_hitl"):
+    if "hitl_paused_at" not in st.session_state:
+        st.session_state.hitl_paused_at = time.time()
+    paused_at = st.session_state.get("hitl_paused_at", time.time())
+    if time.time() - paused_at > 600:
+        st.session_state.demo_paused_for_hitl = False
+        st.session_state.demo_pending_po = None
+        st.warning("⏱️ Approval request expired after 10 minutes. Please resubmit your command.")
+        st.rerun()
+
+if 'chat_search' not in st.session_state:
+    st.session_state.chat_search = ""
+
 if 'thread_id' not in st.session_state:
     st.session_state.thread_id = str(uuid.uuid4())
 if 'chat_history' not in st.session_state:
@@ -768,6 +947,13 @@ with st.sidebar:
     switch_module(selected_module)
     st.session_state.active_nav_module = selected_module
 
+    if selected_module == "Orchestrator":
+        st.caption("Voice & text supply chain commands")
+    elif selected_module == "Warehouse":
+        st.caption("Visual shelf inventory scanning")
+    elif selected_module == "Documents":
+        st.caption("Invoice & BOL data extraction")
+
     st.markdown("<div style='height: 1.5rem;'></div>", unsafe_allow_html=True)
 
     # Developer Tools Section: visible only in intentional developer mode
@@ -795,6 +981,43 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+with header_col1:
+    b_col1, b_col2 = st.columns([1.8, 1.2])
+    with b_col1:
+        if st.button("🛡️ Sovereign Supply Chain", key="header_brand_home_btn"):
+            st.session_state.active_nav_module = "Orchestrator"
+            st.session_state["active_module"] = "Orchestrator"
+            st.rerun()
+    with b_col2:
+        st.markdown(
+            f"""
+            <div style="font-size: 0.95rem; color: #94a3b8; font-weight: 500; padding-top: 0.4rem;">
+                → <span style="color: #f8fafc; font-weight: 600;">{st.session_state.active_nav_module}</span>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+with header_col2:
+    tenant_id = st.selectbox(
+        "Active Tenant",
+        ["Tenant_A", "Tenant_B"],
+        key="global_tenant_selector",
+        label_visibility="collapsed"
+    )
+
+with header_col3:
+    st.markdown(
+        """
+        <div style="text-align: right; padding-top: 0.35rem;">
+            <span class="status-badge">
+                <span class="status-dot"></span>
+                Operational
+            </span>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 config = {"configurable": {"thread_id": f"{tenant_id}_{st.session_state.thread_id}"}}
 st.markdown("<div style='height: 0.5rem;'></div>", unsafe_allow_html=True)
@@ -802,6 +1025,8 @@ st.markdown("<div style='height: 0.5rem;'></div>", unsafe_allow_html=True)
 
 def execute_agent_synchronous(dispatched_prompt: str, tenant_id: str, request_id: str):
     """Invoke LangGraph synchronously and display response."""
+    start_time = time.time()
+    logging.info(f"Agent execution initiated for tenant={tenant_id}, req={request_id}")
     with st.spinner("Processing via LangGraph Orchestrator..."):
         try:
             graph = get_graph_with_postgres()
@@ -812,15 +1037,49 @@ def execute_agent_synchronous(dispatched_prompt: str, tenant_id: str, request_id
                 "status": "init"
             }
             result = graph.invoke(state, config)
+    progress_steps = [
+        "🔍 Analyzing logistics request...",
+        "📊 Fetching inventory data...",
+        "🤖 Running muse-spark-1.3 reasoning...",
+        "💰 Executing A2A price negotiation...",
+        "📋 Drafting purchase order..."
+    ]
 
-            if result:
-                final_messages = result.get("messages", [])
-                drafted_plan = result.get("drafted_plan", "")
+    progress_placeholder = st.empty()
+    for i, step in enumerate(progress_steps):
+        progress_placeholder.markdown(
+            f'<div class="alert-banner info">'
+            f'{"✅ " * i}{step}</div>',
+            unsafe_allow_html=True
+        )
+        time.sleep(0.8)
 
-                for m in final_messages:
-                    if isinstance(m, AIMessage):
-                        if not any(chat["content"] == m.content for chat in st.session_state.chat_history):
-                            st.session_state.chat_history.append({"role": "assistant", "content": m.content})
+    try:
+        graph = get_graph_with_postgres()
+        state = {
+            "messages": [HumanMessage(content=dispatched_prompt)],
+            "tenant_id": tenant_id,
+            "request_id": request_id,
+            "status": "init"
+        }
+        result = graph.invoke(state, config)
+        progress_placeholder.empty()
+
+        model_name = os.environ.get("META_MODEL_NAME", "muse-spark-1.3")
+        attribution = f"🤖 Powered by {model_name} · Meta AI"
+
+        if result:
+            final_messages = result.get("messages", [])
+            drafted_plan = result.get("drafted_plan", "")
+
+            for m in final_messages:
+                if isinstance(m, AIMessage):
+                    if not any(chat["content"] == m.content for chat in st.session_state.chat_history):
+                        st.session_state.chat_history.append({
+                            "role": "assistant",
+                            "content": m.content,
+                            "attribution": attribution
+                        })
                         if "[GLOBAL ORACLE ALERT]" in m.content:
                             match = re.search(r"\[GLOBAL ORACLE ALERT\]\s*\((.*?)\):\s*(.*)", m.content)
                             if match:
@@ -835,7 +1094,24 @@ def execute_agent_synchronous(dispatched_prompt: str, tenant_id: str, request_id
 
                 st.session_state.pending_plan = drafted_plan
         except Exception as e:
-            st.error(friendly_error(e))
+            err = str(e)
+            if "authentication failed" in err:
+                st.error("🔑 Invalid API key. Check META_API_KEY.")
+            elif "temporarily unavailable" in err:
+                st.error("⏳ Meta AI is temporarily unavailable. Try again in a moment.")
+            elif "rate" in err.lower():
+                st.warning("⚡ Rate limit reached. Please wait a moment and try again.")
+            else:
+                st.error(friendly_error(e))
+        finally:
+            duration = time.time() - start_time
+            logging.info(
+                f"Agent execution finished in {duration:.2f}s for req={request_id}",
+                extra={"tenant_id": tenant_id, "elapsed_s": duration, "request_id": request_id}
+            )
+            st.session_state.pending_plan = drafted_plan
+    except Exception as e:
+        st.error(friendly_error(e))
 
 
 # Load gold standard inputs once for example collapsibles
@@ -870,6 +1146,12 @@ else:
         pending_po = None
         a2a_transcript = []
         pending_plan_content = ""
+
+if is_paused:
+    if "hitl_paused_at" not in st.session_state or not st.session_state.hitl_paused_at:
+        st.session_state.hitl_paused_at = time.strftime("%H:%M:%S")
+else:
+    st.session_state.hitl_paused_at = None
 
 
 # -----------------------------------------------------------------------------
@@ -941,6 +1223,7 @@ if is_dev_mode and st.session_state.get("active_dev_subview"):
     st.divider()
 
 
+
 # Check if auto_submit_prompt was triggered (e.g. from Example Inputs button)
 if st.session_state.get("auto_submit_prompt"):
     to_submit = st.session_state.auto_submit_prompt
@@ -957,6 +1240,25 @@ if st.session_state.get("auto_submit_prompt"):
         st.session_state.activity_log_expanded = True
     elif check_missing_item_and_suggest(to_submit, tenant_id):
         fuzzy_err = check_missing_item_and_suggest(to_submit, tenant_id)
+    if not to_submit or not to_submit.strip():
+        st.stop()
+
+    if len(to_submit) > MAX_PROMPT_LENGTH:
+        st.warning(
+            f"⚠️ Message too long ({len(to_submit)} chars). "
+            f"Please keep under {MAX_PROMPT_LENGTH} characters."
+        )
+        st.stop()
+
+    to_submit = sanitize_text_input(to_submit)
+    if not check_xss_patterns(to_submit):
+        st.session_state.waf_count += 1
+        st.error("🛡️ Potentially unsafe input detected and blocked.")
+        st.stop()
+
+
+    fuzzy_err = check_missing_item_and_suggest(to_submit, tenant_id)
+    if fuzzy_err:
         show_user_error(fuzzy_err[0], fuzzy_err[1])
         st.session_state.waf_count += 1
         st.session_state.waf_history.append({"timestamp": time.strftime("%H:%M:%S"), "count": 1})
@@ -985,7 +1287,11 @@ if st.session_state.get("auto_submit_prompt"):
                 f"• Draft reallocation route: Warehouse-West to Distribution-East.\n"
                 f"• Optimal carrier dispatch generated with ETA 24 hours."
             )
-            st.session_state.chat_history.append({"role": "assistant", "content": resp_plan})
+            st.session_state.chat_history.append({
+                "role": "assistant",
+                "content": resp_plan,
+                "attribution": "⚡ Simulated response · Demo Mode"
+            })
             st.session_state.demo_pending_plan = resp_plan
             st.session_state.demo_paused_for_hitl = True
             st.session_state.demo_pending_po = {
@@ -1032,7 +1338,7 @@ if st.session_state.disruption_history:
 # -----------------------------------------------------------------------------
 # Module 0: Manager Admin Panel (accessible directly via ?admin_token=<UUID>)
 # -----------------------------------------------------------------------------
-if is_admin_mode:
+def render_admin():
     st.markdown(f"### ⚙️ Manager Admin Panel — Inventory Governance ({tenant_id})")
     st.markdown("Authorized managers can stage catalog modifications (Add, Edit, Delete). Changes enter the pending approvals queue and require sign-off before committing to the database.")
 
@@ -1235,13 +1541,15 @@ if is_admin_mode:
                         st.warning(f"Request #{req_id} ({action}) rejected.")
                         st.rerun()
 
-# -----------------------------------------------------------------------------
-# Module 1: Orchestrator
-# -----------------------------------------------------------------------------
-elif selected_module == "Orchestrator":
-    # Friendly Status Banner (exactly one banner shown)
-    postgres_uri = os.environ.get("POSTGRES_DB_URI", "").strip()
-    if DEMO_MODE:
+    # -----------------------------------------------------------------------------
+    # Module 1: Orchestrator
+    # -----------------------------------------------------------------------------
+
+
+def render_orchestrator():
+    # Friendly Status Banner driven by health check (Prompt 6)
+    health_data = st.session_state.get("system_health", {})
+    if health_data.get("demo_mode"):
         st.markdown(
             """
             <div class="alert-banner info">
@@ -1250,7 +1558,7 @@ elif selected_module == "Orchestrator":
             """,
             unsafe_allow_html=True
         )
-    elif not postgres_uri:
+    elif health_data.get("db_type") != "PostgreSQL":
         st.markdown(
             """
             <div class="alert-banner warning">
@@ -1290,18 +1598,26 @@ elif selected_module == "Orchestrator":
 
     if col_hitl is not None:
         with col_hitl:
+            st.markdown('<div class="hitl-panel">', unsafe_allow_html=True)
             po_num = pending_po.get("po_number", pending_po.get("id", "PO-2025-001")) if pending_po else "PO-2025-001"
             supp = pending_po.get("supplier", "Supplier B") if pending_po else "Supplier B"
             qty = pending_po.get("quantity", pending_po.get("restock_quantity", 500)) if pending_po else 500
             price_val = pending_po.get("price_per_unit", pending_po.get("unit_price", 10.0)) if pending_po else 10.0
             amt = f"${qty * price_val:,.2f}" if isinstance(qty, (int, float)) and isinstance(price_val, (int, float)) else "$5,000.00"
             summary_txt = pending_plan_content if pending_plan_content else "Emergency Restock Order for Microcontrollers"
+            paused_since = st.session_state.get("hitl_paused_at") or time.strftime("%H:%M:%S")
 
             # HITL Panel with Pulsing Amber Border
             st.markdown(f"""
             <div class="hitl-panel-pulsing" style="background:#161b22;border:2px solid #e3b341;border-radius:8px;padding:20px;margin:16px 0;box-shadow: 0 0 15px rgba(227, 179, 65, 0.4);">
                 <div style="font-size:0.75rem;color:#e3b341;text-transform:uppercase;letter-spacing:0.08em;font-weight:700;margin-bottom:12px;">
                     ⏸ AWAITING OPERATOR APPROVAL
+            <div style="background:#161b22;border:1px solid #e3b341;border-left:4px solid #e3b341;border-radius:8px;padding:20px;margin-bottom:16px;">
+                <div style="font-size:0.75rem;color:#e3b341;text-transform:uppercase;letter-spacing:0.08em;font-weight:600;margin-bottom:6px;">
+                    ⏸ AWAITING YOUR APPROVAL
+                </div>
+                <div style="font-size:0.78rem;color:#fcd34d;margin-bottom:12px;">
+                    ⏱️ Awaiting approval since {paused_since}
                 </div>
                 <div style="color:#e6edf3;font-size:0.9rem;margin-bottom:16px;">
                     {summary_txt}
@@ -1343,16 +1659,8 @@ elif selected_module == "Orchestrator":
             col_app, col_rej = st.columns(2)
             with col_app:
                 if st.button("✅ Approve", type="primary", key="hitl_approve_btn", use_container_width=True):
-                    # Fix 8: Success State After Approve
-                    st.markdown("""
-                    <div style="background:#0d1117;border:1px solid #3fb950;border-left:4px solid #3fb950;border-radius:8px;padding:20px;margin:16px 0;text-align:center;">
-                        <div style="font-size:1.4rem;margin-bottom:8px;">✅</div>
-                        <div style="color:#3fb950;font-weight:600;font-size:0.95rem;">Plan Approved</div>
-                        <div style="color:#8b949e;font-size:0.8rem;margin-top:4px;">
-                            Executing with AI agents...
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    st.balloons()
+                    st.success("✅ Purchase order approved and dispatched to Apex Logistics.")
                     show_toast("Plan approved", "success")
                     log_dpo(
                         st.session_state.get('pending_prompt', ''),
@@ -1360,28 +1668,44 @@ elif selected_module == "Orchestrator":
                         ""
                     )
                     st.session_state["hitl_approved"] = True
+                    time.sleep(1.2)
                     if DEMO_MODE:
                         st.session_state.demo_paused_for_hitl = False
-                        st.session_state.chat_history.append({"role": "assistant", "content": "Plan Approved and Executed."})
+                        st.session_state.chat_history.append({
+                            "role": "assistant",
+                            "content": "Plan Approved and Executed.",
+                            "attribution": "⚡ Simulated response · Demo Mode"
+                        })
                         st.rerun()
                     else:
                         graph.update_state(config, {"status": "approved"})
                         for event in graph.stream(None, config):
                             pass
-                        st.session_state.chat_history.append({"role": "assistant", "content": "Plan Approved and Executed."})
+                        model_name = os.environ.get("META_MODEL_NAME", "muse-spark-1.3")
+                        st.session_state.chat_history.append({
+                            "role": "assistant",
+                            "content": "Plan Approved and Executed.",
+                            "attribution": f"🤖 Powered by {model_name} · Meta AI"
+                        })
                         st.rerun()
 
             with col_rej:
                 if st.button("✗ Reject", key="hitl_reject_btn", use_container_width=True):
+                    st.error("❌ Plan rejected. Orchestrator will generate an alternative.")
                     log_dpo(
                         st.session_state.get('pending_prompt', ''),
                         "",
                         st.session_state.get('demo_pending_plan', st.session_state.get('pending_plan', ''))
                     )
                     show_toast("Plan rejected", "warning")
+                    time.sleep(1.2)
                     if DEMO_MODE:
                         st.session_state.demo_paused_for_hitl = False
-                        st.session_state.chat_history.append({"role": "assistant", "content": "Plan Rejected."})
+                        st.session_state.chat_history.append({
+                            "role": "assistant",
+                            "content": "Plan Rejected.",
+                            "attribution": "⚡ Simulated response · Demo Mode"
+                        })
                         show_user_error(
                             message="The proposed logistics plan was rejected by the operator.",
                             suggestion="Submit a revised command specifying different quantity or supplier requirements."
@@ -1391,21 +1715,111 @@ elif selected_module == "Orchestrator":
                         graph.update_state(config, {"status": "rejected"})
                         for event in graph.stream(None, config):
                             pass
-                        st.session_state.chat_history.append({"role": "assistant", "content": "Plan Rejected."})
+                        model_name = os.environ.get("META_MODEL_NAME", "muse-spark-1.3")
+                        st.session_state.chat_history.append({
+                            "role": "assistant",
+                            "content": "Plan Rejected.",
+                            "attribution": f"🤖 Powered by {model_name} · Meta AI"
+                        })
                         show_user_error(
                             message="The proposed logistics plan was rejected by the operator.",
                             suggestion="Submit a revised command specifying different quantity or supplier requirements."
                         )
                         st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
 
     # Main Conversation Area
     with col_main:
+        if st.session_state.chat_history:
+            search_query = st.text_input(
+                "🔍 Search conversation",
+                value=st.session_state.chat_search,
+                placeholder="Filter messages...",
+                key="chat_search_input",
+                label_visibility="collapsed"
+            )
+            st.session_state.chat_search = search_query
+        else:
+            search_query = ""
+            clear_col1, clear_col2 = st.columns([6, 1])
+            with clear_col2:
+                if st.button("Clear ✕", key="clear_chat_btn"):
+                    st.session_state.chat_history = []
+                    st.session_state.demo_paused_for_hitl = False
+                    st.session_state.demo_pending_po = None
+                    st.session_state.demo_pending_plan = ""
+                    st.rerun()
+
         chat_container = st.container()
         with chat_container:
 
+            if not st.session_state.chat_history:
+                st.markdown("""
+                <div class="control-card" style="margin-bottom:1rem;">
+                  <div style="font-size:1.15rem;font-weight:700;color:#f8fafc;margin-bottom:0.35rem;">
+                    What would you like to do today?
+                  </div>
+                  <div style="color:#94a3b8;font-size:0.85rem;margin-bottom:1rem;">
+                    Or record a voice command below
+                  </div>
+                </div>
+                """, unsafe_allow_html=True)
+                col_onb1, col_onb2, col_onb3 = st.columns(3)
+                with col_onb1:
+                    if st.button("🚨 Emergency restock Widget-A", use_container_width=True, key="starter_btn_1"):
+                        st.session_state.prefilled_prompt = "🚨 Emergency restock Widget-A"
+                        st.session_state["prefill_prompt"] = "🚨 Emergency restock Widget-A"
+                        st.rerun()
+                with col_onb2:
+                    if st.button("📦 Check semiconductor inventory levels", use_container_width=True, key="starter_btn_2"):
+                        st.session_state.prefilled_prompt = "📦 Check semiconductor inventory levels"
+                        st.session_state["prefill_prompt"] = "📦 Check semiconductor inventory levels"
+                        st.rerun()
+                with col_onb3:
+                    if st.button("🔄 Rebalance stock from Warehouse A to B", use_container_width=True, key="starter_btn_3"):
+                        st.session_state.prefilled_prompt = "🔄 Rebalance stock from Warehouse A to B"
+                        st.session_state["prefill_prompt"] = "🔄 Rebalance stock from Warehouse A to B"
+                        st.rerun()
+                st.markdown("""
+                <div style="color:#8b949e;font-size:0.85rem;margin-top:12px;margin-bottom:16px;">
+                  Or type your own warehouse command ↓
+                </div>
+                """, unsafe_allow_html=True)
+
+            filtered_history = [
+                msg for msg in st.session_state.chat_history
+                if not search_query or
+                search_query.lower() in msg["content"].lower()
+            ] if search_query else st.session_state.chat_history
+
+            for msg in filtered_history:
+                with st.chat_message(msg["role"]):
+                    st.write(msg["content"])
+                    if msg.get("attribution"):
+                        st.caption(msg["attribution"])
+
+            if search_query and not filtered_history:
+                st.info(f"No messages matching '{search_query}'")
+
+            # Export Conversation button (Prompt 9)
+            if st.session_state.chat_history:
+                export_lines = []
+                for m in st.session_state.chat_history:
+                    attr_info = f" ({m['attribution']})" if m.get("attribution") else ""
+                    export_lines.append(f"[{m['role'].upper()}]{attr_info}: {m['content']}")
+                export_text = "\n\n".join(export_lines)
+                st.download_button(
+                    label="📥 Export Conversation",
+                    data=export_text,
+                    file_name=f"conversation_export_{tenant_id}.txt",
+                    mime="text/plain",
+                    key="export_chat_history_btn"
+                )
             for msg in st.session_state.chat_history:
                 with st.chat_message(msg["role"]):
                     st.write(msg["content"])
+                    if msg.get("role") == "assistant" and msg.get("attribution"):
+                        st.caption(msg["attribution"])
 
         st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
 
@@ -1437,6 +1851,27 @@ elif selected_module == "Orchestrator":
         with col_v_lbl:
             st.markdown("<div style='padding-top:4px;'><span style='font-size:0.85rem;font-weight:600;color:#94a3b8;'>VOICE COMMAND</span></div>", unsafe_allow_html=True)
 
+        # Voice Command Instructions & Suggestion
+        st.markdown(
+            """
+            <div style="background:#131926; border:1px solid #232b3e; border-radius:6px; padding:0.75rem; margin-bottom:0.5rem; font-size:0.82rem; color:#94a3b8;">
+            🎙️ <strong style="color:#f8fafc;">How to use voice:</strong>
+            &nbsp; 1. Click the mic &nbsp;→&nbsp;
+            2. Speak your command &nbsp;→&nbsp;
+            3. Click stop &nbsp;→&nbsp;
+            4. AI activates instantly
+            </div>
+            <div style="font-size:0.78rem; color:#64748b; margin-bottom:0.5rem;">
+            Try saying:
+            <em style="color:#3b82f6;">
+            "Emergency. Widget-A is running out. Get me the best price now."
+            </em>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+        # Operational Voice Command Input
         voice_audio = st.audio_input("Record voice instruction", key="voice_audio_input")
         if voice_audio is not None:
             audio_bytes = voice_audio.read()
@@ -1448,6 +1883,10 @@ elif selected_module == "Orchestrator":
                     if voice_result.get("status") == "ok":
                         transcript = voice_result.get("transcription", "").strip()
                         if transcript:
+                            if st.session_state.get("last_voice_transcript") == transcript:
+                                st.info("Same voice command detected. Modify and resubmit.")
+                                st.stop()
+                            st.session_state.last_voice_transcript = transcript
                             st.session_state.auto_submit_prompt = transcript
                             st.rerun()
                     else:
@@ -1495,7 +1934,13 @@ elif selected_module == "Orchestrator":
             st.markdown("<div style='padding-top:4px;'><span style='font-size:0.85rem;font-weight:600;color:#94a3b8;'>TEXT INSTRUCTION</span></div>", unsafe_allow_html=True)
 
         prompt = st.chat_input("Enter logistics instruction...")
-        if prompt:
+        if prompt and prompt.strip():
+            if len(prompt) > MAX_PROMPT_LENGTH:
+                st.warning(
+                    f"⚠️ Message too long ({len(prompt)} chars). "
+                    f"Please keep under {MAX_PROMPT_LENGTH} characters."
+                )
+                st.stop()
             st.session_state.auto_submit_prompt = prompt
             st.session_state["dispatch_ts"] = time.time()
             st.rerun()
@@ -1509,6 +1954,14 @@ elif selected_module == "Orchestrator":
 # Module 2: Warehouse Vision
 # -----------------------------------------------------------------------------
 elif selected_module == "Warehouse":
+    # -----------------------------------------------------------------------------
+    # Module 2: Warehouse Vision
+    # -----------------------------------------------------------------------------
+
+
+def render_warehouse():
+    st.markdown("### 📦 Warehouse Vision & Inventory Segmentation")
+    st.markdown("Automated stock segmentation powered by Meta SAM 3.1. Upload shelf imagery to detect low-stock or empty SKU bins.")
 
     st.markdown("Automated stock segmentation powered by Meta SAM 3.1. Upload shelf imagery to detect low-stock or empty SKU bins.")
 
@@ -1555,6 +2008,28 @@ elif selected_module == "Warehouse":
             key="shelf_image_uploader"
         )
         if uploaded_image is not None:
+            image_bytes = uploaded_image.read()
+            is_valid, err_msg = validate_file_upload(image_bytes, max_size=1_000_000, allowed_magic=IMAGE_MAGIC_BYTES)
+            if not is_valid:
+                if len(image_bytes) > 1_000_000:
+                    st.error(
+                        f"📁 File is {len(image_bytes) // 1024}KB. "
+                        "Max size is 1MB (1024KB). "
+                        "Try compressing the image first."
+                    )
+                else:
+                    st.error("❌ Invalid image file. Please upload a real PNG, JPG or WEBP.")
+                st.stop()
+            image_id = hash(image_bytes)
+            if st.session_state.get("last_uploaded_image_id") != image_id:
+                st.session_state.last_uploaded_image_id = image_id
+                with st.spinner("Analyzing shelf image with SAM 3.1..."):
+                    try:
+                        analysis = analyze_shelf_image(image_bytes)
+                        st.session_state.shelf_context = analysis
+                        st.rerun()
+                    except Exception as e:
+                        st.error(friendly_error(e))
             if uploaded_image.size > 1_000_000:
                 show_user_error(
                     message="The uploaded shelf photo exceeds the 1MB file size limit.",
@@ -1565,7 +2040,7 @@ elif selected_module == "Warehouse":
                 image_id = hash(image_bytes)
                 if st.session_state.get("last_uploaded_image_id") != image_id:
                     st.session_state.last_uploaded_image_id = image_id
-                    with st.spinner("Analyzing shelf image with SAM 3.1..."):
+                    with st.spinner("🔬 SAM 3.1 segmenting shelf inventory..."):
                         try:
                             analysis = analyze_shelf_image(image_bytes)
                             st.session_state.shelf_context = analysis
@@ -1605,7 +2080,33 @@ elif selected_module == "Warehouse":
                 st.session_state.last_uploaded_image_id = None
                 st.rerun()
         else:
-            st.info("No active shelf image analyzed. Upload an image or select an example scenario above.")
+            st.markdown(
+                """
+                <div class="control-card" style="text-align:center; padding: 2rem 1.25rem;">
+                    <div style="font-size: 1.1rem; font-weight: 700; color: #f8fafc; margin-bottom: 0.4rem;">
+                        Upload a shelf photo to get started
+                    </div>
+                    <div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 1.2rem;">
+                        SAM 3.1 will scan for low-stock items automatically
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+            if st.button("Use sample image", key="use_sample_shelf_btn", use_container_width=True):
+                sample_path = "demo-assets/sample_shelf.jpg"
+                if os.path.exists(sample_path):
+                    with open(sample_path, "rb") as f:
+                        img_bytes = f.read()
+                    with st.spinner("🔬 SAM 3.1 segmenting shelf inventory..."):
+                        try:
+                            analysis = analyze_shelf_image(img_bytes)
+                            st.session_state.shelf_context = analysis
+                            st.rerun()
+                        except Exception as e:
+                            st.error(friendly_error(e))
+                else:
+                    st.error("Sample image not found in demo-assets/sample_shelf.jpg")
 
 
 # -----------------------------------------------------------------------------
@@ -1613,6 +2114,13 @@ elif selected_module == "Warehouse":
 # -----------------------------------------------------------------------------
 elif selected_module == "Documents":
 
+    # -----------------------------------------------------------------------------
+    # Module 3: Documents
+    # -----------------------------------------------------------------------------
+
+
+def render_documents():
+    st.markdown("### 📄 Document & Invoice Extraction")
     st.markdown("Automated structured data extraction powered by Meta muse-image-1.0. Upload invoices, bills of lading, and freight manifests.")
 
     col_doc_up, col_doc_view = st.columns([1, 1])
@@ -1661,6 +2169,29 @@ elif selected_module == "Documents":
             key="document_image_uploader"
         )
         if uploaded_doc is not None:
+            doc_bytes = uploaded_doc.read()
+            is_valid, err_msg = validate_file_upload(doc_bytes, max_size=2_000_000, allowed_magic=IMAGE_MAGIC_BYTES)
+            if not is_valid:
+                if len(doc_bytes) > 2_000_000:
+                    st.error(
+                        f"📁 File is {len(doc_bytes) // 1024}KB. "
+                        "Max size is 2MB (2048KB). "
+                        "Try compressing the image first."
+                    )
+                else:
+                    st.error("❌ Invalid image file. Please upload a real PNG, JPG or WEBP.")
+                st.stop()
+            doc_id = hash(doc_bytes)
+            if st.session_state.get("last_uploaded_doc_id") != doc_id:
+                st.session_state.last_uploaded_doc_id = doc_id
+                with st.spinner("Extracting document data with muse-image-1.0..."):
+                    try:
+                        extraction = extract_document_data(doc_bytes)
+                        st.session_state.extracted_document = extraction
+                        st.session_state.prefilled_prompt = format_logistics_instruction(extraction)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(friendly_error(e))
             if uploaded_doc.size > 2_000_000:
                 show_user_error(
                     message="The uploaded document exceeds the 2MB size limit.",
@@ -1671,7 +2202,7 @@ elif selected_module == "Documents":
                 doc_id = hash(doc_bytes)
                 if st.session_state.get("last_uploaded_doc_id") != doc_id:
                     st.session_state.last_uploaded_doc_id = doc_id
-                    with st.spinner("Extracting document data with muse-image-1.0..."):
+                    with st.spinner("📄 muse-image-1.0 extracting structured data..."):
                         try:
                             extraction = extract_document_data(doc_bytes)
                             st.session_state.extracted_document = extraction
@@ -1729,7 +2260,45 @@ elif selected_module == "Documents":
                     st.session_state.main_nav_radio = "Orchestrator"
                     st.rerun()
         else:
-            st.info("No document uploaded. Upload a document or select an example invoice line item above.")
+            st.markdown(
+                """
+                <div class="control-card" style="text-align:center; padding: 2rem 1.25rem;">
+                    <div style="font-size: 1.1rem; font-weight: 700; color: #f8fafc; margin-bottom: 0.4rem;">
+                        Upload an invoice or bill of lading
+                    </div>
+                    <div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 1.2rem;">
+                        muse-image-1.0 extracts supplier, items and dates automatically
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+            if st.button("Use sample invoice", key="use_sample_invoice_btn", use_container_width=True):
+                sample_doc_path = "demo-assets/sample_invoice.png"
+                if os.path.exists(sample_doc_path):
+                    with open(sample_doc_path, "rb") as f:
+                        doc_bytes = f.read()
+                    with st.spinner("📄 muse-image-1.0 extracting structured data..."):
+                        try:
+                            extraction = extract_document_data(doc_bytes)
+                            st.session_state.extracted_document = extraction
+                            st.session_state.prefilled_prompt = format_logistics_instruction(extraction)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(friendly_error(e))
+                else:
+                    st.error("Sample invoice not found in demo-assets/sample_invoice.png")
 
 
-# -----------------------------------------------------------------------------
+    # -----------------------------------------------------------------------------
+
+
+
+if is_admin_mode:
+    render_with_error_boundary(render_admin, "Manager Admin Panel")
+elif selected_module == "Orchestrator":
+    render_with_error_boundary(render_orchestrator, "Orchestrator")
+elif selected_module == "Warehouse":
+    render_with_error_boundary(render_warehouse, "Warehouse")
+elif selected_module == "Documents":
+    render_with_error_boundary(render_documents, "Documents")
