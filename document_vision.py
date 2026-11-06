@@ -1,3 +1,4 @@
+from api_resilience import with_rate_limit_retry
 """
 Document Vision Module (S11)
 ============================
@@ -93,6 +94,7 @@ def _parse_document_response(content: str) -> Dict[str, Any]:
     }
 
 
+@with_rate_limit_retry(max_retries=3, base_delay=2)
 def extract_document_data(image_bytes: bytes) -> Dict[str, Any]:
     """
     Extracts structured fields (supplier, items, quantities, dates) from an invoice

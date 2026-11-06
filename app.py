@@ -19,19 +19,92 @@ from graph import get_graph_with_postgres, log_dpo
 from langchain_core.messages import HumanMessage, AIMessage
 from db import execute_query, execute_mutation, get_db_connection
 
+
+def render_with_error_boundary(render_fn, module_name):
+    try:
+        render_fn()
+    except Exception as e:
+        st.markdown(f"""
+        <div style="background:#381216; border:1px solid #ef4444;
+        border-radius:8px; padding:1.5rem; text-align:center;
+        margin:2rem 0;">
+            <div style="font-size:1.5rem;">⚠️</div>
+            <h3 style="color:#fca5a5;">Something went wrong in {module_name}</h3>
+            <p style="color:#94a3b8; font-size:0.85rem;">
+                {str(e)[:200]}
+            </p>
+            <p style="color:#64748b; font-size:0.8rem;">
+                Refresh the page or contact support if this persists.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+        import traceback
+        import logging
+        logging.getLogger(__name__).error(
+            f"Module {module_name} crashed: {traceback.format_exc()}"
+        )
+
 # Load environment variables
 load_dotenv()
 
+import logging
+import traceback
+from logging_config import setup_logging
+from security import (
+    sanitize_text_input,
+    check_xss_patterns,
+    validate_file_upload,
+    IMAGE_MAGIC_BYTES,
+    MAX_PROMPT_LENGTH,
+)
+from health import check_system_health
+
+setup_logging()
+
+
 DEMO_MODE = os.environ.get("DEMO_MODE") == "1"
+
+if "system_health" not in st.session_state:
+    st.session_state.system_health = check_system_health()
+
 
 # Page Configuration
 st.set_page_config(
-    page_title="Sovereign Supply Chain",
+    page_title="Sovereign Supply Chain Orchestrator",
     page_icon="🏭",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
+st.markdown("""
+<a href="#main-content" class="skip-link" style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;z-index:9999999;background:#2563eb;color:#ffffff;padding:8px 16px;text-decoration:none;border-radius:4px;">Skip to main content</a>
+<style>
+.skip-link:focus {
+    position: static !important;
+    width: auto !important;
+    height: auto !important;
+    display: inline-block !important;
+    margin: 8px !important;
+}
+:focus-visible {
+    outline: 2px solid #3b82f6 !important;
+    outline-offset: 2px !important;
+}
+.stCaption, [data-testid="stCaptionContainer"] {
+    color: #cbd5e1 !important;
+}
+@keyframes sscLoaderFade {
+    0% { opacity: 1; visibility: visible; }
+    70% { opacity: 1; }
+    100% { opacity: 0; visibility: hidden; }
+}
+#ssc-loader {
+    animation: sscLoaderFade 1.2s forwards;
+    pointer-events: none;
+}
+</style>
+<div id="main-content"></div>
+""", unsafe_allow_html=True)
 st.markdown("""
 <div id="ssc-loader" style="
     position:fixed;inset:0;background:#0d1117;
@@ -597,6 +670,48 @@ def check_missing_item_and_suggest(user_input: str, tenant_id: str) -> Optional[
 
 
 # State Initialization
+
+# Session state corruption guard (Prompt 7)
+REQUIRED_SESSION_TYPES = {
+    "chat_history": list,
+    "waf_count": int,
+    "disruption_history": list,
+    "demo_paused_for_hitl": bool,
+}
+for key, expected_type in REQUIRED_SESSION_TYPES.items():
+    if key in st.session_state:
+        if not isinstance(st.session_state[key], expected_type):
+            del st.session_state[key]
+
+# Conversation truncation guard (Prompt 7)
+if 'chat_history' in st.session_state:
+    MAX_CHAT_HISTORY = 50
+    if len(st.session_state.chat_history) > MAX_CHAT_HISTORY:
+        st.session_state.chat_history = st.session_state.chat_history[-MAX_CHAT_HISTORY:]
+        st.info("💾 Conversation truncated to last 50 messages to maintain performance.")
+
+# Session expiry warning after 30 mins inactivity (Prompt 7)
+if "last_activity" not in st.session_state:
+    st.session_state.last_activity = time.time()
+elapsed = time.time() - st.session_state.last_activity
+if elapsed > 1800:
+    st.warning("⏱️ Session has been idle for 30 minutes. Some state may have been reset.")
+st.session_state.last_activity = time.time()
+
+# Stale HITL state guard - 10 minutes timeout (Prompt 7)
+if st.session_state.get("demo_paused_for_hitl"):
+    if "hitl_paused_at" not in st.session_state:
+        st.session_state.hitl_paused_at = time.time()
+    paused_at = st.session_state.get("hitl_paused_at", time.time())
+    if time.time() - paused_at > 600:
+        st.session_state.demo_paused_for_hitl = False
+        st.session_state.demo_pending_po = None
+        st.warning("⏱️ Approval request expired after 10 minutes. Please resubmit your command.")
+        st.rerun()
+
+if 'chat_search' not in st.session_state:
+    st.session_state.chat_search = ""
+
 if 'thread_id' not in st.session_state:
     st.session_state.thread_id = str(uuid.uuid4())
 if 'chat_history' not in st.session_state:
@@ -760,6 +875,8 @@ st.markdown("<div style='height: 0.5rem;'></div>", unsafe_allow_html=True)
 
 def execute_agent_synchronous(dispatched_prompt: str, tenant_id: str, request_id: str):
     """Invoke LangGraph synchronously and display response."""
+    start_time = time.time()
+    logging.info(f"Agent execution initiated for tenant={tenant_id}, req={request_id}")
     with st.spinner("Processing via LangGraph Orchestrator..."):
         try:
             graph = get_graph_with_postgres()
@@ -793,7 +910,21 @@ def execute_agent_synchronous(dispatched_prompt: str, tenant_id: str, request_id
 
                 st.session_state.pending_plan = drafted_plan
         except Exception as e:
-            st.error(friendly_error(e))
+            err = str(e)
+            if "authentication failed" in err:
+                st.error("🔑 Invalid API key. Check META_API_KEY.")
+            elif "temporarily unavailable" in err:
+                st.error("⏳ Meta AI is temporarily unavailable. Try again in a moment.")
+            elif "rate" in err.lower():
+                st.warning("⚡ Rate limit reached. Please wait a moment and try again.")
+            else:
+                st.error(friendly_error(e))
+        finally:
+            duration = time.time() - start_time
+            logging.info(
+                f"Agent execution finished in {duration:.2f}s for req={request_id}",
+                extra={"tenant_id": tenant_id, "elapsed_s": duration, "request_id": request_id}
+            )
 
 
 # Load gold standard inputs once for example collapsibles
@@ -894,10 +1025,28 @@ if is_dev_mode and st.session_state.get("active_dev_subview"):
     st.divider()
 
 
+
 # Check if auto_submit_prompt was triggered (e.g. from Example Inputs button)
 if st.session_state.get("auto_submit_prompt"):
     to_submit = st.session_state.auto_submit_prompt
     st.session_state.auto_submit_prompt = None
+
+    if not to_submit or not to_submit.strip():
+        st.stop()
+
+    if len(to_submit) > MAX_PROMPT_LENGTH:
+        st.warning(
+            f"⚠️ Message too long ({len(to_submit)} chars). "
+            f"Please keep under {MAX_PROMPT_LENGTH} characters."
+        )
+        st.stop()
+
+    to_submit = sanitize_text_input(to_submit)
+    if not check_xss_patterns(to_submit):
+        st.session_state.waf_count += 1
+        st.error("🛡️ Potentially unsafe input detected and blocked.")
+        st.stop()
+
 
     fuzzy_err = check_missing_item_and_suggest(to_submit, tenant_id)
     if fuzzy_err:
@@ -986,7 +1135,7 @@ if st.session_state.disruption_history:
 # -----------------------------------------------------------------------------
 # Module 0: Manager Admin Panel (accessible directly via ?admin_token=<UUID>)
 # -----------------------------------------------------------------------------
-if is_admin_mode:
+def render_admin():
     st.markdown(f"### ⚙️ Manager Admin Panel — Inventory Governance ({tenant_id})")
     st.markdown("Authorized managers can stage catalog modifications (Add, Edit, Delete). Changes enter the pending approvals queue and require sign-off before committing to the database.")
 
@@ -1189,13 +1338,15 @@ if is_admin_mode:
                         st.warning(f"Request #{req_id} ({action}) rejected.")
                         st.rerun()
 
-# -----------------------------------------------------------------------------
-# Module 1: Orchestrator
-# -----------------------------------------------------------------------------
-elif selected_module == "Orchestrator":
-    # Friendly Status Banner (exactly one banner shown)
-    postgres_uri = os.environ.get("POSTGRES_DB_URI", "").strip()
-    if DEMO_MODE:
+    # -----------------------------------------------------------------------------
+    # Module 1: Orchestrator
+    # -----------------------------------------------------------------------------
+
+
+def render_orchestrator():
+    # Friendly Status Banner driven by health check (Prompt 6)
+    health_data = st.session_state.get("system_health", {})
+    if health_data.get("demo_mode"):
         st.markdown(
             """
             <div class="alert-banner info">
@@ -1204,7 +1355,7 @@ elif selected_module == "Orchestrator":
             """,
             unsafe_allow_html=True
         )
-    elif not postgres_uri:
+    elif health_data.get("db_type") != "PostgreSQL":
         st.markdown(
             """
             <div class="alert-banner warning">
@@ -1354,6 +1505,18 @@ elif selected_module == "Orchestrator":
 
     # Main Conversation Area
     with col_main:
+        if st.session_state.chat_history:
+            search_query = st.text_input(
+                "🔍 Search conversation",
+                value=st.session_state.chat_search,
+                placeholder="Filter messages...",
+                key="chat_search_input",
+                label_visibility="collapsed"
+            )
+            st.session_state.chat_search = search_query
+        else:
+            search_query = ""
+
         chat_container = st.container()
         with chat_container:
             if not st.session_state.chat_history:
@@ -1391,9 +1554,36 @@ elif selected_module == "Orchestrator":
                   Or type your own warehouse command ↓
                 </div>
                 """, unsafe_allow_html=True)
-            for msg in st.session_state.chat_history:
+
+            filtered_history = [
+                msg for msg in st.session_state.chat_history
+                if not search_query or
+                search_query.lower() in msg["content"].lower()
+            ] if search_query else st.session_state.chat_history
+
+            for msg in filtered_history:
                 with st.chat_message(msg["role"]):
                     st.write(msg["content"])
+                    if msg.get("attribution"):
+                        st.caption(msg["attribution"])
+
+            if search_query and not filtered_history:
+                st.info(f"No messages matching '{search_query}'")
+
+            # Export Conversation button (Prompt 9)
+            if st.session_state.chat_history:
+                export_lines = []
+                for m in st.session_state.chat_history:
+                    attr_info = f" ({m['attribution']})" if m.get("attribution") else ""
+                    export_lines.append(f"[{m['role'].upper()}]{attr_info}: {m['content']}")
+                export_text = "\n\n".join(export_lines)
+                st.download_button(
+                    label="📥 Export Conversation",
+                    data=export_text,
+                    file_name=f"conversation_export_{tenant_id}.txt",
+                    mime="text/plain",
+                    key="export_chat_history_btn"
+                )
 
         st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
 
@@ -1431,6 +1621,10 @@ elif selected_module == "Orchestrator":
                     if voice_result.get("status") == "ok":
                         transcript = voice_result.get("transcription", "").strip()
                         if transcript:
+                            if st.session_state.get("last_voice_transcript") == transcript:
+                                st.info("Same voice command detected. Modify and resubmit.")
+                                st.stop()
+                            st.session_state.last_voice_transcript = transcript
                             st.session_state.auto_submit_prompt = transcript
                             st.rerun()
                     else:
@@ -1470,16 +1664,24 @@ elif selected_module == "Orchestrator":
 
         # Text Logistics Command Input
         prompt = st.chat_input("Enter logistics instruction...")
-        if prompt:
+        if prompt and prompt.strip():
+            if len(prompt) > MAX_PROMPT_LENGTH:
+                st.warning(
+                    f"⚠️ Message too long ({len(prompt)} chars). "
+                    f"Please keep under {MAX_PROMPT_LENGTH} characters."
+                )
+                st.stop()
             st.session_state.auto_submit_prompt = prompt
             st.session_state["dispatch_ts"] = time.time()
             st.rerun()
 
 
-# -----------------------------------------------------------------------------
-# Module 2: Warehouse Vision
-# -----------------------------------------------------------------------------
-elif selected_module == "Warehouse":
+    # -----------------------------------------------------------------------------
+    # Module 2: Warehouse Vision
+    # -----------------------------------------------------------------------------
+
+
+def render_warehouse():
     st.markdown("### 📦 Warehouse Vision & Inventory Segmentation")
     st.markdown("Automated stock segmentation powered by Meta SAM 3.1. Upload shelf imagery to detect low-stock or empty SKU bins.")
 
@@ -1523,23 +1725,28 @@ elif selected_module == "Warehouse":
             key="shelf_image_uploader"
         )
         if uploaded_image is not None:
-            if uploaded_image.size > 1_000_000:
-                show_user_error(
-                    message="The uploaded shelf photo exceeds the 1MB file size limit.",
-                    suggestion="Please compress the image or take a lower resolution photo before uploading."
-                )
-            else:
-                image_bytes = uploaded_image.read()
-                image_id = hash(image_bytes)
-                if st.session_state.get("last_uploaded_image_id") != image_id:
-                    st.session_state.last_uploaded_image_id = image_id
-                    with st.spinner("Analyzing shelf image with SAM 3.1..."):
-                        try:
-                            analysis = analyze_shelf_image(image_bytes)
-                            st.session_state.shelf_context = analysis
-                            st.rerun()
-                        except Exception as e:
-                            st.error(friendly_error(e))
+            image_bytes = uploaded_image.read()
+            is_valid, err_msg = validate_file_upload(image_bytes, max_size=1_000_000, allowed_magic=IMAGE_MAGIC_BYTES)
+            if not is_valid:
+                if len(image_bytes) > 1_000_000:
+                    st.error(
+                        f"📁 File is {len(image_bytes) // 1024}KB. "
+                        "Max size is 1MB (1024KB). "
+                        "Try compressing the image first."
+                    )
+                else:
+                    st.error("❌ Invalid image file. Please upload a real PNG, JPG or WEBP.")
+                st.stop()
+            image_id = hash(image_bytes)
+            if st.session_state.get("last_uploaded_image_id") != image_id:
+                st.session_state.last_uploaded_image_id = image_id
+                with st.spinner("Analyzing shelf image with SAM 3.1..."):
+                    try:
+                        analysis = analyze_shelf_image(image_bytes)
+                        st.session_state.shelf_context = analysis
+                        st.rerun()
+                    except Exception as e:
+                        st.error(friendly_error(e))
 
     with col_ctx:
         st.markdown(
@@ -1576,10 +1783,12 @@ elif selected_module == "Warehouse":
             st.info("No active shelf image analyzed. Upload an image or select an example scenario above.")
 
 
-# -----------------------------------------------------------------------------
-# Module 3: Documents
-# -----------------------------------------------------------------------------
-elif selected_module == "Documents":
+    # -----------------------------------------------------------------------------
+    # Module 3: Documents
+    # -----------------------------------------------------------------------------
+
+
+def render_documents():
     st.markdown("### 📄 Document & Invoice Extraction")
     st.markdown("Automated structured data extraction powered by Meta muse-image-1.0. Upload invoices, bills of lading, and freight manifests.")
 
@@ -1623,24 +1832,29 @@ elif selected_module == "Documents":
             key="document_image_uploader"
         )
         if uploaded_doc is not None:
-            if uploaded_doc.size > 2_000_000:
-                show_user_error(
-                    message="The uploaded document exceeds the 2MB size limit.",
-                    suggestion="Please scan the document at 200 DPI or compress the PDF/image before uploading."
-                )
-            else:
-                doc_bytes = uploaded_doc.read()
-                doc_id = hash(doc_bytes)
-                if st.session_state.get("last_uploaded_doc_id") != doc_id:
-                    st.session_state.last_uploaded_doc_id = doc_id
-                    with st.spinner("Extracting document data with muse-image-1.0..."):
-                        try:
-                            extraction = extract_document_data(doc_bytes)
-                            st.session_state.extracted_document = extraction
-                            st.session_state.prefilled_prompt = format_logistics_instruction(extraction)
-                            st.rerun()
-                        except Exception as e:
-                            st.error(friendly_error(e))
+            doc_bytes = uploaded_doc.read()
+            is_valid, err_msg = validate_file_upload(doc_bytes, max_size=2_000_000, allowed_magic=IMAGE_MAGIC_BYTES)
+            if not is_valid:
+                if len(doc_bytes) > 2_000_000:
+                    st.error(
+                        f"📁 File is {len(doc_bytes) // 1024}KB. "
+                        "Max size is 2MB (2048KB). "
+                        "Try compressing the image first."
+                    )
+                else:
+                    st.error("❌ Invalid image file. Please upload a real PNG, JPG or WEBP.")
+                st.stop()
+            doc_id = hash(doc_bytes)
+            if st.session_state.get("last_uploaded_doc_id") != doc_id:
+                st.session_state.last_uploaded_doc_id = doc_id
+                with st.spinner("Extracting document data with muse-image-1.0..."):
+                    try:
+                        extraction = extract_document_data(doc_bytes)
+                        st.session_state.extracted_document = extraction
+                        st.session_state.prefilled_prompt = format_logistics_instruction(extraction)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(friendly_error(e))
 
     with col_doc_view:
         st.markdown(
@@ -1693,4 +1907,15 @@ elif selected_module == "Documents":
             st.info("No document uploaded. Upload a document or select an example invoice line item above.")
 
 
-# -----------------------------------------------------------------------------
+    # -----------------------------------------------------------------------------
+
+
+
+if is_admin_mode:
+    render_with_error_boundary(render_admin, "Manager Admin Panel")
+elif selected_module == "Orchestrator":
+    render_with_error_boundary(render_orchestrator, "Orchestrator")
+elif selected_module == "Warehouse":
+    render_with_error_boundary(render_warehouse, "Warehouse")
+elif selected_module == "Documents":
+    render_with_error_boundary(render_documents, "Documents")
