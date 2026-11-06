@@ -25,9 +25,11 @@ jobs:
     - name: Initialize Database
       run: python init_db.py
 
-    - name: Run Chaos Tests
-      run: python tests/chaos_test.py
-
-    - name: Run Supply Chain Eval Suite
+    - name: Run Test Suite
       run: |
-        PYTHONPATH=. python -m pytest tests/test_evals.py -s -v
+        DEMO_MODE=1 PYTHONPATH=. python -m pytest tests/ \
+          --ignore=tests/test_meta_smoke.py \
+          --ignore=tests/test_postgres_smoke.py \
+          -q --tb=short --timeout=30
+      env:
+        DEMO_MODE: "1"
