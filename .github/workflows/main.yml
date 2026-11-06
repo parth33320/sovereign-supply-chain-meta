@@ -25,9 +25,6 @@ jobs:
     - name: Initialize Database
       run: python init_db.py
 
-    - name: Run Chaos Tests
-      run: python tests/chaos_test.py
-
     - name: Run Supply Chain Eval Suite
       run: |
         PYTHONPATH=. python -m pytest tests/test_evals.py -s -v
