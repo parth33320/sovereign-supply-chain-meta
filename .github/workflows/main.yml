@@ -26,6 +26,7 @@ jobs:
       run: python init_db.py
 
     - name: Run Test Suite
+    - name: Run Supply Chain Eval Suite
       run: |
         DEMO_MODE=1 PYTHONPATH=. python -m pytest tests/ \
           --ignore=tests/test_meta_smoke.py \
