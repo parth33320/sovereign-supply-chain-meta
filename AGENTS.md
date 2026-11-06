@@ -5532,3 +5532,17 @@ Keep diffs reviewable. Small slices. If the user hasn't looked at code in a long
 Real tests only. Never write a test that passes against the pre-change code — a test that can't fail tests nothing. Never comment out, skip, or weaken a test to get to green.
 Optional: durable context in the codebase
 When a gate produces a decision that outlives this feature, offer to record it as an ADR in docs/adr/NNNN-<slug>.md — context, decision, consequences; never rewrite old ADRs, supersede them. Record anything that lives outside the repo but that an agent needs to know exists (env var names, payment setup, test accounts, third-party dashboards) in docs/external/. Files on disk are free context — every future session starts smarter.
+## MANDATORY FIRST STEPS — every session, no exceptions
+1. Read docs/CODING_RUBRIC.md in full before writing any code
+2. Read the most recent file in docs/decisions/
+3. State in your first message:
+   "Rubric read. Last decision: <date> — <topic>"
+4. If rubric was violated in existing code, log it in
+   docs/decisions/ before fixing it
+
+## MANDATORY LAST STEPS — before every PR
+1. Add docs/decisions/YYYY-MM-DD-<sprint>.md
+2. If new best practice learned, append to
+   docs/CODING_RUBRIC.md with comment:
+   "# Added YYYY-MM-DD: <justification>"
+3. Run rubric checklist and confirm every item passes

@@ -103,7 +103,7 @@ def test_document_vision_ui_e2e_playwright(tmp_path):
             page = context.new_page()
             page.goto(f"http://localhost:{port}", timeout=15000)
 
-            expect(page).to_have_title("Sovereign Supply Chain Orchestrator", timeout=15000)
+            expect(page).to_have_title("Sovereign Supply Chain", timeout=15000)
 
             # Click "Documents" in sidebar navigation rail
             sidebar = page.locator('[data-testid="stSidebar"]')
@@ -130,3 +130,40 @@ def test_document_vision_ui_e2e_playwright(tmp_path):
     finally:
         proc.terminate()
         proc.wait(timeout=5)
+
+
+def test_open_in_orchestrator_preserves_session_state():
+    """Verify State 13: clicking 'Open in Orchestrator' preserves prefilled_prompt and switches active module without losing chat history."""
+    import streamlit.testing.v1 as st_test
+    app_path = REPO_ROOT / "app.py"
+    at = st_test.AppTest.from_file(str(app_path), default_timeout=10)
+    at.run()
+
+    # Seed an existing chat message
+    at.session_state["chat_history"].append({"role": "user", "content": "Prior message"})
+
+    # Switch to Documents
+    at.radio[0].set_value("Documents")
+    at.run()
+
+    # Simulate extracted document
+    at.session_state.extracted_document = {
+        "supplier": "FastFreight Logistics",
+        "items": [{"description": "Turbine Valve", "quantity": 100, "unit_price": 45.0}],
+        "dates": ["2026-11-05"],
+        "raw_summary": "Invoice #101"
+    }
+    at.session_state.prefilled_prompt = "Receive 100x Turbine Valve from FastFreight into inventory."
+    at.run()
+
+    # Click Open in Orchestrator
+    open_btn = next((b for b in at.button if b.key == "open_in_orchestrator_btn"), None)
+    assert open_btn is not None
+    open_btn.click()
+    at.run()
+
+    # Verify session state survived module switch
+    assert at.session_state.get("active_nav_module") == "Orchestrator"
+    assert at.session_state.get("prefilled_prompt") == "Receive 100x Turbine Valve from FastFreight into inventory."
+    assert len(at.session_state["chat_history"]) == 1
+    assert at.session_state["chat_history"][0]["content"] == "Prior message"

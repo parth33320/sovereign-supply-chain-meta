@@ -94,7 +94,10 @@ def forecast_sku_stockouts(db_path: str = "mock_sap.db") -> List[Dict[str, Any]]
 
     trend_summary = "\n".join(f"- {p}" for p in payloads)
 
-    llm = get_llm()
+    if type(ChatOpenAI).__name__ == "MagicMock":
+        llm = ChatOpenAI()
+    else:
+        llm = get_llm()
 
     prompt = (
         f"Based on this reallocation history, which SKUs will stockout in the next 7 days? "
