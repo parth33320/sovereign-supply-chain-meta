@@ -78,14 +78,25 @@ def global_oracle_and_forecast(state: AgentState) -> Dict:
     for item in forecasts:
         if str(item.get("confidence","")).lower() == "high":
             messages.append(AIMessage(content=
-                f"[DEMAND FORECAST ALERT] (HIGH): {item['sku']} stockout in {item['days_until_stockout']} days."))
+                f"[DEMAND FORECAST ALERT] (HIGH): {item['sku']} predicted stockout in {item['days_until_stockout']} days."))
     return {"messages": messages}
 
 def global_oracle(state: AgentState) -> Dict:
-    return global_oracle_and_forecast(state)
+    disruption = fetch_disruption_alert()
+    messages = list(state.get("messages", []))
+    if disruption.get("alert"):
+        messages.append(AIMessage(content=
+            f"[GLOBAL ORACLE ALERT] ({disruption['severity'].upper()}): {disruption['summary']}"))
+    return {"messages": messages}
 
 def forecast_demand(state: AgentState) -> Dict:
-    return global_oracle_and_forecast(state)
+    forecasts = forecast_sku_stockouts()
+    messages = list(state.get("messages", []))
+    for item in forecasts:
+        if str(item.get("confidence","")).lower() == "high":
+            messages.append(AIMessage(content=
+                f"[DEMAND FORECAST ALERT] (HIGH): {item['sku']} predicted stockout in {item['days_until_stockout']} days."))
+    return {"messages": messages}
 
 # Node 2: MCP Inventory Query (with Exponential Backoff)
 @tenacity.retry(
@@ -170,6 +181,7 @@ def execute_plan(state: AgentState) -> Dict:
     messages = list(state.get("messages", []))
     messages.append(AIMessage(content="Plan executed successfully."))
     log_task(state["request_id"], "EXECUTED", "Plan executed.")
+    drafted_plan = state.get("drafted_plan", "")
 
     # Record agent action in portfolio if work_item_id is present
     work_item_id = state.get("work_item_id")
@@ -196,7 +208,7 @@ def execute_plan(state: AgentState) -> Dict:
 
         record_agent_action(work_item_id, action_description, saving_usd)
 
-    return {"messages": messages, "status": "executed"}
+    return {"messages": messages, "status": "executed", "drafted_plan": drafted_plan}
 
 def a2a_negotiate_sync(state: AgentState) -> Dict:
     """
@@ -225,7 +237,8 @@ def a2a_negotiate_sync(state: AgentState) -> Dict:
         ("human", "Stockout items:\n{stockouts}")
     ])
     buyer_chain = buyer_prompt_tmpl | llm
-    rfq_str = buyer_chain.invoke({"stockouts": stockouts_str}).content
+    res_buyer = buyer_chain.invoke({"stockouts": stockouts_str})
+    rfq_str = res_buyer.content if isinstance(res_buyer.content, str) else str(res_buyer.content)
 
     a2a_transcript.append({
         "role": "buyer_agent",
@@ -240,7 +253,8 @@ def a2a_negotiate_sync(state: AgentState) -> Dict:
         ("human", "Request for Quotation:\n{rfq}")
     ])
     supplier_chain = supplier_prompt_tmpl | llm
-    quote_str = supplier_chain.invoke({"rfq": rfq_str}).content
+    res_supp = supplier_chain.invoke({"rfq": rfq_str})
+    quote_str = res_supp.content if isinstance(res_supp.content, str) else str(res_supp.content)
 
     try:
         quote_json = json.loads(quote_str)
@@ -290,8 +304,11 @@ def draft_po(state: AgentState) -> Dict:
     }
 
     messages = list(state.get("messages", []))
-    messages.append(AIMessage(content=f"Drafted Purchase Order: {json.dumps(po)}"))
-    return {"pending_po": po, "messages": messages, "status": "drafted"}
+    po_desc = f"Drafted Purchase Order: {json.dumps(po)}"
+    messages.append(AIMessage(content=po_desc))
+    drafted_plan = f"Plan: Restock via {po['po_id']} ({po.get('restock_quantity', 500)} units from {po['supplier']})"
+    log_task(state["request_id"], "DRAFTED", json.dumps({"plan": drafted_plan, "po": po}))
+    return {"pending_po": po, "drafted_plan": drafted_plan, "messages": messages, "status": "drafted"}
 
 # Router for Intent
 def route_intent(state: AgentState):
@@ -333,6 +350,8 @@ def route_approval(state: AgentState):
 builder = StateGraph(AgentState)
 
 builder.add_node("global_oracle_and_forecast", global_oracle_and_forecast)
+builder.add_node("forecast_demand", forecast_demand)
+builder.add_node("global_oracle", global_oracle)
 builder.add_node("fetch_inventory", fetch_inventory)
 builder.add_node("draft_plan", draft_plan)
 builder.add_node("human_review", human_review)

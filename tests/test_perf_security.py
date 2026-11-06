@@ -13,7 +13,8 @@ def test_llm_singleton():
 
 
 def test_disruption_cache():
-    from disruption_radar import fetch_disruption_alert
+    from disruption_radar import fetch_disruption_alert, clear_disruption_cache
+    clear_disruption_cache()
     with mock.patch("disruption_radar._fetch_disruption_alert_uncached") as m:
         m.return_value = {"alert": False, "severity": "low", "summary": "none"}
         fetch_disruption_alert()

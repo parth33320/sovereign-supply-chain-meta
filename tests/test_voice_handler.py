@@ -68,22 +68,16 @@ def test_process_voice_input_intent_extraction_failure():
 
 
 def test_transcribe_audio_unit():
-    """Test transcribe_audio using mock OpenAI client."""
+    """Test transcribe_audio using mock requests.post response."""
     sample_audio = b"fake_audio_payload"
-    mock_response = MagicMock()
-    mock_response.text = "Show inventory levels"
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {"transcription": "Show inventory levels"}
 
-    with patch("openai.OpenAI") as mock_openai_cls:
-        mock_client = MagicMock()
-        mock_openai_cls.return_value = mock_client
-        mock_client.audio.transcriptions.create.return_value = mock_response
-
+    with patch.dict(os.environ, {"META_API_KEY": "test_meta_key"}), \
+         patch("requests.post", return_value=mock_resp) as mock_post:
         text = transcribe_audio(sample_audio)
         assert text == "Show inventory levels"
-        mock_client.audio.transcriptions.create.assert_called_once()
-        call_kwargs = mock_client.audio.transcriptions.create.call_args.kwargs
-        assert call_kwargs["model"] == "muse-voice-transcribe-1.0"
-
 
 def test_extract_logistics_intent_unit():
     """Test extract_logistics_intent unit test with mocked ChatOpenAI."""

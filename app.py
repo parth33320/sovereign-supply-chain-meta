@@ -22,10 +22,10 @@ from db import execute_query, execute_mutation, get_db_connection
 # Load environment variables
 load_dotenv()
 
-DEMO_MODE = os.environ.get("DEMO_MODE") == "1"
+DEMO_MODE = os.environ.get("DEMO_MODE", "1") == "1"
 
 _api_key = os.environ.get("META_API_KEY")
-if not _api_key:
+if not DEMO_MODE and not _api_key:
     st.set_page_config(page_title="Setup Required",
                        page_icon="🔑", layout="centered")
     st.markdown("""
@@ -58,29 +58,7 @@ st.set_page_config(
 )
 
 st.markdown("""
-<div id="ssc-loader" style="
-    position:fixed;inset:0;background:#0d1117;
-    display:flex;flex-direction:column;
-    align-items:center;justify-content:center;
-    z-index:999999;transition:opacity 0.4s ease;">
-  <div style="font-size:1.4rem;color:#58a6ff;
-      font-weight:600;font-family:sans-serif;">
-    Sovereign Supply Chain
-  </div>
-  <div style="color:#8b949e;font-size:0.85rem;
-      margin-top:8px;font-family:sans-serif;">
-    Initializing AI agents...
-  </div>
-</div>
-<script>
-  window.addEventListener('load', function() {
-    setTimeout(function() {
-      var el = document.getElementById('ssc-loader');
-      if (el) { el.style.opacity='0';
-        setTimeout(function(){el.remove();},400); }
-    }, 800);
-  });
-</script>
+<!-- ssc-loader removed -->
 """, unsafe_allow_html=True)
 
 
@@ -99,6 +77,15 @@ ENTERPRISE_CSS = """
 html, body, [class*="css"] {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     color: #e6edf3;
+}
+
+@keyframes pulse-amber {
+  0% { box-shadow: 0 0 0 0 rgba(227, 179, 65, 0.4); border-color: rgba(227, 179, 65, 0.6); }
+  70% { box-shadow: 0 0 0 10px rgba(227, 179, 65, 0); border-color: rgba(227, 179, 65, 1); }
+  100% { box-shadow: 0 0 0 0 rgba(227, 179, 65, 0); border-color: rgba(227, 179, 65, 0.6); }
+}
+.hitl-panel-pulsing {
+  animation: pulse-amber 2s infinite ease-in-out;
 }
 
 /* Hide Streamlit Deploy Button */
@@ -550,6 +537,55 @@ def check_rate_limit(tenant_id: str) -> bool:
     st.session_state[key] = time.time()
     return True
 
+def log_activity(source: str, msg: str, icon: str = "⚡", model: Optional[str] = None):
+    """Append entry to real-time Activity Log (capped at 100)."""
+    if 'activity_log' not in st.session_state:
+        st.session_state.activity_log = []
+    ts = time.strftime("%H:%M:%S")
+    entry = {"ts": ts, "source": source, "msg": str(msg)[:80], "icon": icon}
+    if model:
+        entry["model"] = model
+    st.session_state.activity_log.append(entry)
+    if len(st.session_state.activity_log) > 100:
+        st.session_state.activity_log = st.session_state.activity_log[-100:]
+
+def render_activity_log():
+    """Render fixed height docked activity log panel at bottom of main column."""
+    st.markdown("<div style='margin-top: 2rem;'></div>", unsafe_allow_html=True)
+    is_expanded = st.session_state.get("activity_log_expanded", False)
+    header_col, btn1_col, btn2_col = st.columns([7, 1.6, 1.4])
+    with header_col:
+        st.markdown(f"**Activity Log ({len(st.session_state.get('activity_log', []))})**")
+    with btn1_col:
+        toggle_label = "Hide" if is_expanded else "View"
+        if st.button(toggle_label, key="toggle_activity_log_btn", use_container_width=True):
+            st.session_state.activity_log_expanded = not is_expanded
+            st.rerun()
+    with btn2_col:
+        if st.button("Clear", key="clear_activity_log_btn", use_container_width=True):
+            st.session_state.activity_log = []
+            st.rerun()
+
+    if is_expanded:
+        log_entries = st.session_state.get("activity_log", [])
+        lines = []
+        for e in reversed(log_entries):
+            ts = e.get("ts", "")
+            icon = e.get("icon", "•")
+            src = e.get("source", "system")
+            msg = e.get("msg", "")[:80]
+            mdl = f" [{e['model']}]" if e.get("model") else ""
+            lines.append(f"<div style='font-family:monospace;font-size:0.8rem;padding:2px 0;color:#94a3b8;'>{ts} {icon} <strong>{src}</strong>{mdl}: {msg}</div>")
+        content_html = "".join(lines) if lines else "<div style='color:#64748b;font-size:0.8rem;'>No recent activity.</div>"
+        st.markdown(
+            f"""
+            <div style="height: 180px; overflow-y: auto; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 8px 12px; margin-bottom: 1rem;">
+                {content_html}
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
 def show_user_error(message: str, suggestion: str):
     """
     Renders a styled HTML card with a ⚠️ icon, plain-English error headline, and a 'What to do next:' line.
@@ -650,6 +686,12 @@ if 'demo_pending_po' not in st.session_state:
     st.session_state.demo_pending_po = None
 if 'demo_pending_plan' not in st.session_state:
     st.session_state.demo_pending_plan = ""
+if 'activity_log' not in st.session_state:
+    st.session_state.activity_log = [
+        {"ts": time.strftime("%H:%M:%S"), "icon": "⚡", "source": "system", "msg": "System initialized in Sovereign Mode (Ready)"}
+    ]
+if 'activity_log_expanded' not in st.session_state:
+    st.session_state.activity_log_expanded = False
 
 if DEMO_MODE and st.query_params.get("demo_hitl") == "1":
     st.session_state.demo_paused_for_hitl = True
@@ -740,44 +782,19 @@ with st.sidebar:
     st.markdown("<div style='margin-top: auto; padding-top: 2rem;'></div>", unsafe_allow_html=True)
     st.caption("Environment: Meta Foundation Cloud\nv1.6.0-enterprise")
 
-# Global Top Header Bar
-header_col1, header_col2, header_col3 = st.columns([2, 1, 1])
+# Pure Module Title Header (no Sovereign Supply Chain button, hardcoded Tenant_A, no Operational badge)
+tenant_id = "Tenant_A"
 
-with header_col1:
-    st.markdown(
-        f"""
-        <div style="display: flex; align-items: center; gap: 0.75rem; padding-top: 0.35rem;">
-            <div style="font-size: 1.35rem; font-weight: 700; color: #f8fafc; letter-spacing: -0.02em;">
-                🛡️ Sovereign Supply Chain
-            </div>
-            <div style="font-size: 0.85rem; color: #64748b; font-weight: 500;">
-                / {st.session_state.active_nav_module}
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-with header_col2:
-    tenant_id = st.selectbox(
-        "Active Tenant",
-        ["Tenant_A", "Tenant_B"],
-        key="global_tenant_selector",
-        label_visibility="collapsed"
-    )
-
-with header_col3:
-    st.markdown(
-        """
-        <div style="text-align: right; padding-top: 0.35rem;">
-            <span class="status-badge">
-                <span class="status-dot"></span>
-                Operational
-            </span>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+st.markdown(
+    f"""
+    <div style="padding-top: 0.2rem; padding-bottom: 0.8rem;">
+        <h1 style="font-size: 1.6rem; font-weight: 700; color: #f8fafc; margin: 0; padding: 0; letter-spacing: -0.02em;">
+            {selected_module}
+        </h1>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 
 config = {"configurable": {"thread_id": f"{tenant_id}_{st.session_state.thread_id}"}}
 st.markdown("<div style='height: 0.5rem;'></div>", unsafe_allow_html=True)
@@ -929,10 +946,18 @@ if st.session_state.get("auto_submit_prompt"):
     to_submit = st.session_state.auto_submit_prompt
     st.session_state.auto_submit_prompt = None
 
-    fuzzy_err = check_missing_item_and_suggest(to_submit, tenant_id)
-    if fuzzy_err:
+    if not check_prompt_injection(to_submit):
+        st.session_state.waf_count += 1
+        st.session_state.waf_history.append({"timestamp": time.strftime("%H:%M:%S"), "count": 1})
+        log_activity("guardrails", "Prompt injection blocked: malicious pattern", icon="❌")
+        show_toast("Request blocked. See suggestions below.", "warning")
+        st.session_state["prefill_prompt"] = ""
+        st.session_state.prefilled_prompt = ""
+        st.session_state.show_guardrail_help = True
+        st.session_state.activity_log_expanded = True
+    elif check_missing_item_and_suggest(to_submit, tenant_id):
+        fuzzy_err = check_missing_item_and_suggest(to_submit, tenant_id)
         show_user_error(fuzzy_err[0], fuzzy_err[1])
-    elif not check_prompt_injection(to_submit):
         st.session_state.waf_count += 1
         st.session_state.waf_history.append({"timestamp": time.strftime("%H:%M:%S"), "count": 1})
         show_toast("Request blocked. See suggestions below.", "warning")
@@ -976,16 +1001,7 @@ if st.session_state.get("auto_submit_prompt"):
         st.rerun()
 
 
-# Fix 4: Breadcrumb at top of main content area
-module_name = st.session_state.get("active_module", selected_module)
-st.markdown(f"""
-<div style="font-size:0.75rem;color:#8b949e;
-    margin-bottom:16px;font-family:sans-serif;">
-  🏭 Sovereign Supply Chain
-  <span style="margin:0 6px;color:#30363d;">›</span>
-  <span style="color:#e6edf3;">{module_name}</span>
-</div>
-""", unsafe_allow_html=True)
+
 
 # Fix 12: Disruption alert as elevated banner
 if st.session_state.disruption_history:
@@ -1281,11 +1297,11 @@ elif selected_module == "Orchestrator":
             amt = f"${qty * price_val:,.2f}" if isinstance(qty, (int, float)) and isinstance(price_val, (int, float)) else "$5,000.00"
             summary_txt = pending_plan_content if pending_plan_content else "Emergency Restock Order for Microcontrollers"
 
-            # Fix 7: HITL Card Visual Elevation
+            # HITL Panel with Pulsing Amber Border
             st.markdown(f"""
-            <div style="background:#161b22;border:1px solid #e3b341;border-left:4px solid #e3b341;border-radius:8px;padding:20px;margin:16px 0;">
-                <div style="font-size:0.75rem;color:#e3b341;text-transform:uppercase;letter-spacing:0.08em;font-weight:600;margin-bottom:12px;">
-                    ⏸ AWAITING YOUR APPROVAL
+            <div class="hitl-panel-pulsing" style="background:#161b22;border:2px solid #e3b341;border-radius:8px;padding:20px;margin:16px 0;box-shadow: 0 0 15px rgba(227, 179, 65, 0.4);">
+                <div style="font-size:0.75rem;color:#e3b341;text-transform:uppercase;letter-spacing:0.08em;font-weight:700;margin-bottom:12px;">
+                    ⏸ AWAITING OPERATOR APPROVAL
                 </div>
                 <div style="color:#e6edf3;font-size:0.9rem;margin-bottom:16px;">
                     {summary_txt}
@@ -1386,41 +1402,7 @@ elif selected_module == "Orchestrator":
     with col_main:
         chat_container = st.container()
         with chat_container:
-            if not st.session_state.chat_history:
-                st.markdown("""
-                <div class="ssc-card" style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:24px;margin-bottom:16px;">
-                  <div style="font-size:1.15rem;font-weight:700;color:#f8fafc;margin-bottom:8px;">
-                    👋 Welcome to Sovereign Supply Chain
-                  </div>
-                  <div style="color:#8b949e;font-size:0.875rem;margin-bottom:16px;">
-                    Try one of these to get started:
-                  </div>
-                </div>
-                """, unsafe_allow_html=True)
-                col_onb1, col_onb2, col_onb3 = st.columns(3)
-                with col_onb1:
-                    if st.button("🔴 Check Widget-A stockout", use_container_width=True, key="onb_btn_1"):
-                        st.session_state["prefill_prompt"] = "Check Widget-A stockout"
-                        st.session_state.prefilled_prompt = "Check Widget-A stockout"
-                        st.session_state.auto_submit_prompt = "Check Widget-A stockout"
-                        st.rerun()
-                with col_onb2:
-                    if st.button("📦 Reorder Semiconductors", use_container_width=True, key="onb_btn_2"):
-                        st.session_state["prefill_prompt"] = "Reorder Semiconductors"
-                        st.session_state.prefilled_prompt = "Reorder Semiconductors"
-                        st.session_state.auto_submit_prompt = "Reorder Semiconductors"
-                        st.rerun()
-                with col_onb3:
-                    if st.button("🤝 Negotiate with Supplier B", use_container_width=True, key="onb_btn_3"):
-                        st.session_state["prefill_prompt"] = "Negotiate with Supplier B"
-                        st.session_state.prefilled_prompt = "Negotiate with Supplier B"
-                        st.session_state.auto_submit_prompt = "Negotiate with Supplier B"
-                        st.rerun()
-                st.markdown("""
-                <div style="color:#8b949e;font-size:0.85rem;margin-top:12px;margin-bottom:16px;">
-                  Or type your own warehouse command ↓
-                </div>
-                """, unsafe_allow_html=True)
+
             for msg in st.session_state.chat_history:
                 with st.chat_message(msg["role"]):
                     st.write(msg["content"])
@@ -1434,22 +1416,27 @@ elif selected_module == "Orchestrator":
                 st.session_state.prefilled_prompt = ""
                 st.rerun()
 
-        # Collapsible Example Inputs Expander (20 Voice Commands)
-        voice_examples = [x for x in GOLD_INPUTS if x.get("type") == "voice"]
-        if voice_examples:
-            with st.expander("📋 Example Inputs (20 Voice Commands)", expanded=False):
-                st.caption("Click **Use** next to any command to auto-populate and immediately dispatch it to the Orchestrator.")
-                for i, ex in enumerate(voice_examples):
-                    c_txt, c_btn = st.columns([5, 1])
-                    with c_txt:
-                        st.markdown(f"**{i+1}.** _{ex.get('input')}_")
-                        st.caption(f"Expected: {ex.get('expected_outcome')}")
-                    with c_btn:
-                        if st.button("Use", key=f"use_voice_ex_{i}", use_container_width=True):
-                            st.session_state.auto_submit_prompt = ex.get("input")
-                            st.rerun()
+        # COMBINED INPUT AREA (Voice Recorder + Text Input compact unit)
+        st.markdown("<div style='background:#111622;border:1px solid #232b3e;border-radius:8px;padding:12px;margin-bottom:12px;'>", unsafe_allow_html=True)
+        col_v_q, col_v_lbl = st.columns([1, 19])
+        with col_v_q:
+            with st.popover("?"):
+                st.markdown("**Voice Logistics Command**")
+                st.markdown("Record hands-free warehouse commands transcribed via Meta ASR.")
+                from pathlib import Path
+                sample_voice = Path("demo-assets/sample_voice_command.wav")
+                if sample_voice.exists():
+                    st.download_button(
+                        "⬇️ Download sample .wav",
+                        sample_voice.read_bytes(),
+                        file_name="sample_voice_command.wav",
+                        mime="audio/wav",
+                        key="dl_sample_voice_btn",
+                        use_container_width=True
+                    )
+        with col_v_lbl:
+            st.markdown("<div style='padding-top:4px;'><span style='font-size:0.85rem;font-weight:600;color:#94a3b8;'>VOICE COMMAND</span></div>", unsafe_allow_html=True)
 
-        # Operational Voice Command Input
         voice_audio = st.audio_input("Record voice instruction", key="voice_audio_input")
         if voice_audio is not None:
             audio_bytes = voice_audio.read()
@@ -1498,55 +1485,70 @@ elif selected_module == "Orchestrator":
         task_status = st.session_state.get("task_status", "IDLE")
         render_agent_progress(task_status)
 
-        # Text Logistics Command Input
+        # Text Logistics Command Input with ? tooltip and docked Activity Log
+        col_t_q, col_t_lbl = st.columns([1, 19])
+        with col_t_q:
+            with st.popover("?"):
+                st.markdown("**Orchestrator Commands**")
+                st.markdown("Supported commands include:\n- *Emergency restock 500 units of Widget-A*\n- *Check stock levels for Semiconductors*\n- *Reroute inventory to regional DC*")
+        with col_t_lbl:
+            st.markdown("<div style='padding-top:4px;'><span style='font-size:0.85rem;font-weight:600;color:#94a3b8;'>TEXT INSTRUCTION</span></div>", unsafe_allow_html=True)
+
         prompt = st.chat_input("Enter logistics instruction...")
         if prompt:
             st.session_state.auto_submit_prompt = prompt
             st.session_state["dispatch_ts"] = time.time()
             st.rerun()
 
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        render_activity_log()
+
 
 # -----------------------------------------------------------------------------
 # Module 2: Warehouse Vision
 # -----------------------------------------------------------------------------
 elif selected_module == "Warehouse":
-    st.markdown("### 📦 Warehouse Vision & Inventory Segmentation")
-    st.markdown("Automated stock segmentation powered by Meta SAM 3.1. Upload shelf imagery to detect low-stock or empty SKU bins.")
 
-    # Collapsible Example Inputs for Shelf Images
-    shelf_examples = [x for x in GOLD_INPUTS if x.get("type") == "shelf"]
-    if shelf_examples:
-        with st.expander("📋 Example Inputs (20 Shelf Inspection Scenarios)", expanded=False):
-            st.caption("Click **Use** to inject the visual scenario directly into the active shelf context.")
-            for i, ex in enumerate(shelf_examples):
-                c_txt, c_btn = st.columns([5, 1])
-                with c_txt:
-                    st.markdown(f"**{i+1}.** {ex.get('input')}")
-                    st.caption(f"Expected: {ex.get('expected_outcome')}")
-                with c_btn:
-                    if st.button("Use", key=f"use_shelf_ex_{i}", use_container_width=True):
-                        is_empty = "empty" in ex.get('input').lower() or "vacant" in ex.get('input').lower() or "devoid" in ex.get('input').lower()
-                        fill_lvl = 0.0 if is_empty else 0.75
-                        status = "empty" if is_empty else "ok"
-                        st.session_state.shelf_context = {
-                            "summary": ex.get("input"),
-                            "items": [{"item": "Inspected SKU", "fill_level": fill_lvl, "status": status}]
-                        }
-                        st.success("Shelf scenario applied to active visual context!")
-                        st.rerun()
+    st.markdown("Automated stock segmentation powered by Meta SAM 3.1. Upload shelf imagery to detect low-stock or empty SKU bins.")
 
     col_up, col_ctx = st.columns([1, 1])
 
     with col_up:
-        st.markdown(
-            """
-            <div class="control-card-header">
-                <span>UPLOAD SHELF CAMERA FEED</span>
-                <span style="font-size: 0.75rem; color: #94a3b8;">MAX 1MB</span>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+        col_wh_q, col_wh_lbl = st.columns([1, 19])
+        with col_wh_q:
+            with st.popover("?"):
+                st.markdown("**Warehouse Shelf Vision (Meta SAM 3.1)**")
+                st.markdown("Segments shelf imagery to detect low-stock and vacant bin positions.")
+                from pathlib import Path
+                shelf_path = Path("demo-assets/sample_shelf.jpg")
+                if shelf_path.exists():
+                    st.download_button(
+                        "⬇️ Download sample shelf image",
+                        shelf_path.read_bytes(),
+                        file_name="sample_shelf.jpg",
+                        mime="image/jpeg",
+                        key="dl_wh_sample_btn",
+                        use_container_width=True
+                    )
+                if st.button("⚡ Simulate with sample", key="sim_wh_sample_btn", use_container_width=True):
+                    if shelf_path.exists():
+                        st.session_state.simulated_shelf_bytes = shelf_path.read_bytes()
+                        st.session_state.shelf_context = {
+                            "summary": "Sample warehouse shelf analysis: Widget-A low stock detected (20% fill level).",
+                            "items": [{"item": "Widget-A", "fill_level": 0.20, "status": "low"}]
+                        }
+                        st.rerun()
+        with col_wh_lbl:
+            st.markdown(
+                """
+                <div class="control-card-header">
+                    <span>UPLOAD SHELF CAMERA FEED</span>
+                    <span style="font-size: 0.75rem; color: #94a3b8;">MAX 1MB</span>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
         uploaded_image = st.file_uploader(
             "Upload Shelf Image",
             type=["png", "jpg", "jpeg", "webp"],
@@ -1610,43 +1612,49 @@ elif selected_module == "Warehouse":
 # Module 3: Documents
 # -----------------------------------------------------------------------------
 elif selected_module == "Documents":
-    st.markdown("### 📄 Document & Invoice Extraction")
-    st.markdown("Automated structured data extraction powered by Meta muse-image-1.0. Upload invoices, bills of lading, and freight manifests.")
 
-    # Collapsible Example Inputs for Invoice Line Items
-    invoice_examples = [x for x in GOLD_INPUTS if x.get("type") == "invoice"]
-    if invoice_examples:
-        with st.expander("📋 Example Inputs (20 Invoice Line Items)", expanded=False):
-            st.caption("Click **Use** to immediately populate and stage the extracted logistics data.")
-            for i, ex in enumerate(invoice_examples):
-                c_txt, c_btn = st.columns([5, 1])
-                with c_txt:
-                    st.markdown(f"**{i+1}.** {ex.get('input')}")
-                    st.caption(f"Expected: {ex.get('expected_outcome')}")
-                with c_btn:
-                    if st.button("Use", key=f"use_inv_ex_{i}", use_container_width=True):
-                        st.session_state.extracted_document = {
-                            "supplier": "FastFreight Logistics",
-                            "items": [{"description": ex.get("input")[:50], "quantity": 100, "unit_price": 45.0}],
-                            "dates": ["2026-11-05"],
-                            "raw_summary": ex.get("input")
-                        }
-                        st.session_state.prefilled_prompt = f"Process incoming shipment from FastFreight Logistics: receive 100x items based on '{ex.get('input')[:60]}' into inventory."
-                        st.success("Invoice example loaded into structured extraction view!")
-                        st.rerun()
+    st.markdown("Automated structured data extraction powered by Meta muse-image-1.0. Upload invoices, bills of lading, and freight manifests.")
 
     col_doc_up, col_doc_view = st.columns([1, 1])
 
     with col_doc_up:
-        st.markdown(
-            """
-            <div class="control-card-header">
-                <span>UPLOAD INVOICE / BOL DOCUMENT</span>
-                <span style="font-size: 0.75rem; color: #94a3b8;">MAX 2MB</span>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+        col_doc_q, col_doc_lbl = st.columns([1, 19])
+        with col_doc_q:
+            with st.popover("?"):
+                st.markdown("**Document Intelligence (Meta Muse Image 1.0)**")
+                st.markdown("Extracts structured procurement and billing fields from invoices and bills of lading.")
+                from pathlib import Path
+                inv_path = Path("demo-assets/sample_invoice.png")
+                if inv_path.exists():
+                    st.download_button(
+                        "⬇️ Download sample invoice",
+                        inv_path.read_bytes(),
+                        file_name="sample_invoice.png",
+                        mime="image/png",
+                        key="dl_doc_sample_btn",
+                        use_container_width=True
+                    )
+                if st.button("⚡ Simulate with sample", key="sim_doc_sample_btn", use_container_width=True):
+                    if inv_path.exists():
+                        st.session_state.simulated_doc_bytes = inv_path.read_bytes()
+                        st.session_state.extracted_document = {
+                            "supplier": "FastFreight Logistics",
+                            "items": [{"description": "Industrial Microcontrollers", "quantity": 100, "unit_price": 45.0}],
+                            "dates": ["2026-11-05"],
+                            "raw_summary": "Invoice INV-2026-904"
+                        }
+                        st.session_state.prefilled_prompt = "Process incoming shipment from FastFreight Logistics: receive 100x items into inventory."
+                        st.rerun()
+        with col_doc_lbl:
+            st.markdown(
+                """
+                <div class="control-card-header">
+                    <span>UPLOAD INVOICE / BOL DOCUMENT</span>
+                    <span style="font-size: 0.75rem; color: #94a3b8;">MAX 2MB</span>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
         uploaded_doc = st.file_uploader(
             "Upload Invoice or Shipping Document",
             type=["png", "jpg", "jpeg", "webp"],
@@ -1718,6 +1726,7 @@ elif selected_module == "Documents":
             with col_b2:
                 if st.button("Open in Orchestrator", type="primary", key="open_in_orchestrator_btn"):
                     st.session_state.active_nav_module = "Orchestrator"
+                    st.session_state.main_nav_radio = "Orchestrator"
                     st.rerun()
         else:
             st.info("No document uploaded. Upload a document or select an example invoice line item above.")

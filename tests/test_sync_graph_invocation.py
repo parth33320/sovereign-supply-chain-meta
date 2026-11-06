@@ -12,7 +12,7 @@ def test_synchronous_graph_invocation_in_app():
     REPO_ROOT = Path(__file__).resolve().parent.parent
     app_path = REPO_ROOT / "app.py"
 
-    with patch.dict(os.environ, {"DEMO_MODE": "0"}, clear=False), \
+    with patch.dict(os.environ, {"DEMO_MODE": "0", "META_API_KEY": "test_key"}, clear=False), \
          patch("graph.ConnectionPool"), \
          patch("graph.get_graph_with_postgres") as mock_get_graph, \
          patch("guardrails.check_prompt_injection", return_value=True):

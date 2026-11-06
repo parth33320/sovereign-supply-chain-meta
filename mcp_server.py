@@ -36,7 +36,7 @@ def log_sql(query: str, tenant_id: str):
 def read_inventory(tenant_id: str,
                    low_stock_only: bool = False,
                    limit: int = 50) -> str:
-    base = "SELECT id, item_name, quantity, transit_time, spot_rate, supplier_id FROM inventory WHERE tenant_id = ?"
+    base = "SELECT id, item_name, quantity, transit_time, spot_rate, supplier_id, tenant_id FROM inventory WHERE tenant_id = ?"
     params = [tenant_id]
     if low_stock_only:
         base += " AND quantity < 100"

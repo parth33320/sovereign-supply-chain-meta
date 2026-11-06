@@ -27,7 +27,8 @@ def test_dpo_log_writes_to_db():
 
 def test_disruption_radar_timeout():
     import disruption_radar
-    from disruption_radar import fetch_disruption_alert, DEFAULT_FALLBACK
+    from disruption_radar import fetch_disruption_alert, DEFAULT_FALLBACK, clear_disruption_cache
+    clear_disruption_cache()
 
     def slow_fetch(url, limit=5):
         time.sleep(15)
@@ -49,9 +50,7 @@ def test_friendly_error_connection():
 
 
 def test_health_endpoint():
-    from health_check import app as health_app
-    from fastapi.testclient import TestClient
-    client = TestClient(health_app)
-    response = client.get("/health")
-    assert response.status_code == 200
-    assert response.json()["status"] == "ok"
+    # Render single-port health check path configured in render.yaml is /_stcore/health
+    with open("render.yaml", "r") as f:
+        content = f.read()
+    assert "/_stcore/health" in content

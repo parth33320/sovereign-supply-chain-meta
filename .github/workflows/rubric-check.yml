@@ -1,0 +1,41 @@
+name: Rubric Check
+on: [pull_request]
+
+jobs:
+  rubric:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Check CODING_RUBRIC.md exists
+        run: test -f docs/CODING_RUBRIC.md
+
+      - name: Check decision log exists for this PR
+        run: |
+          BRANCH="${{ github.head_ref }}"
+          echo "Branch: $BRANCH"
+          ls docs/decisions/
+          # Warn if no new decision log added
+          git diff --name-only origin/main...HEAD | \
+          grep "docs/decisions/" || \
+          echo "WARNING: No decision log found for this PR"
+
+      - name: Check no hardcoded API keys
+        run: |
+          if grep -r "LLM_[A-Za-z0-9_]*" --include="*.py" \
+          --exclude-dir=".git" .; then
+            echo "FAIL: Hardcoded API key pattern found"
+            sh -c "exit 1"
+          fi
+
+      - name: Check no dead imports from removed features
+        run: |
+          if grep -r "from worker import\|from celery.result\|from generate_synthetic_load" \
+          --include="*.py" --exclude-dir=".git" \
+          --exclude-dir="tests" .; then
+            echo "FAIL: Dead import from removed feature found"
+            sh -c "exit 1"
+          fi
+
+      - name: Check .env.example exists
+        run: test -f .env.example
