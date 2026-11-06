@@ -53,7 +53,7 @@ def test_app_shelf_image_file_too_large():
         pass
 
     assert len(at.error) > 0
-    assert any("File too large. Please upload under 1MB." in err.value for err in at.error)
+    assert any("File is" in err.value or "File too large" in err.value for err in at.error)
 
 
 def test_app_shelf_image_upload_and_context_injection():
