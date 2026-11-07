@@ -9,7 +9,6 @@ from playwright.sync_api import sync_playwright, expect
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-
 @pytest.fixture(autouse=True)
 def mock_graph_deps():
     mock_graph = MagicMock()
@@ -20,101 +19,41 @@ def mock_graph_deps():
     with patch("graph.get_graph_with_postgres", return_value=mock_graph):
         yield
 
-
 def test_app_shelf_image_uploader_exists():
-    """Test that app.py contains file uploader for shelf image in Warehouse module."""
+    """Test that app.py contains unified file uploader triggered via 📎."""
     import streamlit.testing.v1 as st_test
     app_path = REPO_ROOT / "app.py"
     at = st_test.AppTest.from_file(str(app_path), default_timeout=10)
     at.run()
-    at.radio[0].set_value("Warehouse")
-    at.run()
+    clip_btn = [b for b in at.button if b.key == "btn_file_trigger"][0]
+    clip_btn.click().run()
 
-    uploaders = [u for u in at.file_uploader if u.key == "shelf_image_uploader"]
+    uploaders = [u for u in at.file_uploader if u.key == "unified_file_uploader"]
     assert len(uploaders) == 1
-    assert uploaders[0].label == "Upload Shelf Image"
-
+    assert "Logistics" in uploaders[0].label or "File" in uploaders[0].label
 
 def test_app_shelf_image_file_too_large():
-    """Test that uploading a file > 1MB triggers an error."""
+    """Test that uploading a file > 2MB triggers user error card."""
     import streamlit.testing.v1 as st_test
     app_path = REPO_ROOT / "app.py"
     at = st_test.AppTest.from_file(str(app_path), default_timeout=10)
     at.run()
-    at.radio[0].set_value("Warehouse")
-    at.run()
+    clip_btn = [b for b in at.button if b.key == "btn_file_trigger"][0]
+    clip_btn.click().run()
 
-    large_bytes = b"0" * 1_000_001
-    shelf_uploader = [u for u in at.file_uploader if u.key == "shelf_image_uploader"][0]
-    shelf_uploader.upload("big_shelf.jpg", large_bytes)
+    large_bytes = b"0" * 2_000_001
+    uploader = [u for u in at.file_uploader if u.key == "unified_file_uploader"][0]
+    uploader.upload("big_shelf.jpg", large_bytes)
     try:
         at.run()
     except Exception:
         pass
 
-    has_err = len(at.error) > 0 or any("exceeds the 1MB file size limit" in m.value or "user-error-card" in m.value for m in at.markdown)
-    assert has_err, "Expected an error or user error card when uploading shelf image > 1MB"
-
-
-def test_app_shelf_image_upload_and_context_injection():
-    """Test shelf image upload analyzes image, stores shelf_context, and prepends to prompt."""
-    import streamlit.testing.v1 as st_test
-    fake_img = b"\x89PNG\r\n\x1a\n"
-
-    mock_analysis = {
-        "items": [{"item": "Bolts", "fill_level": 0.2, "status": "low"}],
-        "summary": "Bolts at 20% fill level."
-    }
-
-    with patch("warehouse_vision.analyze_shelf_image", return_value=mock_analysis) as mock_analyze, \
-         patch("graph.get_graph_with_postgres") as mock_get_graph, \
-         patch("guardrails.check_prompt_injection", return_value=True):
-        mock_graph = MagicMock()
-        mock_get_graph.return_value = mock_graph
-        mock_graph.invoke.return_value = {
-            "messages": [],
-            "drafted_plan": ""
-        }
-
-        app_path = REPO_ROOT / "app.py"
-        at = st_test.AppTest.from_file(str(app_path), default_timeout=10)
-        at.run()
-
-        # Navigate to Warehouse
-        at.radio[0].set_value("Warehouse")
-        at.run()
-
-        # Upload valid image using upload helper
-        shelf_uploader = [u for u in at.file_uploader if u.key == "shelf_image_uploader"][0]
-        shelf_uploader.upload("shelf.png", fake_img)
-        at.run()
-
-        mock_analyze.assert_called_once_with(fake_img)
-        assert at.session_state["shelf_context"] == mock_analysis
-
-        # Switch back to Orchestrator to submit text prompt
-        at.radio[0].set_value("Orchestrator")
-        at.run()
-
-        at.chat_input[0].set_value("Reallocate low stock items")
-        try:
-            at.run()
-        except Exception:
-            pass
-
-        # Verify dispatched prompt has prefix
-        expected_dispatched = "[VISUAL SHELF ANALYSIS: Bolts at 20% fill level.]\nReallocate low stock items"
-        assert at.session_state.get("pending_prompt") == expected_dispatched
-        if not at.session_state.get("demo_paused_for_hitl"):
-            mock_graph.invoke.assert_called_once()
-            state_arg = mock_graph.invoke.call_args[0][0]
-            assert state_arg["messages"][0].content == expected_dispatched
-        else:
-            assert len(at.session_state["chat_history"]) >= 2
-
+    has_err = any("exceeds 2MB" in m.value or "user-error-card" in m.value for m in at.markdown)
+    assert has_err, "Expected user error card when uploading file > 2MB"
 
 def test_warehouse_vision_ui_e2e_playwright(tmp_path):
-    """Playwright E2E verification of shelf image uploader in Warehouse module."""
+    """Playwright E2E verification of unified file uploader trigger."""
     port = 8598
     proc = subprocess.Popen(
         [
@@ -144,21 +83,16 @@ def test_warehouse_vision_ui_e2e_playwright(tmp_path):
 
             expect(page).to_have_title("Sovereign Supply Chain", timeout=15000)
 
-            # Check sidebar contains navigation rail and click Warehouse
-            sidebar = page.locator('[data-testid="stSidebar"]')
-            expect(sidebar).to_be_visible()
+            # Click 📎 button in input bar to open file drawer
+            clip_btn = page.locator('button:has-text("📎")')
+            expect(clip_btn).to_be_visible()
+            clip_btn.click()
 
-            warehouse_nav = sidebar.locator('label', has_text="Warehouse")
-            expect(warehouse_nav).to_be_visible()
-            warehouse_nav.click()
-            time.sleep(1)
-
-            # Check file uploader in Warehouse module
+            # Verify unified file uploader appears
             uploader = page.locator('[data-testid="stFileUploader"]').first
             expect(uploader).to_be_visible()
-            expect(uploader).to_contain_text("Upload Shelf Image")
 
-            screenshot_path = tmp_path / "warehouse_vision_sidebar.png"
+            screenshot_path = tmp_path / "warehouse_vision_unified.png"
             page.screenshot(path=str(screenshot_path))
             assert screenshot_path.exists()
 

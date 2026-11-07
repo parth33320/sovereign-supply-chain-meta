@@ -65,4 +65,4 @@ def test_chat_input_css_overridden():
 def test_hitl_card_yellow_border():
     source = read_app_source()
     assert "#e3b341" in source
-    assert "AWAITING OPERATOR APPROVAL" in source
+    assert "action_slot_approve_btn" in source or "AWAITING OPERATOR APPROVAL" in source

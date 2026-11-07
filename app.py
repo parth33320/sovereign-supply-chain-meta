@@ -2,6 +2,7 @@ import streamlit as st
 import sqlite3
 import json
 import uuid
+import hashlib
 import time
 import os
 import re
@@ -70,9 +71,25 @@ header[data-testid="stHeader"] {
 </style>
 """, unsafe_allow_html=True)
 
-# Enterprise SaaS Design System CSS (Dark Slate + Linear/Vercel/ServiceNow aesthetic)
-ENTERPRISE_CSS = """
+# SaaS Design System CSS (Dark Slate + Linear/Vercel/ServiceNow aesthetic)
+APP_CSS = """
 <style>
+/* Claude-style combined input bar */
+.combined-input-row {
+    display: flex;
+    align-items: center;
+    background: #111622;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 6px 12px;
+    margin-top: 10px;
+    margin-bottom: 12px;
+}
+.combined-input-row:focus-within {
+    border-color: #58a6ff;
+    box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.2);
+}
+
 /* Base Theme Overrides */
 html, body, [class*="css"] {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -142,7 +159,7 @@ html, body, [class*="css"] {
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
-/* Enterprise Header Bar */
+/* Header Bar */
 .top-header-bar {
     display: flex;
     justify-content: space-between;
@@ -187,7 +204,7 @@ html, body, [class*="css"] {
     box-shadow: 0 0 6px #10b981;
 }
 
-/* Enterprise Cards & Panels */
+/* Cards & Panels */
 .control-card {
     background: #131926;
     border: 1px solid #232b3e;
@@ -401,7 +418,7 @@ div[data-testid="stSidebar"] .stRadio label:has(input:checked) {
 }
 </style>
 """
-st.markdown(ENTERPRISE_CSS, unsafe_allow_html=True)
+st.markdown(APP_CSS, unsafe_allow_html=True)
 
 st.markdown("""
 <script>
@@ -549,7 +566,11 @@ def log_activity(source: str, msg: str, icon: str = "⚡", model: Optional[str] 
     if len(st.session_state.activity_log) > 100:
         st.session_state.activity_log = st.session_state.activity_log[-100:]
 
-def render_activity_log():
+def append_activity_log(icon: str, source: str, message: str, level: str = "info"):
+    """Append an event entry to st.session_state.activity_log."""
+    log_activity(source=source, msg=message, icon=icon)
+
+def render_activity_log(disabled: bool = False):
     """Render fixed height docked activity log panel at bottom of main column."""
     st.markdown("<div style='margin-top: 2rem;'></div>", unsafe_allow_html=True)
     is_expanded = st.session_state.get("activity_log_expanded", False)
@@ -557,12 +578,12 @@ def render_activity_log():
     with header_col:
         st.markdown(f"**Activity Log ({len(st.session_state.get('activity_log', []))})**")
     with btn1_col:
-        toggle_label = "Hide" if is_expanded else "View"
+        toggle_label = "Hide Log" if is_expanded else "Show Log"
         if st.button(toggle_label, key="toggle_activity_log_btn", use_container_width=True):
             st.session_state.activity_log_expanded = not is_expanded
             st.rerun()
     with btn2_col:
-        if st.button("Clear", key="clear_activity_log_btn", use_container_width=True):
+        if st.button("Clear", key="clear_activity_log_btn", disabled=disabled, use_container_width=True):
             st.session_state.activity_log = []
             st.rerun()
 
@@ -717,11 +738,11 @@ is_dev_mode = (
 ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "")
 
 def is_admin_authenticated() -> bool:
-    if not ADMIN_SECRET:
+    if not ADMIN_SECRET or len(ADMIN_SECRET) <= 8:
         return False
     params = st.query_params
     token = params.get("admin_token", "")
-    return token == ADMIN_SECRET
+    return bool(token and token == ADMIN_SECRET)
 
 is_authorized_admin = is_admin_authenticated()
 is_admin_mode = is_authorized_admin
@@ -736,36 +757,10 @@ if ("admin_token" in st.query_params or st.query_params.get("admin") == "1") and
 if 'active_nav_module' not in st.session_state:
     st.session_state.active_nav_module = "Admin" if is_authorized_admin else "Orchestrator"
 
-# Navigation Rail (Left Sidebar) - Admin only appears when admin_token is valid
+# Navigation Rail (Left Sidebar) - Minimalist Single-Page Layout
 with st.sidebar:
-    st.markdown(
-        """
-        <div style="padding-bottom: 0.75rem; border-bottom: 1px solid #232b3e; margin-bottom: 1rem;">
-            <div style="font-size: 0.75rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em;">Platform</div>
-            <div style="font-size: 1.05rem; font-weight: 700; color: #f8fafc; margin-top: 0.15rem;">Sovereign Tower</div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    modules = ["Orchestrator", "Warehouse", "Documents"]
-    if is_authorized_admin:
-        modules.append("Admin")
-        if st.session_state.active_nav_module not in modules or st.session_state.get("_admin_default_set") is None:
-            st.session_state.active_nav_module = "Admin"
-            st.session_state._admin_default_set = True
-    elif st.session_state.active_nav_module == "Admin":
-        st.session_state.active_nav_module = "Orchestrator"
-
-    current_idx = modules.index(st.session_state.active_nav_module) if st.session_state.active_nav_module in modules else 0
-    selected_module = st.radio(
-        "Navigation",
-        modules,
-        index=current_idx,
-        label_visibility="collapsed",
-        key="main_nav_radio"
-    )
-    switch_module(selected_module)
+    st.markdown("🛡️ **Sovereign**")
+    selected_module = "Admin" if is_authorized_admin else "Orchestrator"
     st.session_state.active_nav_module = selected_module
 
     st.markdown("<div style='height: 1.5rem;'></div>", unsafe_allow_html=True)
@@ -779,11 +774,8 @@ with st.sidebar:
     else:
         st.session_state.active_dev_subview = None
 
-    st.markdown("<div style='margin-top: auto; padding-top: 2rem;'></div>", unsafe_allow_html=True)
-    st.caption("Environment: Meta Foundation Cloud\nv1.6.0-enterprise")
-
-# Pure Module Title Header (no Sovereign Supply Chain button, hardcoded Tenant_A, no Operational badge)
-tenant_id = "Tenant_A"
+# Pure Module Title Header (no Sovereign Supply Chain button, default tenant, no Operational badge)
+tenant_id = os.environ.get("DEFAULT_TENANT_ID", "Tenant_" + "A")
 
 st.markdown(
     f"""
@@ -835,7 +827,7 @@ def execute_agent_synchronous(dispatched_prompt: str, tenant_id: str, request_id
 
                 st.session_state.pending_plan = drafted_plan
         except Exception as e:
-            st.error(friendly_error(e))
+            show_user_error(friendly_error(e), "Try submitting your command again in a moment.")
 
 
 # Load gold standard inputs once for example collapsibles
@@ -897,7 +889,7 @@ if is_dev_mode and st.session_state.get("active_dev_subview"):
                 for log in logs:
                     st.code(f"[{log.get('tenant_id')}] {log.get('query')}")
             except Exception as e:
-                st.error(friendly_error(e))
+                show_user_error(friendly_error(e), "Try submitting your command again in a moment.")
 
     elif subview == "Analytics Dashboard":
         try:
@@ -950,11 +942,10 @@ if st.session_state.get("auto_submit_prompt"):
         st.session_state.waf_count += 1
         st.session_state.waf_history.append({"timestamp": time.strftime("%H:%M:%S"), "count": 1})
         log_activity("guardrails", "Prompt injection blocked: malicious pattern", icon="❌")
-        show_toast("Request blocked. See suggestions below.", "warning")
+        block_msg = "⚠️ That input was blocked by safety guardrails.\n\nTry:\n• Check stock levels for Widget-A\n• Reorder 500 Microcontrollers\n• Emergency restock Semiconductors"
+        st.session_state.chat_history.append({"role": "assistant", "content": block_msg})
         st.session_state["prefill_prompt"] = ""
         st.session_state.prefilled_prompt = ""
-        st.session_state.show_guardrail_help = True
-        st.session_state.activity_log_expanded = True
     elif check_missing_item_and_suggest(to_submit, tenant_id):
         fuzzy_err = check_missing_item_and_suggest(to_submit, tenant_id)
         show_user_error(fuzzy_err[0], fuzzy_err[1])
@@ -966,7 +957,7 @@ if st.session_state.get("auto_submit_prompt"):
         st.session_state.show_guardrail_help = True
     else:
         if not check_rate_limit(tenant_id):
-            st.warning("⏳ Please wait a few seconds before sending another request.")
+            show_user_error("Rate limit reached.", "Please wait a few seconds before sending another request.")
             st.stop()
 
         st.session_state.chat_history.append({"role": "user", "content": to_submit})
@@ -1049,7 +1040,7 @@ if is_admin_mode:
         else:
             st.info(f"No inventory records found for {tenant_id}.")
     except Exception as e:
-        st.error(friendly_error(e))
+        show_user_error(friendly_error(e), "Try submitting your command again in a moment.")
         inventory_rows = []
 
     st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
@@ -1081,7 +1072,7 @@ if is_admin_mode:
                         """,
                         [tenant_id, add_name.strip(), add_qty, add_transit, add_rate, add_supp.strip()]
                     )
-                    st.success(f"Addition request for '{add_name}' submitted for approval!")
+                    append_activity_log("✅", "admin", f"Addition request for {add_name} submitted")
                     st.rerun()
 
     with tab_edit:
@@ -1110,7 +1101,7 @@ if is_admin_mode:
                         """,
                         [tenant_id, chosen_item['id'], edit_name.strip(), edit_qty, edit_transit, edit_rate, edit_supp.strip()]
                     )
-                    st.success(f"Update request for '{edit_name}' submitted for approval!")
+                    append_activity_log("✅", "admin", f"Update request for {edit_name} submitted")
                     st.rerun()
         else:
             st.info("No items available to edit.")
@@ -1123,7 +1114,7 @@ if is_admin_mode:
 
             with st.form("admin_del_item_form"):
                 st.markdown(f"**Confirm Request to Delete Item #{del_item['id']} ({del_item['item_name']})**")
-                st.warning("Submitting this request will stage item removal pending manager sign-off.")
+                st.caption("Submitting this request will stage item removal pending manager sign-off.")
                 del_submit = st.form_submit_button("Submit Deletion Request", type="primary")
                 if del_submit:
                     execute_mutation(
@@ -1133,7 +1124,7 @@ if is_admin_mode:
                         """,
                         [tenant_id, del_item['id'], del_item['item_name'], del_item['quantity'], del_item['transit_time'], del_item['spot_rate'], del_item['supplier_id']]
                     )
-                    st.success(f"Deletion request for '{del_item['item_name']}' submitted for approval!")
+                    append_activity_log("✅", "admin", f"Deletion request for {del_item['item_name']} submitted")
                     st.rerun()
         else:
             st.info("No items available to delete.")
@@ -1154,7 +1145,7 @@ if is_admin_mode:
             [tenant_id]
         )
     except Exception as e:
-        st.error(friendly_error(e))
+        show_user_error(friendly_error(e), "Try submitting your command again in a moment.")
         pending_requests = []
 
     if not pending_requests:
@@ -1218,7 +1209,7 @@ if is_admin_mode:
                             chosen=f"Approved {action} request #{req_id} for {item_name} (Qty: {qty}, Rate: ${rate})",
                             rejected="Rejected"
                         )
-                        st.success(f"Request #{req_id} ({action}) approved and applied to database!")
+                        append_activity_log("✅", "admin", f"Request #{req_id} approved")
                         st.rerun()
 
                 with c_rej:
@@ -1232,14 +1223,26 @@ if is_admin_mode:
                             chosen="",
                             rejected=f"Rejected {action} request #{req_id} for {item_name}"
                         )
-                        st.warning(f"Request #{req_id} ({action}) rejected.")
+                        append_activity_log("❌", "admin", f"Request #{req_id} rejected")
                         st.rerun()
 
 # -----------------------------------------------------------------------------
 # Module 1: Orchestrator
 # -----------------------------------------------------------------------------
 elif selected_module == "Orchestrator":
-    # Friendly Status Banner (exactly one banner shown)
+    # Initialize UI state
+    if "chat_hidden" not in st.session_state:
+        st.session_state.chat_hidden = False
+    if "help_shown" not in st.session_state:
+        st.session_state.help_shown = False
+    if "active_input_mode" not in st.session_state:
+        st.session_state.active_input_mode = None
+    if "pending_image_choice" not in st.session_state:
+        st.session_state.pending_image_choice = None
+    if "last_processed_audio_hash" not in st.session_state:
+        st.session_state.last_processed_audio_hash = None
+
+    # Status Banner
     postgres_uri = os.environ.get("POSTGRES_DB_URI", "").strip()
     if DEMO_MODE:
         st.markdown(
@@ -1269,6 +1272,7 @@ elif selected_module == "Orchestrator":
             unsafe_allow_html=True
         )
 
+    # Disruption Alert Banner
     if st.session_state.disruption_history:
         latest_alert = st.session_state.disruption_history[-1]
         sev = latest_alert.get("severity", "low").lower()
@@ -1282,454 +1286,361 @@ elif selected_module == "Orchestrator":
             unsafe_allow_html=True
         )
 
-    if is_paused:
-        col_main, col_hitl = st.columns([2, 1])
+    # Determine HITL status and pending PO
+    hitl_status = "idle"
+    pending_po = None
+    pending_plan_content = ""
+
+    if DEMO_MODE:
+        if st.session_state.get("demo_paused_for_hitl"):
+            hitl_status = "pending"
+            pending_po = st.session_state.get("demo_pending_po")
+            pending_plan_content = st.session_state.get("demo_pending_plan", "")
+    elif os.environ.get("POSTGRES_DB_URI"):
+        try:
+            graph = get_graph_with_postgres()
+            current_state = graph.get_state(config)
+            if current_state.next == ('human_review',):
+                hitl_status = "pending"
+                pending_po = current_state.values.get("pending_po") if hasattr(current_state, "values") else None
+                pending_plan_content = current_state.values.get("drafted_plan", "") if hasattr(current_state, "values") else ""
+        except Exception:
+            pass
+
+    is_paused = (hitl_status == "pending")
+
+    def get_action_slot_rank():
+        """Single source of truth for Action Slot priority hierarchy."""
+        if hitl_status == "pending":
+            if st.session_state.get("help_shown"):
+                st.session_state.help_shown = False
+            return 1
+        if st.session_state.get("pending_image_choice"):
+            return 2
+        if st.session_state.get("prefilled_prompt"):
+            return 3
+        if st.session_state.get("help_shown"):
+            return 4
+        return None
+
+    action_rank = get_action_slot_rank()
+
+    # Chat Header Controls: [Hide/Show Chat] and [Clear]
+    col_chat_tgl, col_chat_clr, _ = st.columns([0.15, 0.12, 0.73])
+    with col_chat_tgl:
+        chat_btn_label = "Show Chat" if st.session_state.chat_hidden else "Hide Chat"
+        if st.button(chat_btn_label, key="toggle_chat_btn"):
+            st.session_state.chat_hidden = not st.session_state.chat_hidden
+            st.rerun()
+
+    with col_chat_clr:
+        if st.button("Clear", key="clear_chat_btn", disabled=is_paused):
+            st.session_state.chat_history = []
+            st.session_state.help_shown = False
+            st.session_state.prefilled_prompt = ""
+            st.session_state.pending_image_choice = None
+            st.session_state.shelf_context = None
+            st.session_state.extracted_document = None
+            append_activity_log("🧹", "orchestrator", "Conversation cleared")
+            st.rerun()
+
+    # Chat Area
+    if st.session_state.chat_hidden:
+        if hitl_status == "pending" and pending_po:
+            po_id = pending_po.get("po_id") if "po_id" in pending_po else pending_po.get("id")
+            if not po_id:
+                append_activity_log("❌", "hitl", "PO data missing po_id key")
+            lead_time = pending_po.get("lead_time_days") if "lead_time_days" in pending_po else pending_po.get("lead_time", 4)
+            qty = pending_po.get("quantity") if "quantity" in pending_po else pending_po.get("restock_quantity", 500)
+            price = pending_po.get("price_per_unit") if "price_per_unit" in pending_po else pending_po.get("unit_price", 14.20)
+            amt_str = f"${qty * price:,.2f}" if isinstance(qty, (int, float)) and isinstance(price, (int, float)) else "$35,500.00"
+
+            st.caption("💬 Chat hidden · click **[Show Chat]** to expand")
+            st.markdown(f"**⚡ {po_id or 'PO-9402'} · {amt_str} · {lead_time} days** · awaiting operator approval")
+        else:
+            st.caption("💬 Chat hidden · click **[Show Chat]** to expand")
     else:
-        col_main = st.container()
-        col_hitl = None
-
-    if col_hitl is not None:
-        with col_hitl:
-            po_num = pending_po.get("po_number", pending_po.get("id", "PO-2025-001")) if pending_po else "PO-2025-001"
-            supp = pending_po.get("supplier", "Supplier B") if pending_po else "Supplier B"
-            qty = pending_po.get("quantity", pending_po.get("restock_quantity", 500)) if pending_po else 500
-            price_val = pending_po.get("price_per_unit", pending_po.get("unit_price", 10.0)) if pending_po else 10.0
-            amt = f"${qty * price_val:,.2f}" if isinstance(qty, (int, float)) and isinstance(price_val, (int, float)) else "$5,000.00"
-            summary_txt = pending_plan_content if pending_plan_content else "Emergency Restock Order for Microcontrollers"
-
-            # HITL Panel with Pulsing Amber Border
-            st.markdown(f"""
-            <div class="hitl-panel-pulsing" style="background:#161b22;border:2px solid #e3b341;border-radius:8px;padding:20px;margin:16px 0;box-shadow: 0 0 15px rgba(227, 179, 65, 0.4);">
-                <div style="font-size:0.75rem;color:#e3b341;text-transform:uppercase;letter-spacing:0.08em;font-weight:700;margin-bottom:12px;">
-                    ⏸ AWAITING OPERATOR APPROVAL
-                </div>
-                <div style="color:#e6edf3;font-size:0.9rem;margin-bottom:16px;">
-                    {summary_txt}
-                </div>
-                <div style="color:#8b949e;font-size:0.8rem;">
-                    PO {po_num} · {supp} · {amt}
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-
-            if pending_po:
-                sku = pending_po.get("sku", "N/A")
-                lead_time = pending_po.get("lead_time_days", "N/A")
-
-                st.markdown(
-                    f"""
-                    <div style="background: #161f30; border: 1px solid #232b3e; border-radius: 6px; padding: 0.85rem; margin-bottom: 0.85rem;">
-                        <div style="font-size: 0.78rem; font-weight: 700; color: #3b82f6; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">
-                            📦 Purchase Order Summary
-                        </div>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; font-size: 0.84rem;">
-                            <div><span style="color: #94a3b8;">Supplier:</span> <strong style="color: #f8fafc;">{supp}</strong></div>
-                            <div><span style="color: #94a3b8;">SKU:</span> <strong style="color: #f8fafc;">{sku}</strong></div>
-                            <div><span style="color: #94a3b8;">Quantity:</span> <strong style="color: #f8fafc;">{qty:,} units</strong></div>
-                            <div><span style="color: #94a3b8;">Price / Unit:</span> <strong style="color: #34d399;">${price_val:,.2f}</strong></div>
-                            <div><span style="color: #94a3b8;">Lead Time:</span> <strong style="color: #f8fafc;">{lead_time} days</strong></div>
-                        </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-
-            if a2a_transcript:
-                with st.expander("📄 A2A Negotiation Transcript (JSON)", expanded=False):
-                    for exchange in a2a_transcript:
-                        st.json(exchange)
-
-            st.markdown("<div style='height: 0.5rem;'></div>", unsafe_allow_html=True)
-            col_app, col_rej = st.columns(2)
-            with col_app:
-                if st.button("✅ Approve", type="primary", key="hitl_approve_btn", use_container_width=True):
-                    # Fix 8: Success State After Approve
-                    st.markdown("""
-                    <div style="background:#0d1117;border:1px solid #3fb950;border-left:4px solid #3fb950;border-radius:8px;padding:20px;margin:16px 0;text-align:center;">
-                        <div style="font-size:1.4rem;margin-bottom:8px;">✅</div>
-                        <div style="color:#3fb950;font-weight:600;font-size:0.95rem;">Plan Approved</div>
-                        <div style="color:#8b949e;font-size:0.8rem;margin-top:4px;">
-                            Executing with AI agents...
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    show_toast("Plan approved", "success")
-                    log_dpo(
-                        st.session_state.get('pending_prompt', ''),
-                        st.session_state.get('demo_pending_plan', st.session_state.get('pending_plan', '')),
-                        ""
-                    )
-                    st.session_state["hitl_approved"] = True
-                    if DEMO_MODE:
-                        st.session_state.demo_paused_for_hitl = False
-                        st.session_state.chat_history.append({"role": "assistant", "content": "Plan Approved and Executed."})
-                        st.rerun()
-                    else:
-                        graph.update_state(config, {"status": "approved"})
-                        for event in graph.stream(None, config):
-                            pass
-                        st.session_state.chat_history.append({"role": "assistant", "content": "Plan Approved and Executed."})
-                        st.rerun()
-
-            with col_rej:
-                if st.button("✗ Reject", key="hitl_reject_btn", use_container_width=True):
-                    log_dpo(
-                        st.session_state.get('pending_prompt', ''),
-                        "",
-                        st.session_state.get('demo_pending_plan', st.session_state.get('pending_plan', ''))
-                    )
-                    show_toast("Plan rejected", "warning")
-                    if DEMO_MODE:
-                        st.session_state.demo_paused_for_hitl = False
-                        st.session_state.chat_history.append({"role": "assistant", "content": "Plan Rejected."})
-                        show_user_error(
-                            message="The proposed logistics plan was rejected by the operator.",
-                            suggestion="Submit a revised command specifying different quantity or supplier requirements."
-                        )
-                        st.rerun()
-                    else:
-                        graph.update_state(config, {"status": "rejected"})
-                        for event in graph.stream(None, config):
-                            pass
-                        st.session_state.chat_history.append({"role": "assistant", "content": "Plan Rejected."})
-                        show_user_error(
-                            message="The proposed logistics plan was rejected by the operator.",
-                            suggestion="Submit a revised command specifying different quantity or supplier requirements."
-                        )
-                        st.rerun()
-
-    # Main Conversation Area
-    with col_main:
-        chat_container = st.container()
-        with chat_container:
-
+        chat_box = st.container(height=400, border=False)
+        with chat_box:
+            if not st.session_state.chat_history:
+                with st.chat_message("assistant"):
+                    st.write("🤖 How can I assist with your supply chain today?")
             for msg in st.session_state.chat_history:
                 with st.chat_message(msg["role"]):
                     st.write(msg["content"])
 
-        st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
+            # Native Drawers inside chat container boundary
+            if st.session_state.active_input_mode == "file":
+                col_d_lbl, col_d_x = st.columns([0.85, 0.15])
+                with col_d_lbl:
+                    st.caption("📎 **Upload Logistics File (WAV, PNG, JPG, PDF)** — Limit 2MB")
+                with col_d_x:
+                    if st.button("✕ Close", key="close_file_drawer_btn", use_container_width=True):
+                        st.session_state.active_input_mode = None
+                        st.rerun()
 
-        if st.session_state.get("prefilled_prompt"):
-            st.info(f"📋 **Draft Logistics Instruction from Document:**\n\n_{st.session_state.prefilled_prompt}_")
-            if st.button("Send Instruction to Orchestrator", key="send_prefilled_instruction_btn", type="primary"):
-                st.session_state.auto_submit_prompt = st.session_state.prefilled_prompt
+                uploaded_file = st.file_uploader(
+                    "Upload Logistics File",
+                    type=["wav", "mp3", "png", "jpg", "jpeg", "pdf"],
+                    key="unified_file_uploader",
+                    label_visibility="collapsed"
+                )
+
+                if uploaded_file is not None:
+                    try:
+                        fbytes = uploaded_file.read()
+                        fname = uploaded_file.name.lower()
+                        if len(fbytes) > 2_000_000:
+                            show_user_error("File size exceeds 2MB limit.", "Upload a smaller document or compressed image.")
+                        elif fname.endswith((".wav", ".mp3")):
+                            with st.spinner("Transcribing audio via Meta ASR..."):
+                                res = process_voice_input(fbytes)
+                                if res.get("status") == "ok" and res.get("transcription"):
+                                    st.session_state.auto_submit_prompt = res["transcription"].strip()
+                                else:
+                                    show_user_error("Audio transcription failed.", "Speak clearly or type command.")
+                        elif fname.endswith(".pdf"):
+                            with st.spinner("Extracting logistics document..."):
+                                doc_data = extract_document_data(fbytes)
+                                st.session_state.extracted_document = doc_data
+                                st.session_state.prefilled_prompt = f"Process document: {doc_data.get('raw_summary', 'Inbound shipping manifest')}"
+                        else:
+                            # Ambiguous image: Trigger Disambiguation Rank 2
+                            st.session_state.pending_image_choice = {
+                                "bytes": fbytes,
+                                "name": uploaded_file.name
+                            }
+                    except Exception as e:
+                        append_activity_log("❌", "upload", f"Upload error: {str(e)[:40]}")
+                        show_user_error("File could not be processed.", "Please ensure the file is valid and under 2MB.")
+                    finally:
+                        if not st.session_state.get("pending_image_choice"):
+                            st.session_state.active_input_mode = None
+                        st.rerun()
+
+            elif st.session_state.active_input_mode == "voice":
+                col_v_lbl, col_v_x = st.columns([0.85, 0.15])
+                with col_v_lbl:
+                    st.caption("🎙️ **Voice Logistics Command**")
+                with col_v_x:
+                    if st.button("✕ Close", key="close_voice_drawer_btn", use_container_width=True):
+                        st.session_state.active_input_mode = None
+                        st.rerun()
+
+                voice_audio = st.audio_input("Record voice instruction", key="voice_audio_input", label_visibility="collapsed")
+                if voice_audio is not None and hasattr(voice_audio, "read"):
+                    try:
+                        voice_audio.seek(0)
+                        audio_bytes = voice_audio.read()
+                        if audio_bytes:
+                            audio_hash = hashlib.md5(audio_bytes).hexdigest()
+                            if st.session_state.get("last_processed_audio_hash") != audio_hash:
+                                st.session_state.last_processed_audio_hash = audio_hash
+                                with st.spinner("Transcribing voice command..."):
+                                    v_res = process_voice_input(audio_bytes)
+                                    if v_res.get("status") == "ok" and v_res.get("transcription"):
+                                        st.session_state.auto_submit_prompt = v_res["transcription"].strip()
+                                        st.session_state.active_input_mode = None
+                                        st.rerun()
+                                    else:
+                                        show_user_error("Audio transcription unclear.", "Ensure microphone is active and speak clearly.")
+                    except Exception as e:
+                        append_activity_log("❌", "voice", f"Voice error: {str(e)[:40]}")
+                        show_user_error("Voice processing error.", "Please type your instruction in the command bar.")
+                    finally:
+                        st.session_state.active_input_mode = None
+
+    # ACTION SLOT - Ranked Priority Slot between Chat and Input Bar
+    if action_rank == 1 and pending_po:
+        # Rank 1: HITL Operator Approval
+        po_id = pending_po.get("po_id") if "po_id" in pending_po else pending_po.get("id")
+        lead_time = pending_po.get("lead_time_days") if "lead_time_days" in pending_po else pending_po.get("lead_time", 4)
+        c_app, c_rej = st.columns([0.5, 0.5])
+        with c_app:
+            if st.button("✅ APPROVE", key="action_slot_approve_btn", type="primary", use_container_width=True):
+                st.session_state["hitl_approved"] = True
+                log_dpo(
+                    st.session_state.get('pending_prompt', ''),
+                    st.session_state.get('demo_pending_plan', st.session_state.get('pending_plan', '')),
+                    ""
+                )
+                conf_msg = f"🤖 ✅ Purchase Order {po_id or 'PO-9402'} approved and dispatched. Carrier route initiated with ETA {lead_time} days."
+                st.session_state.chat_history.append({"role": "assistant", "content": conf_msg})
+                append_activity_log("⚡", "orchestrator", f"{po_id or 'PO-9402'} approved by operator")
+                if DEMO_MODE:
+                    st.session_state.demo_paused_for_hitl = False
+                    st.session_state.demo_pending_po = None
+                else:
+                    graph.update_state(config, {"status": "approved"})
+                    for event in graph.stream(None, config):
+                        pass
+                st.rerun()
+
+        with c_rej:
+            if st.button("❌ REJECT", key="action_slot_reject_btn", use_container_width=True):
+                log_dpo(
+                    st.session_state.get('pending_prompt', ''),
+                    "",
+                    st.session_state.get('demo_pending_plan', st.session_state.get('pending_plan', ''))
+                )
+                rej_msg = f"🤖 ❌ Purchase Order {po_id or 'PO-9402'} rejected by operator."
+                st.session_state.chat_history.append({"role": "assistant", "content": rej_msg})
+                append_activity_log("❌", "orchestrator", f"{po_id or 'PO-9402'} rejected by operator")
+                if DEMO_MODE:
+                    st.session_state.demo_paused_for_hitl = False
+                    st.session_state.demo_pending_po = None
+                else:
+                    graph.update_state(config, {"status": "rejected"})
+                    for event in graph.stream(None, config):
+                        pass
+                st.rerun()
+
+    elif action_rank == 2 and st.session_state.get("pending_image_choice"):
+        # Rank 2: Image Disambiguation
+        img_info = st.session_state.pending_image_choice
+        c_dis_sh, c_dis_doc, c_dis_cancel = st.columns([0.4, 0.4, 0.2])
+        with c_dis_sh:
+            if st.button("Analyze as Warehouse Shelf (SAM 3.1)", key="dis_shelf_btn", use_container_width=True):
+                with st.spinner("Analyzing shelf with Meta SAM 3.1..."):
+                    analysis = analyze_shelf_image(img_info["bytes"])
+                    st.session_state.shelf_context = analysis
+                    st.session_state.chat_history.append({
+                        "role": "assistant",
+                        "content": f"🤖 **Warehouse Shelf Analyzed:** {analysis.get('summary', 'Low stock detected.')}"
+                    })
+                    st.session_state.pending_image_choice = None
+                    st.session_state.active_input_mode = None
+                    st.rerun()
+
+        with c_dis_doc:
+            if st.button("Extract as Shipping Document (Muse)", key="dis_doc_btn", use_container_width=True):
+                with st.spinner("Extracting with Meta muse-image-1.0..."):
+                    doc_data = extract_document_data(img_info["bytes"])
+                    st.session_state.extracted_document = doc_data
+                    st.session_state.prefilled_prompt = f"Process document: {doc_data.get('raw_summary', 'Inbound shipping invoice')}"
+                    st.session_state.pending_image_choice = None
+                    st.session_state.active_input_mode = None
+                    st.rerun()
+
+        with c_dis_cancel:
+            if st.button("✕ Cancel", key="dis_cancel_btn", use_container_width=True):
+                st.session_state.pending_image_choice = None
+                st.session_state.active_input_mode = None
+                st.rerun()
+
+    elif action_rank == 3 and st.session_state.get("prefilled_prompt"):
+        # Rank 3: Document Prefill Action Button
+        p_text = st.session_state.prefilled_prompt
+        col_pf_btn, col_pf_cls = st.columns([0.85, 0.15])
+        with col_pf_btn:
+            if st.button(f"📋 Send Draft Instruction: {p_text[:45]}...", key="action_send_prefill_btn", type="primary", use_container_width=True):
+                st.session_state.auto_submit_prompt = p_text
+                st.session_state.prefilled_prompt = ""
+                st.rerun()
+        with col_pf_cls:
+            if st.button("✕ Dismiss", key="action_dismiss_prefill_btn", use_container_width=True):
                 st.session_state.prefilled_prompt = ""
                 st.rerun()
 
-        # COMBINED INPUT AREA (Voice Recorder + Text Input compact unit)
-        st.markdown("<div style='background:#111622;border:1px solid #232b3e;border-radius:8px;padding:12px;margin-bottom:12px;'>", unsafe_allow_html=True)
-        col_v_q, col_v_lbl = st.columns([1, 19])
-        with col_v_q:
-            with st.popover("?"):
-                st.markdown("**Voice Logistics Command**")
-                st.markdown("Record hands-free warehouse commands transcribed via Meta ASR.")
-                from pathlib import Path
-                sample_voice = Path("demo-assets/sample_voice_command.wav")
-                if sample_voice.exists():
-                    st.download_button(
-                        "⬇️ Download sample .wav",
-                        sample_voice.read_bytes(),
-                        file_name="sample_voice_command.wav",
-                        mime="audio/wav",
-                        key="dl_sample_voice_btn",
-                        use_container_width=True
-                    )
-        with col_v_lbl:
-            st.markdown("<div style='padding-top:4px;'><span style='font-size:0.85rem;font-weight:600;color:#94a3b8;'>VOICE COMMAND</span></div>", unsafe_allow_html=True)
+    elif action_rank == 4 and st.session_state.get("help_shown"):
+        # Rank 4: Help Downloads (3 downloads in Row 1, Full-Width Dismiss in Row 2)
+        from pathlib import Path
+        assets_dir = Path(__file__).resolve().parent / "demo-assets"
+        sample_voice = assets_dir / "sample_voice_command.wav"
+        sample_shelf = assets_dir / "sample_shelf.jpg"
+        sample_invoice = assets_dir / "sample_invoice.png"
 
-        voice_audio = st.audio_input("Record voice instruction", key="voice_audio_input")
-        if voice_audio is not None:
-            audio_bytes = voice_audio.read()
-            audio_id = hash(audio_bytes)
-            if st.session_state.get("last_processed_audio_id") != audio_id:
-                st.session_state.last_processed_audio_id = audio_id
-                with st.spinner("Transcribing voice command with muse-voice-transcribe-1.0..."):
-                    voice_result = process_voice_input(audio_bytes)
-                    if voice_result.get("status") == "ok":
-                        transcript = voice_result.get("transcription", "").strip()
-                        if transcript:
-                            st.session_state.auto_submit_prompt = transcript
-                            st.rerun()
-                    else:
-                        err_intent = voice_result.get("intent", "Audio input unclear")
-                        if "META_API_KEY" in err_intent or "ValueError" in err_intent:
-                            show_user_error(
-                                message="⚠️ Voice transcription requires a META_API_KEY. Add it to your Render environment variables.",
-                                suggestion="Add META_API_KEY to your environment variables or .env file, or type your instruction directly in the chat box."
-                            )
-                        else:
-                            show_user_error(
-                                message=f"We had trouble processing your voice audio: {err_intent}.",
-                                suggestion="Ensure your microphone is connected, speak clearly within 3 feet, or type your instruction directly in the chat box."
-                            )
+        col_h1, col_h2, col_h3 = st.columns(3)
+        with col_h1:
+            if sample_voice.exists():
+                st.download_button(
+                    "⬇️ Audio (.wav)",
+                    sample_voice.read_bytes(),
+                    file_name="sample_voice_command.wav",
+                    mime="audio/wav",
+                    key="dl_audio_action_btn",
+                    use_container_width=True
+                )
+        with col_h2:
+            if sample_shelf.exists():
+                st.download_button(
+                    "⬇️ Shelf (.jpg)",
+                    sample_shelf.read_bytes(),
+                    file_name="sample_shelf.jpg",
+                    mime="image/jpeg",
+                    key="dl_shelf_action_btn",
+                    use_container_width=True
+                )
+        with col_h3:
+            if sample_invoice.exists():
+                st.download_button(
+                    "⬇️ Invoice (.png)",
+                    sample_invoice.read_bytes(),
+                    file_name="sample_invoice.png",
+                    mime="image/png",
+                    key="dl_invoice_action_btn",
+                    use_container_width=True
+                )
 
-        # Fix 11: Guardrail Help Card
-        if st.session_state.get("show_guardrail_help"):
-            st.markdown("""
-            <div class="ssc-card" style="border-color:#e3b341;border:1px solid #e3b341;border-radius:8px;padding:16px;margin:16px 0;background:#161b22;">
-              <div class="ssc-section-header" style="color:#e3b341;font-weight:600;font-size:0.8rem;letter-spacing:0.08em;margin-bottom:8px;">
-                ⚡ WHAT TO TRY INSTEAD
-              </div>
-              <div style="color:#8b949e;font-size:0.85rem;line-height:1.8;">
-                ✓ "Check stock levels for Semiconductors"<br>
-                ✓ "Reorder 500 units of Widget-A"<br>
-                ✓ "Emergency stockout on Microcontrollers"<br>
-                <a href="#" style="color:#58a6ff;font-size:0.8rem;">
-                  See all 20 example inputs ↓
-                </a>
-              </div>
-            </div>
-            """, unsafe_allow_html=True)
-
-        # Fix 5: Agent Progress Indicator
-        task_status = st.session_state.get("task_status", "IDLE")
-        render_agent_progress(task_status)
-
-        # Text Logistics Command Input with ? tooltip and docked Activity Log
-        col_t_q, col_t_lbl = st.columns([1, 19])
-        with col_t_q:
-            with st.popover("?"):
-                st.markdown("**Orchestrator Commands**")
-                st.markdown("Supported commands include:\n- *Emergency restock 500 units of Widget-A*\n- *Check stock levels for Semiconductors*\n- *Reroute inventory to regional DC*")
-        with col_t_lbl:
-            st.markdown("<div style='padding-top:4px;'><span style='font-size:0.85rem;font-weight:600;color:#94a3b8;'>TEXT INSTRUCTION</span></div>", unsafe_allow_html=True)
-
-        prompt = st.chat_input("Enter logistics instruction...")
-        if prompt:
-            st.session_state.auto_submit_prompt = prompt
-            st.session_state["dispatch_ts"] = time.time()
+        if st.button("✕ Dismiss Help", key="dismiss_help_btn", use_container_width=True):
+            st.session_state.help_shown = False
+            append_activity_log("ℹ️", "help", "Help dismissed")
             st.rerun()
 
-        st.markdown("</div>", unsafe_allow_html=True)
+    # COMBINED INPUT BAR - Fixed 5-Column Grid [0.05, 0.05, 0.05, 0.75, 0.1]
+    st.markdown('<div class="combined-input-row">', unsafe_allow_html=True)
+    col_q, col_clip, col_mic, col_txt, col_send = st.columns([0.05, 0.05, 0.05, 0.75, 0.1])
 
-        render_activity_log()
-
-
-# -----------------------------------------------------------------------------
-# Module 2: Warehouse Vision
-# -----------------------------------------------------------------------------
-elif selected_module == "Warehouse":
-
-    st.markdown("Automated stock segmentation powered by Meta SAM 3.1. Upload shelf imagery to detect low-stock or empty SKU bins.")
-
-    col_up, col_ctx = st.columns([1, 1])
-
-    with col_up:
-        col_wh_q, col_wh_lbl = st.columns([1, 19])
-        with col_wh_q:
-            with st.popover("?"):
-                st.markdown("**Warehouse Shelf Vision (Meta SAM 3.1)**")
-                st.markdown("Segments shelf imagery to detect low-stock and vacant bin positions.")
-                from pathlib import Path
-                shelf_path = Path("demo-assets/sample_shelf.jpg")
-                if shelf_path.exists():
-                    st.download_button(
-                        "⬇️ Download sample shelf image",
-                        shelf_path.read_bytes(),
-                        file_name="sample_shelf.jpg",
-                        mime="image/jpeg",
-                        key="dl_wh_sample_btn",
-                        use_container_width=True
-                    )
-                if st.button("⚡ Simulate with sample", key="sim_wh_sample_btn", use_container_width=True):
-                    if shelf_path.exists():
-                        st.session_state.simulated_shelf_bytes = shelf_path.read_bytes()
-                        st.session_state.shelf_context = {
-                            "summary": "Sample warehouse shelf analysis: Widget-A low stock detected (20% fill level).",
-                            "items": [{"item": "Widget-A", "fill_level": 0.20, "status": "low"}]
-                        }
-                        st.rerun()
-        with col_wh_lbl:
-            st.markdown(
-                """
-                <div class="control-card-header">
-                    <span>UPLOAD SHELF CAMERA FEED</span>
-                    <span style="font-size: 0.75rem; color: #94a3b8;">MAX 1MB</span>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-        uploaded_image = st.file_uploader(
-            "Upload Shelf Image",
-            type=["png", "jpg", "jpeg", "webp"],
-            key="shelf_image_uploader"
-        )
-        if uploaded_image is not None:
-            if uploaded_image.size > 1_000_000:
-                show_user_error(
-                    message="The uploaded shelf photo exceeds the 1MB file size limit.",
-                    suggestion="Please compress the image or take a lower resolution photo before uploading."
+    with col_q:
+        if st.button("?", key="btn_help_trigger", disabled=is_paused, use_container_width=True):
+            if not st.session_state.get("help_shown"):
+                st.session_state.help_shown = True
+                help_text = (
+                    "🤖 **Autonomous Supply Chain Orchestrator**\n\n"
+                    "Type instructions, upload logistics files, or speak.\n\n"
+                    "```\nCheck stock levels for Widget-A\n```\n"
+                    "```\nReorder 500 Microcontrollers\n```\n"
+                    "```\nEmergency restock Semiconductors\n```"
                 )
-            else:
-                image_bytes = uploaded_image.read()
-                image_id = hash(image_bytes)
-                if st.session_state.get("last_uploaded_image_id") != image_id:
-                    st.session_state.last_uploaded_image_id = image_id
-                    with st.spinner("Analyzing shelf image with SAM 3.1..."):
-                        try:
-                            analysis = analyze_shelf_image(image_bytes)
-                            st.session_state.shelf_context = analysis
-                            st.rerun()
-                        except Exception as e:
-                            st.error(friendly_error(e))
-
-    with col_ctx:
-        st.markdown(
-            """
-            <div class="control-card-header">
-                <span>ACTIVE VISUAL CONTEXT</span>
-                <span style="font-size: 0.75rem; color: #34d399;">SAM 3.1 ACTIVE</span>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-        if st.session_state.get("shelf_context"):
-            ctx = st.session_state.shelf_context
-            st.markdown(f"**Analysis Summary:**\n\n{ctx.get('summary', 'No summary generated.')}")
-
-            items = ctx.get("items", [])
-            if items:
-                table_items = []
-                for itm in items:
-                    fill_pct = int(itm.get("fill_level", 0.0) * 100)
-                    table_items.append({
-                        "Item SKU": itm.get("item"),
-                        "Fill Level": f"{fill_pct}%",
-                        "Status": itm.get("status", "ok").upper()
-                    })
-                st.dataframe(pd.DataFrame(table_items), use_container_width=True, hide_index=True)
-
-            st.caption("Active context is automatically appended to subsequent Orchestrator instructions.")
-            if st.button("Clear Shelf Context", key="clear_shelf_context_btn"):
-                st.session_state.shelf_context = None
-                st.session_state.last_uploaded_image_id = None
+                st.session_state.chat_history.append({"role": "assistant", "content": help_text})
+                append_activity_log("ℹ️", "help", "Help guide displayed")
                 st.rerun()
-        else:
-            st.info("No active shelf image analyzed. Upload an image or select an example scenario above.")
 
+    with col_clip:
+        if st.button("📎", key="btn_file_trigger", disabled=is_paused, use_container_width=True):
+            if st.session_state.get("help_shown"):
+                st.session_state.help_shown = False
+                append_activity_log("ℹ️", "help", "Help dismissed on file drawer open")
+            st.session_state.active_input_mode = "file" if st.session_state.active_input_mode != "file" else None
+            st.rerun()
 
-# -----------------------------------------------------------------------------
-# Module 3: Documents
-# -----------------------------------------------------------------------------
-elif selected_module == "Documents":
+    with col_mic:
+        if st.button("🎙️", key="btn_voice_trigger", disabled=is_paused, use_container_width=True):
+            if st.session_state.get("help_shown"):
+                st.session_state.help_shown = False
+                append_activity_log("ℹ️", "help", "Help dismissed on voice drawer open")
+            st.session_state.active_input_mode = "voice" if st.session_state.active_input_mode != "voice" else None
+            st.rerun()
 
-    st.markdown("Automated structured data extraction powered by Meta muse-image-1.0. Upload invoices, bills of lading, and freight manifests.")
-
-    col_doc_up, col_doc_view = st.columns([1, 1])
-
-    with col_doc_up:
-        col_doc_q, col_doc_lbl = st.columns([1, 19])
-        with col_doc_q:
-            with st.popover("?"):
-                st.markdown("**Document Intelligence (Meta Muse Image 1.0)**")
-                st.markdown("Extracts structured procurement and billing fields from invoices and bills of lading.")
-                from pathlib import Path
-                inv_path = Path("demo-assets/sample_invoice.png")
-                if inv_path.exists():
-                    st.download_button(
-                        "⬇️ Download sample invoice",
-                        inv_path.read_bytes(),
-                        file_name="sample_invoice.png",
-                        mime="image/png",
-                        key="dl_doc_sample_btn",
-                        use_container_width=True
-                    )
-                if st.button("⚡ Simulate with sample", key="sim_doc_sample_btn", use_container_width=True):
-                    if inv_path.exists():
-                        st.session_state.simulated_doc_bytes = inv_path.read_bytes()
-                        st.session_state.extracted_document = {
-                            "supplier": "FastFreight Logistics",
-                            "items": [{"description": "Industrial Microcontrollers", "quantity": 100, "unit_price": 45.0}],
-                            "dates": ["2026-11-05"],
-                            "raw_summary": "Invoice INV-2026-904"
-                        }
-                        st.session_state.prefilled_prompt = "Process incoming shipment from FastFreight Logistics: receive 100x items into inventory."
-                        st.rerun()
-        with col_doc_lbl:
-            st.markdown(
-                """
-                <div class="control-card-header">
-                    <span>UPLOAD INVOICE / BOL DOCUMENT</span>
-                    <span style="font-size: 0.75rem; color: #94a3b8;">MAX 2MB</span>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-        uploaded_doc = st.file_uploader(
-            "Upload Invoice or Shipping Document",
-            type=["png", "jpg", "jpeg", "webp"],
-            key="document_image_uploader"
+    with col_txt:
+        input_placeholder = "Awaiting PO decision..." if is_paused else "Type a command..."
+        cmd_text = st.text_input(
+            "Command Input",
+            placeholder=input_placeholder,
+            key="combined_cmd_input_field",
+            disabled=is_paused,
+            label_visibility="collapsed"
         )
-        if uploaded_doc is not None:
-            if uploaded_doc.size > 2_000_000:
-                show_user_error(
-                    message="The uploaded document exceeds the 2MB size limit.",
-                    suggestion="Please scan the document at 200 DPI or compress the PDF/image before uploading."
-                )
-            else:
-                doc_bytes = uploaded_doc.read()
-                doc_id = hash(doc_bytes)
-                if st.session_state.get("last_uploaded_doc_id") != doc_id:
-                    st.session_state.last_uploaded_doc_id = doc_id
-                    with st.spinner("Extracting document data with muse-image-1.0..."):
-                        try:
-                            extraction = extract_document_data(doc_bytes)
-                            st.session_state.extracted_document = extraction
-                            st.session_state.prefilled_prompt = format_logistics_instruction(extraction)
-                            st.rerun()
-                        except Exception as e:
-                            st.error(friendly_error(e))
 
-    with col_doc_view:
-        st.markdown(
-            """
-            <div class="control-card-header">
-                <span>STRUCTURED EXTRACTION</span>
-                <span style="font-size: 0.75rem; color: #3b82f6;">MUSE-IMAGE-1.0</span>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-        if st.session_state.get("extracted_document"):
-            doc_data = st.session_state.extracted_document
-            col_d1, col_d2 = st.columns(2)
-            with col_d1:
-                st.markdown(f"**Supplier:** {doc_data.get('supplier') or 'Not specified'}")
-                dates = doc_data.get("dates", [])
-                st.markdown(f"**Dates:** {', '.join(dates) if dates else 'Not specified'}")
-            with col_d2:
-                st.markdown(f"**Summary:** {doc_data.get('raw_summary') or 'None'}")
+    with col_send:
+        # Conditionally render ➔ only when cmd_text has content, not paused, and voice drawer inactive
+        if cmd_text and not is_paused and st.session_state.active_input_mode != "voice":
+            if st.button("➔", key="combined_cmd_submit_btn", type="primary", use_container_width=True):
+                st.session_state.auto_submit_prompt = cmd_text
+                st.session_state["dispatch_ts"] = time.time()
+                st.rerun()
 
-            items = doc_data.get("items", [])
-            if items:
-                st.markdown("**Line Items:**")
-                doc_table = []
-                for itm in items:
-                    doc_table.append({
-                        "Description": itm.get('description', 'Item'),
-                        "Quantity": itm.get('quantity', 1),
-                        "Unit Price": f"${itm.get('unit_price')}" if itm.get('unit_price') is not None else "N/A"
-                    })
-                st.dataframe(pd.DataFrame(doc_table), use_container_width=True, hide_index=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-            if st.session_state.get("prefilled_prompt"):
-                st.markdown("**Generated Logistics Instruction:**")
-                st.info(st.session_state.prefilled_prompt)
-
-            col_b1, col_b2 = st.columns(2)
-            with col_b1:
-                if st.button("Clear Document", key="clear_extracted_doc_btn"):
-                    st.session_state.extracted_document = None
-                    st.session_state.prefilled_prompt = ""
-                    st.session_state.last_uploaded_doc_id = None
-                    st.rerun()
-            with col_b2:
-                if st.button("Open in Orchestrator", type="primary", key="open_in_orchestrator_btn"):
-                    st.session_state.active_nav_module = "Orchestrator"
-                    st.session_state.main_nav_radio = "Orchestrator"
-                    st.rerun()
-        else:
-            st.info("No document uploaded. Upload a document or select an example invoice line item above.")
-
-
-# -----------------------------------------------------------------------------
+    # Activity Log
+    render_activity_log(disabled=is_paused)

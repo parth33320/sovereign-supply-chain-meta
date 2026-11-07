@@ -6,6 +6,42 @@ from llm_client import get_llm
 
 logger = logging.getLogger("Guardrails")
 
+SUPPLY_CHAIN_WHITELIST = {
+    "check", "stock", "levels", "reorder", "units", "warehouse", "restock", "transfer",
+    "emergency", "inventory", "shipment", "supplier", "quantity", "deliver", "freight",
+    "carrier", "transit", "forecast", "audit", "rebalance", "procure", "dispatch",
+    "allocate", "shortage", "stockout", "purchase", "order", "invoice", "manifest",
+    "bol", "rfq", "po", "sku", "widget", "semiconductor", "copper", "lithium", "steel",
+    "polymer", "sensor", "motor", "zipper", "fabric"
+}
+
+# Expand with singular / plural forms for robust matching
+WHITELIST_TOKENS = set()
+for term in SUPPLY_CHAIN_WHITELIST:
+    WHITELIST_TOKENS.add(term)
+    if term.endswith("s"):
+        WHITELIST_TOKENS.add(term[:-1])
+    else:
+        WHITELIST_TOKENS.add(term + "s")
+
+# Standard English stopwords to filter out before checking subset against whitelist
+STOPWORDS = {
+    "a", "about", "above", "across", "after", "again", "against", "all", "almost", "also",
+    "am", "among", "an", "and", "any", "are", "aren't", "as", "at", "be", "because",
+    "been", "before", "being", "below", "between", "both", "but", "by", "can", "cannot",
+    "could", "did", "do", "does", "doing", "don't", "down", "during", "each", "few",
+    "for", "from", "further", "had", "has", "have", "having", "he", "her", "here",
+    "hers", "herself", "him", "himself", "his", "how", "i", "if", "in", "into", "is",
+    "isn't", "it", "its", "itself", "just", "me", "more", "most", "my", "myself", "no",
+    "nor", "not", "now", "of", "off", "on", "once", "only", "or", "other", "our",
+    "ours", "ourselves", "out", "over", "own", "same", "she", "should", "so", "some",
+    "such", "than", "that", "the", "their", "theirs", "them", "themselves", "then",
+    "there", "these", "they", "this", "those", "through", "to", "too", "under", "until",
+    "up", "very", "was", "wasn't", "we", "were", "what", "when", "where", "which",
+    "while", "who", "whom", "why", "will", "with", "would", "you", "your", "yours",
+    "yourself", "yourselves"
+}
+
 MALICIOUS_PATTERNS = [
     r"ignore previous instructions",
     r"disregard all prior instructions",
@@ -33,20 +69,51 @@ MALICIOUS_PATTERNS = [
     r"javascript:",
 ]
 
+def is_whitelisted_supply_chain_input(prompt: str) -> bool:
+    """
+    Checks if input contains supply chain vocabulary without any actual injection patterns.
+    Tokenizes input, removes stopwords/numbers, and checks if remaining tokens are subset of whitelist.
+    """
+    # First ensure no malicious regex pattern matches
+    lower_prompt = prompt.lower()
+    for pattern in MALICIOUS_PATTERNS:
+        if re.search(pattern, lower_prompt):
+            return False
+
+    tokens = re.findall(r"[a-zA-Z]+", lower_prompt)
+    if not tokens:
+        return False
+
+    meaningful_tokens = [t for t in tokens if t not in STOPWORDS]
+    if not meaningful_tokens:
+        return False
+
+    # Check if remaining tokens are subset of whitelist
+    if set(meaningful_tokens).issubset(WHITELIST_TOKENS):
+        return True
+
+    return False
+
 def check_prompt_injection(prompt: str) -> bool:
     """
     Semantic Bouncer
     Intercepts the user's prompt before LangGraph sees it.
+    0. Fast whitelist check for safe supply chain inputs.
     1. Fast regex pre-filter for known attack patterns.
     2. Meta LLM semantic classification for subtle injections.
 
     Returns True if the prompt is safe, False if malicious.
     """
+    # 0. Supply chain vocabulary whitelist check before regex patterns
+    if is_whitelisted_supply_chain_input(prompt):
+        logger.info("Allowed prompt via supply chain vocabulary whitelist pre-filter.")
+        return True
+
     # 1. Fast regex pre-filter
     lower_prompt = prompt.lower()
     for pattern in MALICIOUS_PATTERNS:
         if re.search(pattern, lower_prompt):
-            logger.info("Blocked prompt via regex pattern match.")
+            logger.warning(f"Guardrail blocked: pattern={pattern} input={prompt[:50]}")
             return False
 
     # 2. LLM Semantic similarity/injection check
@@ -68,10 +135,10 @@ def check_prompt_injection(prompt: str) -> bool:
         content = (response.content or "").strip().upper()
 
         if "YES" in content:
-            logger.info("Blocked prompt via LLM semantic injection check.")
+            logger.warning(f"Guardrail blocked: pattern=llm_semantic input={prompt[:50]}")
             return False
 
         return True
     except Exception as e:
         logger.error(f"LLM guardrail check failed: {e}. Failing closed.")
-        return False  # CHANGED from True to False
+        return False
