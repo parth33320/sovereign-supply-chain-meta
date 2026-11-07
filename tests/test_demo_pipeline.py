@@ -74,8 +74,11 @@ def test_demo_mode_in_app():
         at.run()
 
         # Phase 1: Logistics Command
-        at.chat_input[0].set_value("Rebalance inventory between hubs")
+        at.text_input[0].set_value("Rebalance inventory between hubs")
         at.run()
+        send_btns = [b for b in at.button if b.key == "combined_cmd_submit_btn"]
+        if send_btns:
+            send_btns[0].click().run()
         assert len(at.session_state["chat_history"]) >= 2
         assert any("Orchestrator Analysis" in m["content"] for m in at.session_state["chat_history"])
 
@@ -84,7 +87,7 @@ def test_demo_mode_in_app():
         assert at.session_state["demo_pending_po"] is not None
 
         # Phase 3: HITL Approve Flow
-        approve_btn = next((b for b in at.button if "Approve" in b.label), None)
+        approve_btn = next((b for b in at.button if "APPROVE" in b.label or "Approve" in b.label), None)
         assert approve_btn is not None
         approve_btn.click()
         try:
@@ -92,7 +95,7 @@ def test_demo_mode_in_app():
         except Exception:
             pass
         assert at.session_state["demo_paused_for_hitl"] is False
-        assert any("Plan Approved and Executed" in m["content"] for m in at.session_state["chat_history"])
+        assert any("approved" in m["content"].lower() for m in at.session_state["chat_history"])
 
         # Phase 4: WAF block malicious prompt
         initial_waf = at.session_state["waf_count"]

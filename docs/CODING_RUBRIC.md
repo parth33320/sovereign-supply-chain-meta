@@ -86,6 +86,15 @@
 - Every new feature must be added to README.md
 - demo-assets/README_DEMO.md must stay current with any new demo flow changes
 
+# Added 2026-11-06 from UI critique session:
+- Input bar must always be single combined row — never split into separate voice and text sections
+- HITL approve/reject must appear as chat bubble not separate panel
+- Guardrail block message must appear as chat bubble not page-level banner
+- No hardcoded environment or version strings in UI — ever
+- Guardrail whitelist must be checked before regex injection patterns — supply chain vocabulary never blocked
+- ? tooltip must contain all downloadable samples for current module — never link to dead anchors
+- Sidebar must contain only nav items — no platform labels, environment text, or navigation headers
+
 ## Rubric Checklist (run before every PR)
 - [ ] Read every file I edited before editing it
 - [ ] No dead imports

@@ -33,10 +33,13 @@ def test_synchronous_graph_invocation_in_app():
         at = st_test.AppTest.from_file(str(app_path), default_timeout=10)
         at.run()
 
-        # Submit chat input
-        at.chat_input[0].set_value("Check inventory levels")
+        # Submit command input
+        at.text_input[0].set_value("Check inventory levels")
         try:
             at.run()
+            send_btns = [b for b in at.button if b.key == "combined_cmd_submit_btn"]
+            if send_btns:
+                send_btns[0].click().run()
         except Exception:
             pass
 

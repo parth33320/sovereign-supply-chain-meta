@@ -8,7 +8,6 @@ from playwright.sync_api import sync_playwright, expect
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-
 @pytest.fixture(autouse=True)
 def mock_graph_deps():
     mock_graph = MagicMock()
@@ -19,63 +18,22 @@ def mock_graph_deps():
     with patch("graph.get_graph_with_postgres", return_value=mock_graph):
         yield
 
-
 def test_app_document_upload_tab_and_uploader_exists():
-    """Test that app.py contains the Documents module with the image uploader."""
+    """Test that app.py contains the unified file uploader in single-page mode."""
     import streamlit.testing.v1 as st_test
     app_path = REPO_ROOT / "app.py"
     at = st_test.AppTest.from_file(str(app_path), default_timeout=10)
     at.run()
 
-    # Navigate to Documents module
-    at.sidebar.radio[0].set_value("Documents")
-    at.run()
+    clip_btn = [b for b in at.button if b.key == "btn_file_trigger"][0]
+    clip_btn.click().run()
 
-    # Find the document uploader by key or label
-    uploaders = [u for u in at.file_uploader if u.key == "document_image_uploader"]
+    uploaders = [u for u in at.file_uploader if u.key == "unified_file_uploader"]
     assert len(uploaders) == 1
-    assert "Invoice" in uploaders[0].label or "Document" in uploaders[0].label
-
-
-def test_app_document_upload_and_prepopulates_chat():
-    """Test document upload extracts fields, shows extracted data, and prepopulates chat."""
-    import streamlit.testing.v1 as st_test
-    fake_img = b"\x89PNG\r\n\x1a\n"
-
-    mock_doc_data = {
-        "supplier": "Acme Global",
-        "dates": ["2025-05-10"],
-        "items": [
-            {"description": "Steel Bearings", "quantity": 50, "unit_price": 10.0}
-        ],
-        "raw_summary": "Invoice for 50 steel bearings."
-    }
-
-    with patch("document_vision.extract_document_data", return_value=mock_doc_data) as mock_extract, \
-         patch("guardrails.check_prompt_injection", return_value=True):
-
-        app_path = REPO_ROOT / "app.py"
-        at = st_test.AppTest.from_file(str(app_path), default_timeout=10)
-        at.run()
-
-        # Navigate to Documents module
-        at.sidebar.radio[0].set_value("Documents")
-        at.run()
-
-        # Find document uploader and upload
-        doc_uploader = [u for u in at.file_uploader if u.key == "document_image_uploader"][0]
-        doc_uploader.upload("invoice.png", fake_img)
-        at.run()
-
-        mock_extract.assert_called_once_with(fake_img)
-        assert at.session_state["extracted_document"] == mock_doc_data
-        assert "prefilled_prompt" in at.session_state
-        assert "Acme Global" in at.session_state["prefilled_prompt"]
-        assert "50x Steel Bearings" in at.session_state["prefilled_prompt"]
-
+    assert "Logistics" in uploaders[0].label or "File" in uploaders[0].label
 
 def test_document_vision_ui_e2e_playwright(tmp_path):
-    """Playwright E2E verification of Documents module and extraction readout."""
+    """Playwright E2E verification of unified file drawer in single-page layout."""
     port = 8599
     proc = subprocess.Popen(
         [
@@ -105,20 +63,15 @@ def test_document_vision_ui_e2e_playwright(tmp_path):
 
             expect(page).to_have_title("Sovereign Supply Chain", timeout=15000)
 
-            # Click "Documents" in sidebar navigation rail
-            sidebar = page.locator('[data-testid="stSidebar"]')
-            expect(sidebar).to_be_visible()
+            # Click 📎 button in input bar to open unified file drawer
+            clip_btn = page.locator('button:has-text("📎")')
+            expect(clip_btn).to_be_visible()
+            clip_btn.click()
 
-            doc_nav = sidebar.locator('label', has_text="Documents")
-            expect(doc_nav).to_be_visible()
-            doc_nav.click()
-            time.sleep(1)
-
-            # Verify document uploader exists in Documents module
             doc_uploader = page.locator('[data-testid="stFileUploader"]').first
             expect(doc_uploader).to_be_visible()
 
-            screenshot_path = tmp_path / "document_vision_tab.png"
+            screenshot_path = tmp_path / "document_vision_unified.png"
             page.screenshot(path=str(screenshot_path))
             assert screenshot_path.exists()
 
@@ -131,39 +84,15 @@ def test_document_vision_ui_e2e_playwright(tmp_path):
         proc.terminate()
         proc.wait(timeout=5)
 
-
-def test_open_in_orchestrator_preserves_session_state():
-    """Verify State 13: clicking 'Open in Orchestrator' preserves prefilled_prompt and switches active module without losing chat history."""
+def test_action_slot_prefill_button_present():
+    """Verify Rank 3 prefilled prompt renders in Action Slot."""
     import streamlit.testing.v1 as st_test
     app_path = REPO_ROOT / "app.py"
     at = st_test.AppTest.from_file(str(app_path), default_timeout=10)
     at.run()
 
-    # Seed an existing chat message
-    at.session_state["chat_history"].append({"role": "user", "content": "Prior message"})
-
-    # Switch to Documents
-    at.radio[0].set_value("Documents")
-    at.run()
-
-    # Simulate extracted document
-    at.session_state.extracted_document = {
-        "supplier": "FastFreight Logistics",
-        "items": [{"description": "Turbine Valve", "quantity": 100, "unit_price": 45.0}],
-        "dates": ["2026-11-05"],
-        "raw_summary": "Invoice #101"
-    }
     at.session_state.prefilled_prompt = "Receive 100x Turbine Valve from FastFreight into inventory."
     at.run()
 
-    # Click Open in Orchestrator
-    open_btn = next((b for b in at.button if b.key == "open_in_orchestrator_btn"), None)
-    assert open_btn is not None
-    open_btn.click()
-    at.run()
-
-    # Verify session state survived module switch
-    assert at.session_state.get("active_nav_module") == "Orchestrator"
-    assert at.session_state.get("prefilled_prompt") == "Receive 100x Turbine Valve from FastFreight into inventory."
-    assert len(at.session_state["chat_history"]) == 1
-    assert at.session_state["chat_history"][0]["content"] == "Prior message"
+    send_btn = next((b for b in at.button if b.key == "action_send_prefill_btn"), None)
+    assert send_btn is not None

@@ -39,3 +39,24 @@ jobs:
 
       - name: Check .env.example exists
         run: test -f .env.example
+
+      - name: Check zero popups (st.error, st.warning, st.success, st.toast) in UI
+        run: |
+          if grep -n -E "st\.(error|warning|success|toast|exception)\(" app.py; then
+            echo "FAIL: Popup/toast calls found in app.py. All notifications must use chat bubbles or activity log."
+            exit 1
+          fi
+
+      - name: Check zero hardcoded environment or platform strings in UI
+        run: |
+          if grep -n -E "(Meta Foundation Cloud|v1\.6\.0-enterprise|Tenant_A)" app.py; then
+            echo "FAIL: Hardcoded environment/platform/tenant strings found in app.py."
+            exit 1
+          fi
+
+      - name: Check zero sidebar navigation labels in UI
+        run: |
+          if grep -n -E "st\.sidebar\.radio\(|st\.sidebar\.markdown\(\"\#\#\# Navigation\"" app.py; then
+            echo "FAIL: Sidebar navigation labels or radio found in app.py."
+            exit 1
+          fi

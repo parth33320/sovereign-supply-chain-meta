@@ -31,9 +31,11 @@ def test_app_voice_input_widget_exists():
     with patch("graph.ConnectionPool"):
         at = st_test.AppTest.from_file(str(app_path), default_timeout=10)
         at.run()
-        assert len(at.audio_input) == 1, "app.py does not have an audio_input widget"
+        mic_btns = [b for b in at.button if b.key == "btn_voice_trigger"]
+        assert len(mic_btns) == 1, "Mic trigger button missing from combined input bar"
+        mic_btns[0].click().run()
+        assert len(at.audio_input) == 1, "app.py does not have an audio_input widget when mic triggered"
         assert at.audio_input[0].key == "voice_audio_input"
-        assert "Record voice" in at.audio_input[0].label
 
 
 def test_app_voice_input_auto_submission():
@@ -63,6 +65,9 @@ def test_app_voice_input_auto_submission():
         app_path = REPO_ROOT / "app.py"
         at = st_test.AppTest.from_file(str(app_path), default_timeout=5)
         at.run()
+        mic_btns = [b for b in at.button if b.key == "btn_voice_trigger"]
+        if mic_btns:
+            mic_btns[0].click().run()
 
         # Provide simulated audio recording
         at.audio_input[0].set_value(("voice.wav", silent_wav, "audio/wav"))
@@ -119,17 +124,14 @@ def test_voice_ui_e2e_playwright(tmp_path):
             # Check page title
             expect(page).to_have_title("Sovereign Supply Chain", timeout=15000)
 
-            # Expect audio input widget to exist and be visible
+            # Expect combined input row and text input to be visible
+            text_input = page.locator('[data-testid="stTextInput"]')
+            expect(text_input).to_be_visible(timeout=10000)
+
+            # Click mic button to trigger audio input drawer
+            page.locator('button:has-text("🎙️")').click()
             audio_widget = page.locator('[data-testid="stAudioInput"]')
             expect(audio_widget).to_be_visible(timeout=10000)
-
-            # Check that Record button inside audio input is present
-            record_button = audio_widget.get_by_role("button", name="Record")
-            expect(record_button).to_be_visible()
-
-            # Expect text chat input to be present below audio input
-            chat_input = page.locator('[data-testid="stChatInput"]')
-            expect(chat_input).to_be_visible()
 
             screenshot_path = tmp_path / "voice_ui_screenshot.png"
             page.screenshot(path=str(screenshot_path))
