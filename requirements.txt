@@ -19,5 +19,7 @@ pydub
 pytest
 psycopg
 google-generativeai
-fastapi
-uvicorn
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+python-multipart==0.0.12
+httpx==0.28.0

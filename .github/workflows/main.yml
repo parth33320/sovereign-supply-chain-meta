@@ -17,16 +17,16 @@ jobs:
       with:
         python-version: '3.12'
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
+    - name: Install Python deps
+      run: pip install -r requirements.txt
+
+    - name: Install Node deps & build frontend
+      run: cd frontend && npm ci && npm run build
 
     - name: Initialize Database
       run: python init_db.py
 
-    - name: Run Test Suite
-    - name: Run Supply Chain Eval Suite
+    - name: Run backend tests
       run: |
         DEMO_MODE=1 PYTHONPATH=. python -m pytest tests/ \
           --ignore=tests/test_meta_smoke.py \
@@ -34,3 +34,8 @@ jobs:
           -q --tb=short --timeout=30
       env:
         DEMO_MODE: "1"
+
+    - name: Check no Streamlit popup calls in app.py
+      run: |
+        grep -n "st\.error\|st\.warning\|st\.success\|st\.toast" \
+          app.py && echo "FAIL" && false || echo "PASS"

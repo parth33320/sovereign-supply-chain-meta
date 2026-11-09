@@ -1,3 +1,11 @@
+# DEPRECATED: Streamlit UI replaced by React frontend
+# Kept for reference only. Do not run in production.
+# Production entry point: backend/main.py (FastAPI)
+import sys
+if "--streamlit" not in sys.argv:
+    print("WARNING: app.py is deprecated.")
+    print("Run: cd backend && uvicorn main:app --port 8000")
+
 import streamlit as st
 import sqlite3
 import json
@@ -610,7 +618,7 @@ def render_activity_log(disabled: bool = False):
 def show_user_error(message: str, suggestion: str):
     """
     Renders a styled HTML card with a ⚠️ icon, plain-English error headline, and a 'What to do next:' line.
-    Replaces raw st.error calls across the application.
+    Replaces raw error popup calls across the application.
     """
     card_html = f"""
     <div class="user-error-card">
