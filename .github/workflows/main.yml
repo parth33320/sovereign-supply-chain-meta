@@ -20,16 +20,16 @@ jobs:
     - name: Install Python deps
       run: pip install -r requirements.txt
 
+    - name: Install Playwright browsers
+      run: playwright install chromium --with-deps
+
     - name: Install Node deps & build frontend
       run: cd frontend && npm ci && npm run build
 
     - name: Initialize Database
       run: python init_db.py
 
-    - name: Install Playwright browsers
-      run: playwright install chromium --with-deps
-
-    - name: Run Supply Chain Eval Suite
+    - name: Run backend tests
       run: |
         DEMO_MODE=1 PYTHONPATH=. python -m pytest tests/ \
           --ignore=tests/test_meta_smoke.py \

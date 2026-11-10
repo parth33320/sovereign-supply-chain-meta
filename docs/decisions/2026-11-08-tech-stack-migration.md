@@ -27,3 +27,6 @@ No auth. No WebSocket. No separate frontend service.
 - Next.js: SSR overkill for single-page app
 - Two Render services: double cold start on free tier
 - Keeping Streamlit: fundamental UI limitations unresolvable
+
+## Deprecated Tests Removed
+Legacy Streamlit UI tests (`tests/test_warehouse_vision_ui.py`, `tests/test_document_vision_ui.py`, `tests/test_voice_ui_e2e.py`, `tests/test_sync_graph_invocation.py`) were deleted because the UI has migrated from Streamlit to React. UI testing is now conducted via React components and Playwright against FastAPI.
