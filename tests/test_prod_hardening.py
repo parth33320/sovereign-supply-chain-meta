@@ -50,7 +50,6 @@ def test_friendly_error_connection():
 
 
 def test_health_endpoint():
-    # Render single-port health check path configured in render.yaml is /health
     with open("render.yaml", "r") as f:
         content = f.read()
     assert "healthCheckPath: /health" in content

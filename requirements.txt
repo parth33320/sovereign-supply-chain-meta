@@ -2,7 +2,7 @@ mcp<2
 langchain
 langchain-core
 langgraph
-streamlit
+streamlit<=1.52.0
 pydantic
 tenacity
 langchain-openai
@@ -17,8 +17,11 @@ moviepy
 playwright
 pydub
 pytest
-pytest-timeout==2.4.0
 psycopg
 google-generativeai
-fastapi
-uvicorn
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+python-multipart==0.0.12
+httpx==0.28.0
+pytest-timeout==2.4.0
+setuptools

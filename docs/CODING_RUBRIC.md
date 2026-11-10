@@ -109,3 +109,13 @@
 - [ ] README updated if feature added
 - [ ] Merge conflicts resolved
 - [ ] Commit message follows format
+
+# Added 2026-11-08 tech stack migration:
+1. Frontend is React+Vite+Tailwind — never add Streamlit UI
+2. Backend is FastAPI — entry point is backend/main.py
+3. app.py is deprecated — never add features to it
+4. All new API endpoints go in backend/routers/
+5. All new UI components go in frontend/src/components/
+6. render.yaml buildCommand must include both pip install AND npm ci AND npm run build
+7. PYTHONPATH=. must be set for backend imports to resolve
+8. Frontend proxy in vite.config.js routes /api to :8000 in dev — never hardcode localhost URLs in components

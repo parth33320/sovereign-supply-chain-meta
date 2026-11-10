@@ -1,23 +1,28 @@
 services:
-  # 1. Streamlit Web Dashboard Service
   - type: web
-    name: sovereign-supply-chain-meta
+    name: sovereign-supply-chain
     env: python
-    plan: free
     region: oregon
+    plan: free
+    rootDir: .
+    buildCommand: |
+      pip install -r requirements.txt &&
+      python init_db.py &&
+      cd frontend && npm ci && npm run build
+    startCommand: >
+      cd backend &&
+      uvicorn main:app
+      --host 0.0.0.0
+      --port $PORT
+      --workers 1
     healthCheckPath: /health
-    buildCommand: pip install -r requirements.txt
-    startCommand: streamlit run app.py --server.port=$PORT --server.address=0.0.0.0 --server.headless=true
+    autoDeploy: true
     envVars:
-      - key: PORT
-        value: 10000
       - key: DEMO_MODE
         value: "1"
       - key: META_MODEL_NAME
         value: muse-spark-1.3
-      - key: POSTGRES_DB_URI
+      - key: ADMIN_SECRET
         sync: false
-      - key: META_API_KEY
-        sync: false
-      - key: META_API_BASE_URL
-        sync: false
+      - key: PYTHONPATH
+        value: .
