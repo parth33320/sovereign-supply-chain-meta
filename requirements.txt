@@ -17,6 +17,7 @@ moviepy
 playwright
 pydub
 pytest
+pytest-timeout==2.4.0
 psycopg
 google-generativeai
 fastapi==0.115.5
