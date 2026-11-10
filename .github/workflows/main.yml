@@ -25,7 +25,9 @@ jobs:
     - name: Initialize Database
       run: python init_db.py
 
-    - name: Run Test Suite
+    - name: Install Playwright browsers
+      run: playwright install chromium --with-deps
+
     - name: Run Supply Chain Eval Suite
       run: |
         DEMO_MODE=1 PYTHONPATH=. python -m pytest tests/ \
