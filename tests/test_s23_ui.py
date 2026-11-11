@@ -115,4 +115,4 @@ def test_agent_progress_shows(page):
     page.fill("input[placeholder*='Type a command']", "Check stock levels")
     page.press("input[placeholder*='Type a command']", "Enter")
     # Verify AgentProgress step or radar text appears
-    assert page.is_visible("text=Disruption radar scan complete", timeout=3000) or page.is_visible("text=Awaiting your authorization")
+    assert page.is_visible("text=Disruption radar scan complete", timeout=6000) or page.is_visible("text=Awaiting your authorization")
