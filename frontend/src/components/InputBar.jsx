@@ -1,9 +1,8 @@
 import { useState, useRef } from 'react'
 import { Paperclip, Mic, Send, HelpCircle, X } from 'lucide-react'
+import Tooltip from './Tooltip'
 
-export default function InputBar({ onSubmit, onFileUpload,
-                                   onVoice, disabled,
-                                   onHelpClick }) {
+export default function InputBar({ onSubmit, onFileUpload, onVoice, disabled }) {
   const [text, setText] = useState('')
   const [mode, setMode] = useState(null)
   const [recording, setRecording] = useState(false)
@@ -36,14 +35,12 @@ export default function InputBar({ onSubmit, onFileUpload,
 
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia(
-        { audio: true })
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       const mr = new MediaRecorder(stream)
       chunksRef.current = []
       mr.ondataavailable = e => chunksRef.current.push(e.data)
       mr.onstop = async () => {
-        const blob = new Blob(chunksRef.current,
-                              { type: 'audio/wav' })
+        const blob = new Blob(chunksRef.current, { type: 'audio/wav' })
         stream.getTracks().forEach(t => t.stop())
         setRecording(false)
         setMode(null)
@@ -107,41 +104,99 @@ export default function InputBar({ onSubmit, onFileUpload,
       <div className="flex items-center gap-1 border
                       border-[#30363d] rounded-lg bg-[#161b22]
                       px-2 py-1">
-        <button onClick={onHelpClick}
-                disabled={disabled}
-                title="Help & sample files"
-                className="p-1.5 rounded text-[#8b949e]
-                           hover:text-[#e6edf3] hover:bg-[#21262d]
-                           transition-colors disabled:opacity-30
-                           shrink-0">
-          <HelpCircle size={16} />
-        </button>
+        <Tooltip
+          position="top"
+          content={
+            <div className="space-y-3">
+              <p className="font-semibold text-[#e6edf3] text-xs">
+                How to use this interface
+              </p>
+              <div className="space-y-2 text-[#8b949e]">
+                <div>
+                  <span className="text-[#e6edf3] font-medium">
+                    📎 Attach file
+                  </span>
+                  <p className="mt-0.5">
+                    Shelf image → AI scans stock levels<br/>
+                    Invoice/BOL → AI extracts supplier & line items<br/>
+                    Audio file → AI transcribes your voice command
+                  </p>
+                </div>
+                <div>
+                  <span className="text-[#e6edf3] font-medium">
+                    🎙️ Record voice
+                  </span>
+                  <p className="mt-0.5">
+                    Click mic, speak your command, click stop.
+                    Audio is transcribed and processed automatically.
+                  </p>
+                </div>
+                <div>
+                  <span className="text-[#e6edf3] font-medium">
+                    ✍️ Type a command
+                  </span>
+                  <p className="mt-0.5">
+                    "Check stock levels for Widget-A"<br/>
+                    "Emergency restock Semiconductors"<br/>
+                    "Reorder 500 Microcontrollers"
+                  </p>
+                </div>
+              </div>
+            </div>
+          }
+        >
+          <button
+            disabled={disabled}
+            className="p-1.5 rounded text-[#8b949e]
+                       hover:text-[#e6edf3] hover:bg-[#21262d]
+                       transition-colors disabled:opacity-30 shrink-0">
+            <HelpCircle size={16} />
+          </button>
+        </Tooltip>
 
-        <button onClick={() => toggleMode('file')}
-                disabled={disabled}
-                title="Attach file"
-                className={`p-1.5 rounded transition-colors
-                            shrink-0 disabled:opacity-30
-                            ${mode === 'file'
-                              ? 'text-[#58a6ff] bg-[#21262d]'
-                              : 'text-[#8b949e] hover:text-[#e6edf3]'
-                            } hover:bg-[#21262d]`}>
-          <Paperclip size={16} />
-        </button>
+        <Tooltip
+          position="top"
+          content={
+            <p className="text-[#8b949e]">
+              Attach a file — shelf image, invoice, or audio (max 10MB)
+            </p>
+          }
+        >
+          <button
+            onClick={() => toggleMode('file')}
+            disabled={disabled}
+            className={`p-1.5 rounded transition-colors shrink-0
+                        disabled:opacity-30
+                        ${mode === 'file'
+                          ? 'text-[#58a6ff] bg-[#21262d]'
+                          : 'text-[#8b949e] hover:text-[#e6edf3]'}
+                        hover:bg-[#21262d]`}>
+            <Paperclip size={16} />
+          </button>
+        </Tooltip>
 
-        <button onClick={() => toggleMode('voice')}
-                disabled={disabled}
-                title="Voice command"
-                className={`p-1.5 rounded transition-colors
-                            shrink-0 disabled:opacity-30
-                            ${recording
-                              ? 'text-[#f85149] bg-[#21262d]'
-                              : mode === 'voice'
-                                ? 'text-[#58a6ff] bg-[#21262d]'
-                                : 'text-[#8b949e] hover:text-[#e6edf3]'
-                            } hover:bg-[#21262d]`}>
-          <Mic size={16} />
-        </button>
+        <Tooltip
+          position="top"
+          content={
+            <p className="text-[#8b949e]">
+              Record a voice command — speak, then click stop to send
+            </p>
+          }
+        >
+          <button
+            onClick={() => toggleMode('voice')}
+            disabled={disabled}
+            className={`p-1.5 rounded transition-colors shrink-0
+                        disabled:opacity-30
+                        ${recording
+                          ? 'text-[#f85149] bg-[#21262d]'
+                          : mode === 'voice'
+                            ? 'text-[#58a6ff] bg-[#21262d]'
+                            : 'text-[#8b949e] hover:text-[#e6edf3]'}
+                        hover:bg-[#21262d]`}>
+            <Mic size={16} />
+          </button>
+        </Tooltip>
 
         <div className="w-px h-5 bg-[#30363d] shrink-0" />
 
