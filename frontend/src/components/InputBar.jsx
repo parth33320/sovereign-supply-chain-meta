@@ -231,6 +231,7 @@ export default function InputBar({ onSubmit, onFileUpload, onVoice, disabled }) 
           }
         >
           <button
+            aria-label="Attach file"
             onClick={() => toggleMode('file')}
             disabled={disabled}
             className={`p-1.5 rounded transition-colors shrink-0
