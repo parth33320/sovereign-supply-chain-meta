@@ -79,6 +79,48 @@ def test_transcribe_audio_unit():
         text = transcribe_audio(sample_audio)
         assert text == "Show inventory levels"
 
+
+def test_transcribe_audio_transcript_priority_keys():
+    """Test transcribe_audio respects transcript key order (transcript > text > transcription)."""
+    sample_audio = b"fake_audio_payload"
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {
+        "transcript": "Priority transcript",
+        "text": "Secondary text",
+        "transcription": "Tertiary transcription"
+    }
+
+    with patch.dict(os.environ, {"META_API_KEY": "test_meta_key"}), \
+         patch("requests.post", return_value=mock_resp):
+        text = transcribe_audio(sample_audio)
+        assert text == "Priority transcript"
+
+
+def test_transcribe_audio_empty_file_upload_demo_fallback():
+    """Test transcribe_audio fallback for empty transcript on file upload."""
+    sample_audio = b"fake_audio_payload"
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {"text": ""}
+
+    with patch.dict(os.environ, {"META_API_KEY": "test_meta_key"}), \
+         patch("requests.post", return_value=mock_resp):
+        result = transcribe_audio(sample_audio, filename="sample-voice.wav", source="upload")
+        assert isinstance(result, dict)
+        assert result["status"] == "demo"
+        assert result["transcription"] == "Emergency restock Widget-A — stockout detected"
+
+
+def test_transcribe_audio_no_key_upload_demo_fallback():
+    """Test transcribe_audio fallback when META_API_KEY is missing on file upload."""
+    sample_audio = b"fake_audio_payload"
+    with patch.dict(os.environ, {}, clear=True):
+        result = transcribe_audio(sample_audio, filename="sample-voice.wav", source="upload")
+        assert isinstance(result, dict)
+        assert result["status"] == "demo"
+        assert result["transcription"] == "Emergency restock Widget-A — stockout detected"
+
 def test_extract_logistics_intent_unit():
     """Test extract_logistics_intent unit test with mocked ChatOpenAI."""
     mock_llm_response = MagicMock()

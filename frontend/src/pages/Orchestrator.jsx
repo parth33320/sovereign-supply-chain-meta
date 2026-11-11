@@ -349,17 +349,13 @@ export default function Orchestrator() {
           Orchestrator
         </h1>
 
-        <div className="flex items-center gap-2 text-xs">
-          {disruptionAlert ? (
+        {disruptionAlert && (
+          <div className="flex items-center gap-2 text-xs">
             <span className="bg-[#b62324]/20 text-[#ff7b72] border border-[#b62324]/40 font-semibold px-2 py-0.5 rounded-full flex items-center gap-1">
               🔔 1 ALERT
             </span>
-          ) : (
-            <span className="bg-[#238636]/20 text-[#3fb950] border border-[#238636]/40 font-medium px-2 py-0.5 rounded-full flex items-center gap-1">
-              🟢 Operational
-            </span>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Live Inventory Grid above ChatWindow */}

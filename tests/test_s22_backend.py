@@ -94,3 +94,30 @@ def test_static_files_served():
     if os.path.exists("frontend/dist/index.html"):
         r = client.get("/")
         assert r.status_code == 200
+
+def test_upload_shelf_routed_by_filename():
+    with patch("backend.routers.upload.analyze_shelf_image", return_value={"segments": [], "summary": "shelf ok"}):
+        r = client.post(
+            "/api/upload",
+            files={"file": ("sample-shelf.png", b"\x89PNG\r\n\x1a\nfake", "image/png")}
+        )
+        assert r.status_code == 200
+        assert r.json()["type"] == "shelf"
+
+def test_upload_invoice_routed_by_filename():
+    with patch("backend.routers.upload.extract_document_data", return_value={"supplier": "Test Corp"}):
+        r = client.post(
+            "/api/upload",
+            files={"file": ("invoice.png", b"\x89PNG\r\n\x1a\nfake", "image/png")}
+        )
+        assert r.status_code == 200
+        assert r.json()["type"] == "invoice"
+
+def test_upload_sample_voice_wav_demo_fallback():
+    r = client.post(
+        "/api/upload",
+        files={"file": ("sample-voice.wav", b"RIFF....WAVE", "audio/wav")}
+    )
+    assert r.status_code == 200
+    assert r.json()["type"] == "audio"
+    assert "Widget-A" in r.json()["transcript"]

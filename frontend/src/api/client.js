@@ -94,6 +94,12 @@ export async function getHealth() {
   return r.json()
 }
 
+export async function loginManager() {
+  const r = await fetch(`${BASE}/api/manager/login`)
+  if (!r.ok) throw new Error(`Manager login failed: ${r.status}`)
+  return r.json()
+}
+
 export async function getManagerPending() {
   const r = await fetch(`${BASE}/api/manager/pending`)
   if (!r.ok) throw new Error(`Failed to fetch pending requests: ${r.status}`)
