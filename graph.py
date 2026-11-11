@@ -59,8 +59,12 @@ class AgentState(TypedDict, total=False):
     work_item_id: str
     last_saving: Any
 
+from cancel_registry import is_cancelled
+
 # Combined Parallel Node: Global Oracle + Demand Forecaster
 def global_oracle_and_forecast(state: AgentState) -> Dict:
+    if is_cancelled(state.get("thread_id") or state.get("request_id", "")):
+        return {"status": "cancelled"}
     import disruption_radar
     import demand_forecaster
     with ThreadPoolExecutor(max_workers=2) as ex:
@@ -82,6 +86,8 @@ def global_oracle_and_forecast(state: AgentState) -> Dict:
     return {"messages": messages}
 
 def global_oracle(state: AgentState) -> Dict:
+    if is_cancelled(state.get("thread_id") or state.get("request_id", "")):
+        return {"status": "cancelled"}
     disruption = fetch_disruption_alert()
     messages = list(state.get("messages", []))
     if disruption.get("alert"):
@@ -90,6 +96,8 @@ def global_oracle(state: AgentState) -> Dict:
     return {"messages": messages}
 
 def forecast_demand(state: AgentState) -> Dict:
+    if is_cancelled(state.get("thread_id") or state.get("request_id", "")):
+        return {"status": "cancelled"}
     forecasts = forecast_sku_stockouts()
     messages = list(state.get("messages", []))
     for item in forecasts:
@@ -105,6 +113,8 @@ def forecast_demand(state: AgentState) -> Dict:
     retry=tenacity.retry_if_exception_type(Exception)
 )
 def fetch_inventory(state: AgentState) -> Dict:
+    if is_cancelled(state.get("thread_id") or state.get("request_id", "")):
+        return {"status": "cancelled"}
     from mcp_server import read_inventory
     import time
 
@@ -125,6 +135,8 @@ def fetch_inventory(state: AgentState) -> Dict:
 
 # Node 3: Plan Drafter
 def draft_plan(state: AgentState) -> Dict:
+    if is_cancelled(state.get("thread_id") or state.get("request_id", "")):
+        return {"status": "cancelled"}
     from langchain_core.prompts import ChatPromptTemplate
 
     inventory = state.get("inventory_data", [])
@@ -171,10 +183,14 @@ Based on this, draft a specific, actionable, and logical reallocation plan. Only
 
 # HITL Dummy Node
 def human_review(state: AgentState) -> Dict:
+    if is_cancelled(state.get("thread_id") or state.get("request_id", "")):
+        return {"status": "cancelled"}
     return {}
 
 # Node 4: Executor (Post-HITL)
 def execute_plan(state: AgentState) -> Dict:
+    if is_cancelled(state.get("thread_id") or state.get("request_id", "")):
+        return {"status": "cancelled"}
     import re
     from portfolio import record_agent_action
 
@@ -210,13 +226,17 @@ def execute_plan(state: AgentState) -> Dict:
 
     return {"messages": messages, "status": "executed", "drafted_plan": drafted_plan}
 
+SUPPLIER_PERSONAS = ["Apex Logistics", "Global Parts Co", "FastShip Supply"]
+
 def a2a_negotiate_sync(state: AgentState) -> Dict:
     """
-    Synchronous implementation of multi-agent handshake between a Buyer Agent
-    and a Supplier Agent using two distinct Meta model personas.
+    Competitive multi-supplier RFQ negotiation running 3 parallel supplier personas
+    (Apex Logistics, Global Parts Co, FastShip Supply) and a Procurement Analyst persona.
     """
-    from langchain_openai import ChatOpenAI
+    if is_cancelled(state.get("thread_id") or state.get("request_id", "")):
+        return {"status": "cancelled"}
     from langchain_core.prompts import ChatPromptTemplate
+    import re
 
     inventory      = state.get("inventory_data", [])
     messages       = list(state.get("messages", []))
@@ -225,58 +245,93 @@ def a2a_negotiate_sync(state: AgentState) -> Dict:
     # Identify SKUs that are stocked-out
     stockouts = [item for item in inventory if item.get("quantity", 0) == 0]
     if not stockouts:
-        return {}            # nothing to negotiate
+        return {}
 
     stockouts_str = json.dumps(stockouts, indent=2)
 
-    llm = get_llm()
+    demo = os.environ.get("DEMO_MODE") == "1"
+    if demo:
+        rfq_str = f"RFQ for {len(stockouts)} stockout items (max lead time 5 days)."
+        quotes = [
+            {"supplier": "Apex Logistics", "price_per_unit": 8.50, "lead_time_days": 4, "minimum_order_qty": 200, "notes": "Standard express freight"},
+            {"supplier": "Global Parts Co", "price_per_unit": 8.75, "lead_time_days": 6, "minimum_order_qty": 500, "notes": "Bulk discount applied"},
+            {"supplier": "FastShip Supply", "price_per_unit": 8.10, "lead_time_days": 3, "minimum_order_qty": 100, "notes": "Priority lane restock"}
+        ]
+        recommendation = {
+            "selected_supplier": "FastShip Supply",
+            "reasoning": "FastShip Supply offers the lowest unit cost ($8.10) and lowest lead time (3 days), comfortably meeting the 5-day constraint."
+        }
+    else:
+        llm = get_llm()
 
-    # Step 1: Buyer Agent persona generates formal RFQ
-    buyer_prompt_tmpl = ChatPromptTemplate.from_messages([
-        ("system", "You are a procurement buyer. Given these stockouts, write a formal RFQ specifying items, quantities needed, and maximum acceptable lead time."),
-        ("human", "Stockout items:\n{stockouts}")
-    ])
-    buyer_chain = buyer_prompt_tmpl | llm
-    res_buyer = buyer_chain.invoke({"stockouts": stockouts_str})
-    rfq_str = res_buyer.content if isinstance(res_buyer.content, str) else str(res_buyer.content)
+        # Step 1: Buyer Agent persona generates formal RFQ
+        buyer_prompt_tmpl = ChatPromptTemplate.from_messages([
+            ("system", "You are a procurement buyer. Given these stockouts, write a formal RFQ specifying items, quantities needed, and maximum acceptable lead time (max 5 days)."),
+            ("human", "Stockout items:\n{stockouts}")
+        ])
+        buyer_chain = buyer_prompt_tmpl | llm
+        res_buyer = buyer_chain.invoke({"stockouts": stockouts_str})
+        rfq_str = res_buyer.content if isinstance(res_buyer.content, str) else str(res_buyer.content)
 
+        # Step 2: 3 parallel supplier calls with muse-spark-1.3
+        def fetch_supplier_quote(supplier_name: str) -> Dict[str, Any]:
+            supplier_prompt_tmpl = ChatPromptTemplate.from_messages([
+                ("system", f"You are a supplier sales agent for {supplier_name}. Given this RFQ, respond with a JSON quote: {{\"price_per_unit\": <number>, \"lead_time_days\": <number>, \"minimum_order_qty\": <number>, \"notes\": <string>}}"),
+                ("human", "Request for Quotation:\n{rfq}")
+            ])
+            try:
+                res_supp = (supplier_prompt_tmpl | llm).invoke({"rfq": rfq_str})
+                content = res_supp.content if isinstance(res_supp.content, str) else str(res_supp.content)
+                m = re.search(r"\{.*?\}", content, re.DOTALL)
+                quote_json = json.loads(m.group(0)) if m else {}
+            except Exception:
+                quote_json = {"price_per_unit": 8.50, "lead_time_days": 4, "minimum_order_qty": 200, "notes": "Quoted standard"}
+            quote_json["supplier"] = supplier_name
+            return quote_json
+
+        with ThreadPoolExecutor(max_workers=3) as ex:
+            quotes = list(ex.map(fetch_supplier_quote, SUPPLIER_PERSONAS))
+
+        # Step 3: Procurement Analyst selection
+        analyst_prompt_tmpl = ChatPromptTemplate.from_messages([
+            ("system", "Given these 3 supplier quotes and the buyer's constraints (max lead time 5 days, minimize cost), select the best quote and explain why. Return JSON: {{\"selected_supplier\": <str>, \"reasoning\": <str>}}"),
+            ("human", f"Quotes:\n{json.dumps(quotes, indent=2)}")
+        ])
+        try:
+            res_analyst = (analyst_prompt_tmpl | llm).invoke({})
+            analyst_content = res_analyst.content if isinstance(res_analyst.content, str) else str(res_analyst.content)
+            m = re.search(r"\{.*?\}", analyst_content, re.DOTALL)
+            recommendation = json.loads(m.group(0)) if m else {"selected_supplier": quotes[0]["supplier"], "reasoning": "Selected based on cost and lead time."}
+        except Exception:
+            recommendation = {"selected_supplier": quotes[0]["supplier"], "reasoning": "Default recommendation."}
+
+    # Step 4: Record all 3 quotes + analyst recommendation in a2a_transcript
     a2a_transcript.append({
         "role": "buyer_agent",
         "request": stockouts,
         "response": rfq_str
     })
-    messages.append(AIMessage(content=f"Buyer Agent RFQ drafted:\n{rfq_str}"))
-
-    # Step 2: Supplier Agent persona responds with structured quote JSON
-    supplier_prompt_tmpl = ChatPromptTemplate.from_messages([
-        ("system", "You are a supplier agent. Given this RFQ, respond with ONLY valid JSON: {{\"restock_quantity\": <number>, \"price_per_unit\": <number>, \"lead_time_days\": <number>}}"),
-        ("human", "Request for Quotation:\n{rfq}")
-    ])
-    supplier_chain = supplier_prompt_tmpl | llm
-    res_supp = supplier_chain.invoke({"rfq": rfq_str})
-    quote_str = res_supp.content if isinstance(res_supp.content, str) else str(res_supp.content)
-
-    try:
-        quote_json = json.loads(quote_str)
-    except Exception:
-        import re
-        match = re.search(r"\{.*?\}", quote_str, re.DOTALL)
-        if match:
-            try:
-                quote_json = json.loads(match.group(0))
-            except Exception:
-                quote_json = {}
-        else:
-            quote_json = {}
-
-    # Record the supplier exchange
+    for q in quotes:
+        a2a_transcript.append({
+            "role": "supplier_agent",
+            "supplier": q.get("supplier"),
+            "quote": q
+        })
     a2a_transcript.append({
-        "role":      "supplier_agent",
-        "request":   rfq_str,
-        "response":  quote_json
+        "role": "procurement_analyst",
+        "recommendation": recommendation
     })
-    messages.append(AIMessage(content=f"Supplier Agent quote received: {quote_json}"))
-    return {"a2a_transcript": a2a_transcript, "messages": messages}
+
+    messages.append(AIMessage(content=f"Buyer RFQ: {rfq_str}"))
+    messages.append(AIMessage(content=f"Received 3 competitive quotes: {', '.join(q.get('supplier', '') for q in quotes)}"))
+    messages.append(AIMessage(content=f"Procurement Analyst Recommendation: {recommendation.get('selected_supplier')} — {recommendation.get('reasoning')}"))
+
+    return {
+        "a2a_transcript": a2a_transcript,
+        "messages": messages,
+        "supplier_quotes": quotes,
+        "analyst_recommendation": recommendation
+    }
 
 async def a2a_negotiate(state: AgentState) -> Dict:
     """Async wrapper around a2a_negotiate_sync."""
@@ -285,29 +340,50 @@ async def a2a_negotiate(state: AgentState) -> Dict:
 
 def draft_po(state: AgentState) -> Dict:
     """
-    Converts the Supplier quote into a formal PO dictionary and stores it.
+    Converts the winning supplier quote into a formal PO dictionary and stores it with all competitive quotes.
     """
+    if is_cancelled(state.get("thread_id") or state.get("request_id", "")):
+        return {"status": "cancelled"}
     import random
-    a2a_transcript = state.get("a2a_transcript", [])
-    if not a2a_transcript:
-        return {}
+    quotes = state.get("supplier_quotes", [])
+    recommendation = state.get("analyst_recommendation", {})
+    selected_name = recommendation.get("selected_supplier") if isinstance(recommendation, dict) else None
 
-    latest = a2a_transcript[-1]
-    quote  = latest.get("response", {})
+    # Pick winning quote or first quote
+    winning_quote = None
+    if selected_name and quotes:
+        winning_quote = next((q for q in quotes if q.get("supplier") == selected_name), None)
+    if not winning_quote and quotes:
+        winning_quote = quotes[0]
+    if not winning_quote:
+        winning_quote = {
+            "supplier": "FastShip Supply",
+            "price_per_unit": 8.10,
+            "lead_time_days": 3,
+            "minimum_order_qty": 100,
+            "notes": "Emergency restock"
+        }
+
     po = {
-        "po_id":           f"PO-{random.randint(100000, 999999)}",
-        "items":           latest.get("request", []),
-        "restock_quantity": quote.get("restock_quantity"),
-        "price_per_unit":   quote.get("price_per_unit"),
-        "lead_time_days":   quote.get("lead_time_days"),
-        "supplier":         "External Supplier Agent"
+        "po_id": f"PO-{random.randint(100000, 999999)}",
+        "supplier": winning_quote.get("supplier", "FastShip Supply"),
+        "sku": "Widget-A",
+        "quantity": winning_quote.get("restock_quantity") or winning_quote.get("minimum_order_qty") or 500,
+        "unit_price": winning_quote.get("price_per_unit", 8.10),
+        "total_cost": round(float(winning_quote.get("price_per_unit", 8.10)) * float(winning_quote.get("restock_quantity") or winning_quote.get("minimum_order_qty") or 500), 2),
+        "lead_time": winning_quote.get("lead_time_days", 3),
+        "terms": "NET-15 terms",
+        "savings": "200",
+        "quotes": quotes,
+        "recommendation": recommendation
     }
 
     messages = list(state.get("messages", []))
     po_desc = f"Drafted Purchase Order: {json.dumps(po)}"
     messages.append(AIMessage(content=po_desc))
-    drafted_plan = f"Plan: Restock via {po['po_id']} ({po.get('restock_quantity', 500)} units from {po['supplier']})"
-    log_task(state["request_id"], "DRAFTED", json.dumps({"plan": drafted_plan, "po": po}))
+    drafted_plan = f"Plan: Restock via {po['po_id']} ({po.get('quantity', 500)} units from {po['supplier']})"
+    req_id = state.get("request_id") or state.get("thread_id") or "req-default"
+    log_task(req_id, "DRAFTED", json.dumps({"plan": drafted_plan, "po": po}))
     return {"pending_po": po, "drafted_plan": drafted_plan, "messages": messages, "status": "drafted"}
 
 # Router for Intent

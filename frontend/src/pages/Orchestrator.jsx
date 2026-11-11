@@ -5,8 +5,8 @@ import HITLCard from '../components/HITLCard'
 import ActivityLog from '../components/ActivityLog'
 import InventoryGrid from '../components/InventoryGrid'
 import AgentProgress from '../components/AgentProgress'
-import { sendChat, uploadFile, sendVoice,
-         approveHITL, rejectHITL,
+import { sendChatStream, cancelChat, uploadFile, sendVoice,
+         getVoiceHistory, approveHITL, rejectHITL,
          createActivityStream, friendlyError } from '../api/client'
 import { v4 as uuidv4 } from 'uuid'
 import { AlertTriangle, RefreshCw } from 'lucide-react'
@@ -17,6 +17,8 @@ export default function Orchestrator() {
   const [logHidden, setLogHidden] = useState(false)
   const [logEntries, setLogEntries] = useState([])
   const [agentRunning, setAgentRunning] = useState(false)
+  const [currentNode, setCurrentNode] = useState(null)
+  const [currentLabel, setCurrentLabel] = useState(null)
   const [uploading, setUploading] = useState(false)
   const [pendingPO, setPendingPO] = useState(null)
   const [threadId] = useState(() => uuidv4())
@@ -24,7 +26,34 @@ export default function Orchestrator() {
   const [disruptionAlert, setDisruptionAlert] = useState(null)
   const [lastUserMessage, setLastUserMessage] = useState(null)
   const [hasError, setHasError] = useState(false)
+  const [duplicateWarning, setDuplicateWarning] = useState(null)
+  const [voiceWarning, setVoiceWarning] = useState(null)
+  const [prefilledInput, setPrefilledInput] = useState(null)
   const esRef = useRef(null)
+
+  const loadVoiceHistory = useCallback(async () => {
+    try {
+      const history = await getVoiceHistory()
+      if (Array.isArray(history) && history.length > 0) {
+        const formatted = history.map(h => ({
+          ts: (h.timestamp || '').split('T')[1]?.slice(0, 8) || (h.timestamp || '').slice(-8) || 'voice',
+          icon: '🎙️',
+          source: 'voice',
+          msg: `"${h.transcript}"`
+        }))
+        setLogEntries(prev => {
+          const nonVoice = prev.filter(e => e.source !== 'voice')
+          return [...nonVoice, ...formatted].slice(-99)
+        })
+      }
+    } catch (e) {
+      console.error('Failed to load voice history', e)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadVoiceHistory()
+  }, [loadVoiceHistory])
 
   useEffect(() => {
     esRef.current = createActivityStream(threadId, (entry) => {
@@ -56,15 +85,39 @@ export default function Orchestrator() {
     }
   }
 
+  const handleCancel = useCallback(async () => {
+    try {
+      await cancelChat(threadId)
+    } catch (err) {
+      console.error('Cancel request failed:', err)
+    }
+    setAgentRunning(false)
+    setCurrentNode(null)
+    setCurrentLabel(null)
+    addMsg('assistant', 'Request cancelled.')
+  }, [threadId])
+
   const handleSubmit = useCallback(async (text) => {
     if (agentRunning) return
     setLastUserMessage(text)
     setHasError(false)
     addMsg('user', text)
     setAgentRunning(true)
+    setCurrentNode('global_oracle')
+    setCurrentLabel('Scanning disruptions...')
     try {
-      const res = await sendChat(text, threadId, tenantId)
-      if (res.blocked) {
+      const res = await sendChatStream(text, threadId, tenantId, (progress) => {
+        if (progress.node === 'cancelled') {
+          setCurrentNode(null)
+          setCurrentLabel(null)
+        } else {
+          setCurrentNode(progress.node)
+          setCurrentLabel(progress.label)
+        }
+      })
+      if (res.cancelled) {
+        addMsg('assistant', res.response || 'Request cancelled.')
+      } else if (res.blocked) {
         addMsg('assistant', friendlyError({ blocked: true }))
       } else {
         addMsg('assistant', res.response)
@@ -78,15 +131,40 @@ export default function Orchestrator() {
       addMsg('assistant', friendlyError(e))
     } finally {
       setAgentRunning(false)
+      setCurrentNode(null)
+      setCurrentLabel(null)
     }
   }, [agentRunning, threadId, tenantId])
 
   const handleFile = useCallback(async (file) => {
     setUploading(true)
     setHasError(false)
+    setDuplicateWarning(null)
     addMsg('user', `📎 ${file.name}`)
+
+    const fname = (file.name || '').toLowerCase()
+    const isShelf = fname.includes('shelf')
+    const isInvoice = fname.includes('invoice') || file.type === 'application/pdf'
+    const spinnerText = isShelf
+      ? 'Analyzing with Meta SAM 3.1...'
+      : isInvoice
+      ? 'Extracting with muse-image-1.0...'
+      : 'Processing file...'
+
+    // Show temporary spinner message in chat
+    const tempId = `temp-upload-${Date.now()}`
+    setMessages(prev => [...prev, { id: tempId, role: 'assistant', content: `⏳ ${spinnerText}`, isPending: true }])
+
     try {
       const res = await uploadFile(file)
+      // Remove temporary pending message
+      setMessages(prev => prev.filter(m => m.id !== tempId))
+
+      if (res.duplicate) {
+        // Show as warning toast, not an error
+        setDuplicateWarning(`Duplicate invoice detected (first seen: ${res.first_seen || 'earlier'}). Processing skipped.`)
+        return
+      }
       if (res.error) {
         addMsg('assistant', `⚠️ ${res.error}`)
         return
@@ -106,19 +184,24 @@ export default function Orchestrator() {
         ).join('\n')
         addMsg('assistant',
           `📦 Warehouse Shelf Analysis (Meta SAM 3.1):\n` +
-          (lines || res.analysis?.summary || JSON.stringify(res.analysis)))
+          (lines || res.analysis?.summary || JSON.stringify(res.analysis, null, 2)))
       } else if (res.type === 'invoice') {
-        const e = res.extraction
+        const e = res.extraction || {}
+        const items = Array.isArray(e.items)
+          ? e.items.map(it => `  • ${it.name || it.item}: ${it.qty || it.quantity || '?'} @ ${it.price || it.unit_price || '?'}`).join('\n')
+          : null
         const lines = [
           e.supplier ? `Supplier: ${e.supplier}` : null,
-          e.total ? `Total: ${e.total}` : null,
           e.date ? `Date: ${e.date}` : null,
+          e.total ? `Total: ${e.total}` : null,
+          items ? `Line Items:\n${items}` : null
         ].filter(Boolean).join('\n')
         addMsg('assistant',
           `📄 Document Extraction (Meta Muse Image 1.0):\n` +
-          (lines || JSON.stringify(e)))
+          (lines || JSON.stringify(e, null, 2)))
       }
     } catch (err) {
+      setMessages(prev => prev.filter(m => m.id !== tempId))
       setHasError(true)
       addMsg('assistant',
         `⚠️ Upload failed: ${friendlyError(err)}`)
@@ -130,8 +213,22 @@ export default function Orchestrator() {
   const handleVoice = useCallback(async (blob) => {
     setUploading(true)
     setHasError(false)
+    setVoiceWarning(null)
     try {
-      const res = await sendVoice(blob)
+      const res = await sendVoice(blob, threadId)
+      await loadVoiceHistory()
+
+      // Gating check for low confidence
+      if (res.status === 'low_confidence') {
+        setVoiceWarning({
+          transcription: res.transcript,
+          confidence: res.confidence,
+          intent: res.intent,
+          suggestion: res.suggestion
+        })
+        return
+      }
+
       addMsg('user', `🎙️ "${res.transcript}"`)
       await handleSubmit(res.transcript)
     } catch {
@@ -141,7 +238,7 @@ export default function Orchestrator() {
     } finally {
       setUploading(false)
     }
-  }, [handleSubmit])
+  }, [handleSubmit, threadId, loadVoiceHistory])
 
   const handleApprove = async () => {
     setAgentRunning(true)
@@ -182,6 +279,70 @@ export default function Orchestrator() {
         </div>
       )}
 
+      {/* Duplicate Invoice Warning Toast */}
+      {duplicateWarning && (
+        <div className="mb-3 px-3 py-2 bg-[#d29922]/20 border border-[#d29922] rounded-lg text-xs text-[#f0883e] flex items-center justify-between gap-2 shadow">
+          <div className="flex items-center gap-2">
+            <span>⚠️</span>
+            <span>{duplicateWarning}</span>
+          </div>
+          <button
+            onClick={() => setDuplicateWarning(null)}
+            className="text-[#8b949e] hover:text-[#e6edf3] font-bold text-xs px-1"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Voice Confidence Gating Yellow Banner */}
+      {voiceWarning && (
+        <div className="mb-3 px-3 py-2.5 bg-[#d29922]/20 border border-[#d29922] rounded-lg text-xs text-[#f0883e] space-y-2 shadow">
+          <div className="flex items-start justify-between gap-2">
+            <div className="space-y-1">
+              <p className="font-semibold text-[#e6edf3]">
+                🟡 Low confidence transcription ({Math.round((voiceWarning.confidence || 0) * 100)}%): "{voiceWarning.transcription}"
+              </p>
+              {voiceWarning.suggestion && (
+                <p className="text-[#8b949e]">
+                  Did you mean: <strong className="text-[#58a6ff]">"{voiceWarning.suggestion}"</strong>?
+                </p>
+              )}
+            </div>
+            <button
+              onClick={() => setVoiceWarning(null)}
+              className="text-[#8b949e] hover:text-[#e6edf3] font-bold text-xs px-1"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="flex items-center gap-2 pt-1">
+            {voiceWarning.suggestion && (
+              <button
+                onClick={() => {
+                  setPrefilledInput(voiceWarning.suggestion)
+                  setVoiceWarning(null)
+                }}
+                className="px-2.5 py-1 bg-[#21262d] hover:bg-[#30363d] text-[#58a6ff] border border-[#30363d] rounded text-[11px] font-semibold transition-colors flex items-center gap-1"
+              >
+                <span>💡</span> Use suggestion
+              </button>
+            )}
+            <button
+              onClick={() => {
+                const text = voiceWarning.transcription
+                setVoiceWarning(null)
+                addMsg('user', `🎙️ "${text}"`)
+                handleSubmit(text)
+              }}
+              className="px-2.5 py-1 bg-[#238636] hover:bg-[#2ea043] text-white rounded text-[11px] font-semibold transition-colors flex items-center gap-1 shadow"
+            >
+              <span>🎙️</span> Use anyway
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Header bar */}
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-base font-semibold text-[#e6edf3]">
@@ -211,7 +372,12 @@ export default function Orchestrator() {
 
       {/* Agent multi-step progress indicator when agentRunning */}
       {agentRunning && (
-        <AgentProgress itemCount={20} stockoutCount={2} />
+        <AgentProgress
+          currentNode={currentNode}
+          currentLabel={currentLabel}
+          itemCount={20}
+          stockoutCount={2}
+        />
       )}
 
       {/* Empty State Onboarding Card (shown when messages.length === 0 and !agentRunning) */}
@@ -287,7 +453,11 @@ export default function Orchestrator() {
         onSubmit={handleSubmit}
         onFileUpload={handleFile}
         onVoice={handleVoice}
-        disabled={hitlPending || agentRunning}
+        disabled={hitlPending}
+        isLoading={agentRunning}
+        onCancel={handleCancel}
+        prefill={prefilledInput}
+        onClearPrefill={() => setPrefilledInput(null)}
       />
 
       <ActivityLog

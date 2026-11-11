@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
-import { getInventory } from '../api/client'
-import { ChevronDown, ChevronUp, RefreshCw } from 'lucide-react'
+import { getInventory, getKPIs, runWhatIf } from '../api/client'
+import { ChevronDown, ChevronUp, RefreshCw, Zap, X, BarChart2 } from 'lucide-react'
 
 // Sparkline helper generating 7 fake points ending at current quantity
 function Sparkline({ quantity }) {
@@ -60,15 +60,48 @@ function Sparkline({ quantity }) {
 export default function InventoryGrid({ tenantId = 'Tenant_A', onSelectStockout }) {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
+  const [kpiData, setKpiData] = useState(null)
   const [textFilter, setTextFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('ALL')
   const [isExpanded, setIsExpanded] = useState(true) // Expanded by default on desktop
 
+  // What-If scenario states
+  const [showWhatIf, setShowWhatIf] = useState(false)
+  const [whatIfInput, setWhatIfInput] = useState('')
+  const [whatIfLoading, setWhatIfLoading] = useState(false)
+  const [whatIfResult, setWhatIfResult] = useState(null)
+
+  const fetchKPIs = async () => {
+    try {
+      const data = await getKPIs(tenantId)
+      setKpiData(data)
+    } catch (e) {
+      console.error('Failed to load KPIs:', e)
+    }
+  }
+
+  const handleRunWhatIf = async () => {
+    if (!whatIfInput.trim() || whatIfLoading) return
+    setWhatIfLoading(true)
+    try {
+      const res = await runWhatIf(whatIfInput.trim(), 'whatif-thread', tenantId)
+      setWhatIfResult(res)
+    } catch (e) {
+      console.error('What-if failed', e)
+    } finally {
+      setWhatIfLoading(false)
+    }
+  }
+
   const fetchInventory = async () => {
     setLoading(true)
     try {
-      const data = await getInventory(tenantId)
-      setItems(data.items || [])
+      const [invData, kpis] = await Promise.all([
+        getInventory(tenantId),
+        getKPIs(tenantId).catch(() => null)
+      ])
+      setItems(invData.items || [])
+      if (kpis) setKpiData(kpis)
     } catch (err) {
       console.error('Failed to load inventory:', err)
     } finally {
@@ -81,16 +114,23 @@ export default function InventoryGrid({ tenantId = 'Tenant_A', onSelectStockout 
   }, [tenantId])
 
   const stockoutCount = useMemo(() => {
-    return items.filter(i => i.status === 'stockout').length
+    return items.filter(i => i.quantity === 0 || i.status === 'stockout').length
   }, [items])
 
   const filteredItems = useMemo(() => {
-    return items.filter(item => {
+    return items.map(item => {
+      // LOW STOCK THRESHOLD: For any item with quantity > 0 and quantity <= 10, mark as low
+      const isStockout = item.quantity === 0 || item.status === 'stockout'
+      const isLow = !isStockout && item.quantity > 0 && item.quantity <= 10
+      const computedStatus = isStockout ? 'stockout' : isLow ? 'low' : 'ok'
+      return { ...item, status: computedStatus }
+    }).filter(item => {
       const matchesText = item.name.toLowerCase().includes(textFilter.toLowerCase()) ||
                           item.supplier.toLowerCase().includes(textFilter.toLowerCase())
       if (!matchesText) return false
       if (statusFilter === 'STOCKOUT') return item.status === 'stockout'
       if (statusFilter === 'LOW') return item.status === 'low'
+      if (statusFilter === 'OK') return item.status === 'ok'
       return true
     })
   }, [items, textFilter, statusFilter])
@@ -112,6 +152,13 @@ export default function InventoryGrid({ tenantId = 'Tenant_A', onSelectStockout 
 
         <div className="flex items-center gap-2">
           <button
+            onClick={() => setShowWhatIf(prev => !prev)}
+            className="flex items-center gap-1 px-2 py-0.5 text-[11px] font-semibold bg-[#21262d] hover:bg-[#30363d] text-[#58a6ff] border border-[#30363d] rounded transition-colors"
+          >
+            <Zap size={12} />
+            <span>What-If</span>
+          </button>
+          <button
             onClick={fetchInventory}
             title="Refresh inventory"
             className="p-1 text-[#8b949e] hover:text-[#e6edf3] rounded hover:bg-[#21262d] transition-colors"
@@ -129,6 +176,119 @@ export default function InventoryGrid({ tenantId = 'Tenant_A', onSelectStockout 
 
       {/* Grid Content - Desktop expanded, mobile collapsible */}
       <div className={`${isExpanded ? 'block' : 'hidden md:block'} p-3`}>
+        {/* KPI Dashboard Bar */}
+        {kpiData && (
+          <div className="mb-3 p-2.5 bg-[#0d1117] border border-[#30363d] rounded-lg text-xs space-y-1.5 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#30363d] pb-1.5">
+              <span className="font-semibold text-[#e6edf3] flex items-center gap-1.5 text-[11px] tracking-wide">
+                <BarChart2 size={13} className="text-[#58a6ff]" />
+                <span>SUPPLY CHAIN KPIs</span>
+              </span>
+              <div className="flex items-center gap-3 font-mono text-[11px]">
+                <span>
+                  Stockout Rate: <strong className="text-[#ff7b72]">{(kpiData.stockout_rate * 100).toFixed(1)}%</strong>
+                </span>
+                <span>
+                  Fill Rate: <strong className="text-[#3fb950]">{(kpiData.fill_rate * 100).toFixed(1)}%</strong>
+                </span>
+                <span>
+                  Low Stock Rate: <strong className="text-[#f0883e]">{(kpiData.low_stock_rate * 100).toFixed(1)}%</strong>
+                </span>
+                <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold uppercase border ${
+                  kpiData.risk_rating === 'red'
+                    ? 'bg-[#b62324]/20 text-[#ff7b72] border-[#b62324]/40'
+                    : kpiData.risk_rating === 'yellow'
+                    ? 'bg-[#d29922]/20 text-[#f0883e] border-[#d29922]/40'
+                    : 'bg-[#238636]/20 text-[#3fb950] border-[#238636]/40'
+                }`}>
+                  {kpiData.risk_rating === 'green' ? '🟢 LOW RISK' : kpiData.risk_rating === 'yellow' ? '🟡 MEDIUM RISK' : '🔴 HIGH RISK'}
+                </span>
+              </div>
+            </div>
+            {kpiData.summary && (
+              <p className="text-[11px] text-[#8b949e] italic">
+                🤖 <strong className="text-[#e6edf3]">AI Summary:</strong> {kpiData.summary}
+              </p>
+            )}
+          </div>
+        )}
+        {/* What-If Scenario Modeling Box */}
+        {showWhatIf && (
+          <div className="mb-4 bg-[#0d1117] border border-[#30363d] rounded-lg p-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-[#58a6ff] flex items-center gap-1.5">
+                <Zap size={13} />
+                <span>What-If Scenario Simulation (Meta Muse-Spark-1.3)</span>
+              </span>
+              <button onClick={() => setShowWhatIf(false)} className="text-[#8b949e] hover:text-[#e6edf3]">
+                <X size={13} />
+              </button>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input
+                type="text"
+                placeholder="Describe a scenario (e.g. transit time doubles, supplier goes offline)..."
+                value={whatIfInput}
+                onChange={e => setWhatIfInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleRunWhatIf()}
+                className="flex-1 bg-[#161b22] border border-[#30363d] rounded px-2.5 py-1.5 text-xs text-[#e6edf3] placeholder-[#8b949e] focus:outline-none focus:border-[#58a6ff]"
+              />
+              <button
+                onClick={handleRunWhatIf}
+                disabled={whatIfLoading || !whatIfInput.trim()}
+                className="px-3 py-1.5 text-xs font-semibold bg-[#238636] hover:bg-[#2ea043] text-white rounded transition-colors disabled:opacity-40 shrink-0"
+              >
+                {whatIfLoading ? 'Simulating...' : 'Run Simulation'}
+              </button>
+            </div>
+
+            {/* What-If Results Table */}
+            {whatIfResult && (
+              <div className="space-y-2 pt-1 border-t border-[#30363d]">
+                <p className="text-xs text-[#e6edf3] font-medium">
+                  {whatIfResult.summary}
+                </p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border border-[#30363d] rounded">
+                    <thead className="bg-[#161b22] text-[#8b949e]">
+                      <tr>
+                        <th className="py-1 px-2">SKU</th>
+                        <th className="py-1 px-2">Current Qty</th>
+                        <th className="py-1 px-2">Risk Level</th>
+                        <th className="py-1 px-2">Days to Stockout</th>
+                        <th className="py-1 px-2">Recommended Mitigation</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#30363d]">
+                      {(whatIfResult.affected_skus || []).map((row, idx) => {
+                        const r = (row.risk_level || '').toUpperCase()
+                        const badgeColor =
+                          r === 'CRITICAL' || r === 'HIGH'
+                            ? 'bg-[#b62324]/20 text-[#ff7b72] border-[#b62324]/30'
+                            : r === 'MEDIUM'
+                            ? 'bg-[#d29922]/20 text-[#f0883e] border-[#d29922]/30'
+                            : 'bg-[#238636]/20 text-[#3fb950] border-[#238636]/30'
+                        return (
+                          <tr key={idx} className="hover:bg-[#161b22]">
+                            <td className="py-1 px-2 font-mono text-[#e6edf3]">{row.sku}</td>
+                            <td className="py-1 px-2 text-[#8b949e] font-mono">{row.current_qty}</td>
+                            <td className="py-1 px-2">
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${badgeColor}`}>
+                                {row.risk_level}
+                              </span>
+                            </td>
+                            <td className="py-1 px-2 text-[#8b949e] font-mono">{row.days_to_stockout}d</td>
+                            <td className="py-1 px-2 text-[#8b949e]">{row.mitigation}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         {/* Filter controls */}
         <div className="flex flex-col sm:flex-row gap-2 mb-3">
           <input
@@ -144,8 +304,9 @@ export default function InventoryGrid({ tenantId = 'Tenant_A', onSelectStockout 
             className="bg-[#0d1117] border border-[#30363d] rounded px-2.5 py-1 text-xs text-[#e6edf3] focus:outline-none focus:border-[#58a6ff]"
           >
             <option value="ALL">All Items</option>
+            <option value="LOW">🟡 LOW (Low stock only)</option>
             <option value="STOCKOUT">🔴 Stockouts only</option>
-            <option value="LOW">🟡 Low stock only</option>
+            <option value="OK">✅ OK only</option>
           </select>
         </div>
 
@@ -163,6 +324,7 @@ export default function InventoryGrid({ tenantId = 'Tenant_A', onSelectStockout 
                 <tr className="border-b border-[#30363d] text-[#8b949e]">
                   <th className="py-1.5 px-2">Item</th>
                   <th className="py-1.5 px-2">Stock</th>
+                  <th className="py-1.5 px-2">Reorder Pt</th>
                   <th className="py-1.5 px-2">Status</th>
                   <th className="py-1.5 px-2">Supplier</th>
                   <th className="py-1.5 px-2">Trend</th>
@@ -195,8 +357,11 @@ export default function InventoryGrid({ tenantId = 'Tenant_A', onSelectStockout 
                         <td className="py-1.5 px-2 font-medium text-[#e6edf3]">
                           {item.name}
                         </td>
-                        <td className="py-1.5 px-2 text-[#8b949e]">
+                        <td className="py-1.5 px-2 text-[#8b949e] font-mono">
                           {item.quantity.toLocaleString()}
+                        </td>
+                        <td className="py-1.5 px-2 text-[#58a6ff] font-mono text-[11px]">
+                          {item.reorder_point != null ? item.reorder_point : '—'}
                         </td>
                         <td className="py-1.5 px-2">
                           {isStockout && (

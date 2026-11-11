@@ -1,5 +1,63 @@
 const BASE = import.meta.env.DEV ? '' : ''
 
+export async function sendChatStream(message, threadId, tenantId = 'Tenant_A', onProgress) {
+  const response = await fetch(`${BASE}/api/chat/stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      message,
+      thread_id: threadId,
+      tenant_id: tenantId
+    })
+  })
+  if (!response.ok) {
+    const err = new Error(`Chat stream failed: ${response.status}`)
+    err.status = response.status
+    throw err
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let finalResult = null
+  let buffer = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const parts = buffer.split('\n\n')
+    buffer = parts.pop()
+
+    for (const part of parts) {
+      const line = part.trim()
+      if (line.startsWith('data:')) {
+        const jsonStr = line.replace(/^data:\s*/, '')
+        try {
+          const data = JSON.parse(jsonStr)
+          if (data.node === 'cancelled') {
+            if (onProgress) onProgress(data)
+            return { cancelled: true, response: data.label || 'Request cancelled.' }
+          }
+          if (data.node === 'complete' || data.response !== undefined) {
+            finalResult = data
+          } else if (onProgress) {
+            onProgress(data)
+          }
+        } catch {}
+      }
+    }
+  }
+
+  return finalResult || { response: 'Completed.' }
+}
+
+export async function cancelChat(threadId) {
+  const r = await fetch(`${BASE}/api/chat/${encodeURIComponent(threadId)}`, {
+    method: 'DELETE'
+  })
+  return r.json()
+}
+
 export async function sendChat(message, threadId, tenantId = 'Tenant_A') {
   const r = await fetch(`${BASE}/api/chat`, {
     method: 'POST',
@@ -21,6 +79,12 @@ export async function sendChat(message, threadId, tenantId = 'Tenant_A') {
 export async function getInventory(tenantId = 'Tenant_A') {
   const r = await fetch(`${BASE}/api/inventory?tenant_id=${encodeURIComponent(tenantId)}`)
   if (!r.ok) throw new Error(`Inventory fetch failed: ${r.status}`)
+  return r.json()
+}
+
+export async function getKPIs(tenantId = 'Tenant_A') {
+  const r = await fetch(`${BASE}/api/kpi?tenant_id=${encodeURIComponent(tenantId)}`)
+  if (!r.ok) throw new Error(`KPI fetch failed: ${r.status}`)
   return r.json()
 }
 
@@ -66,13 +130,36 @@ export async function uploadFile(file) {
   return r.json()
 }
 
-export async function sendVoice(blob) {
+export async function sendVoice(blob, threadId) {
   const fd = new FormData()
   fd.append('file', blob, 'recording.wav')
+  if (threadId) {
+    fd.append('thread_id', threadId)
+  }
   const r = await fetch(`${BASE}/api/voice`, {
     method: 'POST', body: fd
   })
   if (!r.ok) throw new Error(`Voice failed: ${r.status}`)
+  return r.json()
+}
+
+export async function getVoiceHistory() {
+  const r = await fetch(`${BASE}/api/voice/history`)
+  if (!r.ok) throw new Error(`Voice history failed: ${r.status}`)
+  return r.json()
+}
+
+export async function runWhatIf(scenario, threadId, tenantId = 'Tenant_A') {
+  const r = await fetch(`${BASE}/api/whatif`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      scenario,
+      thread_id: threadId,
+      tenant_id: tenantId
+    })
+  })
+  if (!r.ok) throw new Error(`What-if simulation failed: ${r.status}`)
   return r.json()
 }
 

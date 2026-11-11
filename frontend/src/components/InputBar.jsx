@@ -1,9 +1,16 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Paperclip, Mic, Send, HelpCircle, X } from 'lucide-react'
 import Tooltip from './Tooltip'
 
-export default function InputBar({ onSubmit, onFileUpload, onVoice, disabled }) {
+export default function InputBar({ onSubmit, onFileUpload, onVoice, disabled, isLoading, onCancel, prefill, onClearPrefill }) {
   const [text, setText] = useState('')
+
+  useEffect(() => {
+    if (prefill) {
+      setText(prefill)
+      if (onClearPrefill) onClearPrefill()
+    }
+  }, [prefill, onClearPrefill])
   const [mode, setMode] = useState(null)
   const [recording, setRecording] = useState(false)
   const fileRef = useRef(null)
@@ -215,7 +222,16 @@ export default function InputBar({ onSubmit, onFileUpload, onVoice, disabled }) 
                      min-w-0"
         />
 
-        {text.trim() && (
+        {isLoading ? (
+          <button
+            onClick={onCancel}
+            type="button"
+            className="px-2.5 py-1 text-xs font-semibold rounded bg-[#da3633]
+                       hover:bg-[#f85149] text-white transition-colors shrink-0 flex items-center gap-1 shadow"
+          >
+            <span>🛑</span> Cancel
+          </button>
+        ) : text.trim() ? (
           <button onClick={handleSend}
                   disabled={disabled}
                   className="p-1.5 rounded bg-[#238636]
@@ -224,7 +240,7 @@ export default function InputBar({ onSubmit, onFileUpload, onVoice, disabled }) 
                              disabled:opacity-30">
             <Send size={14} />
           </button>
-        )}
+        ) : null}
       </div>
     </div>
   )
