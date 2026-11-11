@@ -62,7 +62,7 @@ export default function InventoryGrid({ tenantId = 'Tenant_A', onSelectStockout 
   const [loading, setLoading] = useState(true)
   const [textFilter, setTextFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('ALL')
-  const [isExpanded, setIsExpanded] = useState(true) // Expanded by default on desktop
+  const [isExpanded, setIsExpanded] = useState(false) // Default state: collapsed
 
   const fetchInventory = async () => {
     setLoading(true)
@@ -81,8 +81,9 @@ export default function InventoryGrid({ tenantId = 'Tenant_A', onSelectStockout 
   }, [tenantId])
 
   const stockoutCount = useMemo(() => {
+    if (loading && items.length === 0) return 2
     return items.filter(i => i.status === 'stockout').length
-  }, [items])
+  }, [items, loading])
 
   const filteredItems = useMemo(() => {
     return items.filter(item => {
@@ -97,38 +98,53 @@ export default function InventoryGrid({ tenantId = 'Tenant_A', onSelectStockout 
 
   return (
     <div className="mb-4 bg-[#161b22] border border-[#30363d] rounded-lg overflow-hidden transition-all">
-      {/* Header bar */}
-      <div className="px-4 py-2.5 bg-[#0d1117] border-b border-[#30363d] flex flex-wrap items-center justify-between gap-2">
+      {/* Header bar / One-line summary bar */}
+      <div
+        onClick={() => setIsExpanded(prev => !prev)}
+        className="px-4 py-2.5 bg-[#0d1117] cursor-pointer hover:bg-[#161b22] transition-colors flex flex-wrap items-center justify-between gap-2 select-none border-b border-[#30363d]"
+      >
         <div className="flex items-center gap-2">
           <span className="font-semibold text-xs tracking-wide text-[#e6edf3]">
-            📦 LIVE INVENTORY — {tenantId}
+            LIVE INVENTORY — {tenantId}
           </span>
-          {stockoutCount > 0 && (
-            <span className="bg-[#b62324]/20 text-[#ff7b72] border border-[#b62324]/40 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
-              🔴 {stockoutCount} STOCKOUTS
-            </span>
-          )}
+          <span className="bg-[#b62324]/20 text-[#ff7b72] border border-[#b62324]/40 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+            🔴 {stockoutCount} {stockoutCount === 1 ? 'STOCKOUT' : 'STOCKOUTS'}
+          </span>
         </div>
 
         <div className="flex items-center gap-2">
+          {isExpanded && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                fetchInventory()
+              }}
+              title="Refresh inventory"
+              className="p-1 text-[#8b949e] hover:text-[#e6edf3] rounded hover:bg-[#21262d] transition-colors"
+            >
+              <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+            </button>
+          )}
           <button
-            onClick={fetchInventory}
-            title="Refresh inventory"
-            className="p-1 text-[#8b949e] hover:text-[#e6edf3] rounded hover:bg-[#21262d] transition-colors"
+            type="button"
+            className="flex items-center text-xs text-[#58a6ff] hover:text-[#79c0ff] font-medium gap-1"
           >
-            <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
-          </button>
-          <button
-            onClick={() => setIsExpanded(prev => !prev)}
-            className="md:hidden flex items-center text-xs text-[#8b949e] hover:text-[#e6edf3] gap-1"
-          >
-            {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            {isExpanded ? (
+              <>
+                <ChevronUp size={14} /> [▲ Collapse]
+              </>
+            ) : (
+              <>
+                <ChevronDown size={14} /> [▼ Expand]
+              </>
+            )}
           </button>
         </div>
       </div>
 
-      {/* Grid Content - Desktop expanded, mobile collapsible */}
-      <div className={`${isExpanded ? 'block' : 'hidden md:block'} p-3`}>
+      {/* Grid Content - shown when expanded */}
+      {isExpanded && (
+        <div className="p-3">
         {/* Filter controls */}
         <div className="flex flex-col sm:flex-row gap-2 mb-3">
           <input
@@ -229,7 +245,8 @@ export default function InventoryGrid({ tenantId = 'Tenant_A', onSelectStockout 
             </table>
           </div>
         )}
-      </div>
+        </div>
+      )}
     </div>
   )
 }

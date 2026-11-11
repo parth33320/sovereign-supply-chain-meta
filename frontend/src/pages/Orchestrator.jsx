@@ -188,17 +188,13 @@ export default function Orchestrator() {
           Orchestrator
         </h1>
 
-        <div className="flex items-center gap-2 text-xs">
-          {disruptionAlert ? (
+        {disruptionAlert && (
+          <div className="flex items-center gap-2 text-xs">
             <span className="bg-[#b62324]/20 text-[#ff7b72] border border-[#b62324]/40 font-semibold px-2 py-0.5 rounded-full flex items-center gap-1">
               🔔 1 ALERT
             </span>
-          ) : (
-            <span className="bg-[#238636]/20 text-[#3fb950] border border-[#238636]/40 font-medium px-2 py-0.5 rounded-full flex items-center gap-1">
-              🟢 Operational
-            </span>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Live Inventory Grid above ChatWindow */}
@@ -212,38 +208,6 @@ export default function Orchestrator() {
       {/* Agent multi-step progress indicator when agentRunning */}
       {agentRunning && (
         <AgentProgress itemCount={20} stockoutCount={2} />
-      )}
-
-      {/* Empty State Onboarding Card (shown when messages.length === 0 and !agentRunning) */}
-      {messages.length === 0 && !agentRunning && (
-        <div className="mb-4 bg-[#161b22] border border-[#30363d] rounded-lg p-5 text-center">
-          <h2 className="text-sm font-semibold text-[#e6edf3] mb-1">
-            👋 Welcome to Sovereign Supply Chain
-          </h2>
-          <p className="text-xs text-[#8b949e] mb-4">
-            Autonomous multi-agent logistics control tower
-          </p>
-          <div className="flex flex-col sm:flex-row gap-2 justify-center">
-            <button
-              onClick={() => handleSubmit("Microcontrollers are out of stock — negotiate now")}
-              className="text-xs bg-[#21262d] hover:bg-[#30363d] text-[#e6edf3] border border-[#30363d] py-1.5 px-3 rounded text-left transition-colors"
-            >
-              🔴 Microcontrollers are out of stock — negotiate now
-            </button>
-            <button
-              onClick={() => handleSubmit("Check semiconductor levels across all hubs")}
-              className="text-xs bg-[#21262d] hover:bg-[#30363d] text-[#e6edf3] border border-[#30363d] py-1.5 px-3 rounded text-left transition-colors"
-            >
-              📦 Check semiconductor levels across all hubs
-            </button>
-            <button
-              onClick={() => handleSubmit("Negotiate restock with Supplier B")}
-              className="text-xs bg-[#21262d] hover:bg-[#30363d] text-[#e6edf3] border border-[#30363d] py-1.5 px-3 rounded text-left transition-colors"
-            >
-              🤝 Negotiate restock with Supplier B
-            </button>
-          </div>
-        </div>
       )}
 
       <ChatWindow
