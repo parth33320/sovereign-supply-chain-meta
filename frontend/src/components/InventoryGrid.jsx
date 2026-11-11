@@ -67,8 +67,8 @@ export default function InventoryGrid({ tenantId = 'Tenant_A', onSelectStockout 
   const fetchInventory = async () => {
     setLoading(true)
     try {
-      const data = await getInventory(tenantId)
-      setItems(data.items || [])
+      const invData = await getInventory(tenantId)
+      setItems(invData.items || [])
     } catch (err) {
       console.error('Failed to load inventory:', err)
     } finally {
@@ -81,17 +81,23 @@ export default function InventoryGrid({ tenantId = 'Tenant_A', onSelectStockout 
   }, [tenantId])
 
   const stockoutCount = useMemo(() => {
-    if (loading && items.length === 0) return 2
-    return items.filter(i => i.status === 'stockout').length
-  }, [items, loading])
+    return items.filter(i => i.quantity === 0 || i.status === 'stockout').length
+  }, [items])
 
   const filteredItems = useMemo(() => {
-    return items.filter(item => {
+    return items.map(item => {
+      // LOW STOCK THRESHOLD: For any item with quantity > 0 and quantity <= 10, mark as low
+      const isStockout = item.quantity === 0 || item.status === 'stockout'
+      const isLow = !isStockout && item.quantity > 0 && item.quantity <= 10
+      const computedStatus = isStockout ? 'stockout' : isLow ? 'low' : 'ok'
+      return { ...item, status: computedStatus }
+    }).filter(item => {
       const matchesText = item.name.toLowerCase().includes(textFilter.toLowerCase()) ||
                           item.supplier.toLowerCase().includes(textFilter.toLowerCase())
       if (!matchesText) return false
       if (statusFilter === 'STOCKOUT') return item.status === 'stockout'
       if (statusFilter === 'LOW') return item.status === 'low'
+      if (statusFilter === 'OK') return item.status === 'ok'
       return true
     })
   }, [items, textFilter, statusFilter])
@@ -160,8 +166,9 @@ export default function InventoryGrid({ tenantId = 'Tenant_A', onSelectStockout 
             className="bg-[#0d1117] border border-[#30363d] rounded px-2.5 py-1 text-xs text-[#e6edf3] focus:outline-none focus:border-[#58a6ff]"
           >
             <option value="ALL">All Items</option>
+            <option value="LOW">🟡 LOW (Low stock only)</option>
             <option value="STOCKOUT">🔴 Stockouts only</option>
-            <option value="LOW">🟡 Low stock only</option>
+            <option value="OK">✅ OK only</option>
           </select>
         </div>
 
@@ -179,6 +186,7 @@ export default function InventoryGrid({ tenantId = 'Tenant_A', onSelectStockout 
                 <tr className="border-b border-[#30363d] text-[#8b949e]">
                   <th className="py-1.5 px-2">Item</th>
                   <th className="py-1.5 px-2">Stock</th>
+                  <th className="py-1.5 px-2">Reorder Pt</th>
                   <th className="py-1.5 px-2">Status</th>
                   <th className="py-1.5 px-2">Supplier</th>
                   <th className="py-1.5 px-2">Trend</th>
@@ -211,8 +219,11 @@ export default function InventoryGrid({ tenantId = 'Tenant_A', onSelectStockout 
                         <td className="py-1.5 px-2 font-medium text-[#e6edf3]">
                           {item.name}
                         </td>
-                        <td className="py-1.5 px-2 text-[#8b949e]">
+                        <td className="py-1.5 px-2 text-[#8b949e] font-mono">
                           {item.quantity.toLocaleString()}
+                        </td>
+                        <td className="py-1.5 px-2 text-[#58a6ff] font-mono text-[11px]">
+                          {item.reorder_point != null ? item.reorder_point : '—'}
                         </td>
                         <td className="py-1.5 px-2">
                           {isStockout && (
