@@ -38,15 +38,20 @@ def test_parallel_oracle_faster_than_sequential():
 
 
 def test_guardrail_fails_closed_on_api_error():
+    # Correct the function name from check_prompt_inspection to check_prompt_injection
     from guardrails import check_prompt_injection
-    with mock.patch.dict(os.environ, {"META_API_KEY": "test_key", "META_API_BASE_URL": "http://mock"}):
+    
+    with mock.patch.dict(os.environ, {"META_API_KEY": "test_key", "META_API_BASE_URL": "http://mock", "DEMO_MODE": ""}):
         with mock.patch("guardrails.get_llm") as mock_get_llm, \
              mock.patch("guardrails.ChatOpenAI", create=True) as mock_co:
+            
             mock_llm = mock.MagicMock()
             mock_llm.invoke.side_effect = Exception("API down")
             mock_get_llm.return_value = mock_llm
             mock_co.return_value.invoke.side_effect = Exception("API down")
-            result = check_prompt_injection("arbitrary prompt that is not whitelisted supply chain term")
+            
+            # Use a non-whitelisted string so it bypasses step 0 whitelist filter
+            result = check_prompt_injection("hello world random query entirely unrelated to supply chain or anything else")
             assert result is False  # fails closed
 
 
