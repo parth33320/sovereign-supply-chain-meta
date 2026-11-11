@@ -85,8 +85,24 @@ export default function Orchestrator() {
     setUploading(true)
     setHasError(false)
     addMsg('user', `📎 ${file.name}`)
+
+    const fname = (file.name || '').toLowerCase()
+    let spinnerText = 'Processing file...'
+    if (fname.includes('shelf')) {
+      spinnerText = 'Analyzing with Meta SAM 3.1...'
+    } else if (fname.includes('invoice') || fname.endsWith('.pdf')) {
+      spinnerText = 'Extracting with muse-image-1.0...'
+    } else if (file.type?.startsWith('audio/') || fname.endsWith('.wav') || fname.endsWith('.mp3')) {
+      spinnerText = 'Transcribing voice with muse-voice-transcribe-1.0...'
+    }
+
+    const spinnerMsgId = Date.now()
+    setMessages(prev => [...prev, { id: spinnerMsgId, role: 'assistant', content: spinnerText, loading: true }])
+
     try {
       const res = await uploadFile(file)
+      setMessages(prev => prev.filter(m => m.id !== spinnerMsgId))
+
       if (res.error) {
         addMsg('assistant', `⚠️ ${res.error}`)
         return
@@ -106,19 +122,22 @@ export default function Orchestrator() {
         ).join('\n')
         addMsg('assistant',
           `📦 Warehouse Shelf Analysis (Meta SAM 3.1):\n` +
-          (lines || res.analysis?.summary || JSON.stringify(res.analysis)))
+          (lines || res.analysis?.summary || JSON.stringify(res.analysis, null, 2)))
       } else if (res.type === 'invoice') {
-        const e = res.extraction
+        const e = res.extraction || {}
+        const items = (e.items || []).map(item => `  • ${item.name || item.sku || 'Item'}: ${item.qty || '?'} @ ${item.price || '?'}`).join('\n')
         const lines = [
           e.supplier ? `Supplier: ${e.supplier}` : null,
           e.total ? `Total: ${e.total}` : null,
           e.date ? `Date: ${e.date}` : null,
+          items ? `Items:\n${items}` : null
         ].filter(Boolean).join('\n')
         addMsg('assistant',
           `📄 Document Extraction (Meta Muse Image 1.0):\n` +
-          (lines || JSON.stringify(e)))
+          (lines || JSON.stringify(e, null, 2)))
       }
     } catch (err) {
+      setMessages(prev => prev.filter(m => m.id !== spinnerMsgId))
       setHasError(true)
       addMsg('assistant',
         `⚠️ Upload failed: ${friendlyError(err)}`)

@@ -13,10 +13,10 @@ ALLOWED_TYPES = {
 MAX_SIZE = 10 * 1024 * 1024  # 10MB
 
 
-def transcribe_audio(file_bytes: bytes) -> str:
+def transcribe_audio(file_bytes: bytes, filename: str = None, source: str = "upload"):
     """Invokes voice handler transcription."""
     from voice_handler import transcribe_audio as _transcribe
-    return _transcribe(file_bytes)
+    return _transcribe(file_bytes, filename=filename, source=source)
 
 
 def extract_document_data(file_bytes: bytes, prompt: str = None) -> dict:
@@ -33,14 +33,24 @@ def analyze_shelf_image(file_bytes: bytes) -> dict:
 
 def classify_image(file_bytes: bytes, filename: str, demo_mode: bool) -> str:
     """Classifies an image as either warehouse shelf or shipping invoice."""
+    fname = (filename or "").lower()
+    if "shelf" in fname:
+        return "shelf"
+    if "invoice" in fname:
+        return "invoice"
+
     if demo_mode:
-        return "shelf" if "shelf" in (filename or "").lower() else "invoice"
-    result = extract_document_data(
-        file_bytes,
-        prompt="Classify this image. Reply with exactly one word: 'shelf' or 'invoice'"
-    )
-    text = (result.get("raw", "") or "").strip().lower()
-    return "shelf" if "shelf" in text else "invoice"
+        return "invoice"
+
+    try:
+        result = extract_document_data(
+            file_bytes,
+            prompt="Classify this image. Reply with exactly one word: 'shelf' or 'invoice'"
+        )
+        text = (result.get("raw", "") or "").strip().lower()
+        return "shelf" if "shelf" in text else "invoice"
+    except Exception:
+        return "invoice"
 
 
 @router.post("/upload")
@@ -74,10 +84,11 @@ async def upload(file: UploadFile = File(...)):
     # Audio → transcription
     if ct.startswith("audio/") or fname.endswith((".wav", ".mp3", ".ogg")):
         try:
-            if demo:
-                transcript = "Emergency restock Widget-A"
+            res = transcribe_audio(data, filename=file.filename, source="upload")
+            if isinstance(res, dict):
+                transcript = res.get("transcription", "")
             else:
-                transcript = transcribe_audio(data)
+                transcript = res
             return {"type": "audio", "transcript": transcript}
         except Exception:
             return {

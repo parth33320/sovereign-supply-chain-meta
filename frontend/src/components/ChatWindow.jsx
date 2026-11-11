@@ -62,12 +62,15 @@ export default function ChatWindow({ messages, hidden,
             </div>
           )}
           {messages.map((m, i) => (
-            <div key={i} className="flex gap-2 text-sm">
+            <div key={m.id || i} className="flex gap-2 text-sm">
               <span>{m.role === 'user' ? '👤' : '🤖'}</span>
               <span className={m.role === 'user'
                 ? 'text-[#e6edf3]'
-                : 'text-[#8b949e] whitespace-pre-wrap'}>
-                {m.content}
+                : 'text-[#8b949e] whitespace-pre-wrap flex items-center gap-2'}>
+                {m.loading && (
+                  <span className="w-3 h-3 border-2 border-[#58a6ff] border-t-transparent rounded-full animate-spin inline-block shrink-0" />
+                )}
+                <span>{m.content}</span>
               </span>
             </div>
           ))}
