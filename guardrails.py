@@ -121,8 +121,9 @@ def check_prompt_injection(prompt: str) -> bool:
     base_url = os.environ.get("META_API_BASE_URL")
     model_name = os.environ.get("META_MODEL_NAME", "muse-spark-1.3")
 
-    if not api_key or not base_url:
-        logger.warning("Meta API credentials not configured; skipping LLM semantic guardrail check.")
+    # In DEMO_MODE or when Meta API key is missing, skip live LLM check
+    if os.environ.get("DEMO_MODE") == "1" or not api_key or not base_url:
+        logger.warning("DEMO_MODE enabled or Meta API credentials not configured; skipping LLM semantic guardrail check.")
         return True
 
     try:

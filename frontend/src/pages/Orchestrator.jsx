@@ -3,10 +3,13 @@ import ChatWindow from '../components/ChatWindow'
 import InputBar from '../components/InputBar'
 import HITLCard from '../components/HITLCard'
 import ActivityLog from '../components/ActivityLog'
+import InventoryGrid from '../components/InventoryGrid'
+import AgentProgress from '../components/AgentProgress'
 import { sendChat, uploadFile, sendVoice,
          approveHITL, rejectHITL,
-         createActivityStream } from '../api/client'
+         createActivityStream, friendlyError } from '../api/client'
 import { v4 as uuidv4 } from 'uuid'
+import { AlertTriangle, RefreshCw } from 'lucide-react'
 
 export default function Orchestrator() {
   const [messages, setMessages] = useState([])
@@ -17,6 +20,10 @@ export default function Orchestrator() {
   const [pendingPO, setPendingPO] = useState(null)
   const [threadId] = useState(() => uuidv4())
   const [helpShown, setHelpShown] = useState(false)
+  const [tenantId] = useState('Tenant_A')
+  const [disruptionAlert, setDisruptionAlert] = useState(null)
+  const [lastUserMessage, setLastUserMessage] = useState(null)
+  const [hasError, setHasError] = useState(false)
   const esRef = useRef(null)
 
   useEffect(() => {
@@ -29,26 +36,54 @@ export default function Orchestrator() {
   const addMsg = (role, content) =>
     setMessages(prev => [...prev, { role, content }])
 
+  const checkForDisruption = (text) => {
+    if (!text || typeof text !== 'string') return
+    // Check if response contains [GLOBAL ORACLE ALERT] with HIGH or MEDIUM
+    if (text.includes('[GLOBAL ORACLE ALERT]')) {
+      const isHigh = text.includes('HIGH')
+      const isMedium = text.includes('MEDIUM')
+      if (isHigh || isMedium) {
+        // Extract summary if present
+        const parts = text.split('[GLOBAL ORACLE ALERT]')
+        const alertPart = parts[1] || ''
+        const summary = alertPart.split('\n')[0].replace(/^\s*\((HIGH|MEDIUM)\):\s*/i, '').trim() ||
+                        'Severe disruption reported in critical transit lanes.'
+        setDisruptionAlert({
+          severity: isHigh ? 'HIGH' : 'MEDIUM',
+          summary: summary
+        })
+      }
+    }
+  }
+
   const handleSubmit = useCallback(async (text) => {
     if (loading) return
+    setLastUserMessage(text)
+    setHasError(false)
     addMsg('user', text)
     setLoading(true)
     try {
-      const res = await sendChat(text, threadId)
-      addMsg('assistant', res.response)
-      if (res.hitl_required && res.pending_po) {
-        setPendingPO(res.pending_po)
+      const res = await sendChat(text, threadId, tenantId)
+      if (res.blocked) {
+        addMsg('assistant', friendlyError({ blocked: true }))
+      } else {
+        addMsg('assistant', res.response)
+        checkForDisruption(res.response)
+        if (res.hitl_required && res.pending_po) {
+          setPendingPO(res.pending_po)
+        }
       }
     } catch (e) {
-      addMsg('assistant',
-        '⚠️ Unable to complete request. Please try again.')
+      setHasError(true)
+      addMsg('assistant', friendlyError(e))
     } finally {
       setLoading(false)
     }
-  }, [loading, threadId])
+  }, [loading, threadId, tenantId])
 
   const handleFile = useCallback(async (file) => {
     setLoading(true)
+    setHasError(false)
     addMsg('user', `📎 ${file.name}`)
     try {
       const res = await uploadFile(file)
@@ -70,8 +105,8 @@ export default function Orchestrator() {
           `${JSON.stringify(e, null, 2)}`)
       }
     } catch (err) {
-      addMsg('assistant',
-        `⚠️ Upload failed: ${err.message}`)
+      setHasError(true)
+      addMsg('assistant', friendlyError(err))
     } finally {
       setLoading(false)
     }
@@ -79,13 +114,14 @@ export default function Orchestrator() {
 
   const handleVoice = useCallback(async (blob) => {
     setLoading(true)
+    setHasError(false)
     try {
       const res = await sendVoice(blob)
       addMsg('user', `🎙️ "${res.transcript}"`)
       await handleSubmit(res.transcript)
-    } catch {
-      addMsg('assistant',
-        '⚠️ Voice transcription failed. Please try again.')
+    } catch (err) {
+      setHasError(true)
+      addMsg('assistant', friendlyError(err))
     } finally {
       setLoading(false)
     }
@@ -93,17 +129,26 @@ export default function Orchestrator() {
 
   const handleApprove = async () => {
     setLoading(true)
-    const res = await approveHITL(threadId)
-    addMsg('assistant',
-      `✅ PO approved and dispatched. ETA ${
-        pendingPO?.lead_time || '?'} days.`)
-    setPendingPO(null)
-    setLoading(false)
+    try {
+      const res = await approveHITL(threadId, tenantId)
+      addMsg('assistant',
+        `✅ PO approved and dispatched. ETA ${
+          pendingPO?.lead_time || '?'} days.`)
+      setPendingPO(null)
+    } catch (err) {
+      addMsg('assistant', friendlyError(err))
+    } finally {
+      setLoading(false)
+    }
   }
 
   const handleReject = async () => {
     addMsg('assistant', '❌ PO rejected. No order placed.')
-    await rejectHITL(threadId)
+    try {
+      await rejectHITL(threadId, tenantId)
+    } catch (err) {
+      console.error(err)
+    }
     setPendingPO(null)
   }
 
@@ -122,19 +167,78 @@ export default function Orchestrator() {
   const hitlPending = !!pendingPO
 
   return (
-    <div className="flex-1 flex flex-col p-4 overflow-hidden
-                    max-w-4xl mx-auto w-full">
-      <h1 className="text-lg font-semibold text-[#e6edf3] mb-4">
-        Orchestrator
-      </h1>
+    <div className="flex-1 flex flex-col p-4 overflow-hidden max-w-4xl mx-auto w-full">
+      {/* Disruption Alert Top Banner */}
+      {disruptionAlert && (
+        <div className="mb-3 px-3 py-2 bg-[#b62324]/20 border border-[#b62324] rounded-lg text-xs text-[#ff7b72] flex items-center gap-2">
+          <AlertTriangle size={15} className="shrink-0" />
+          <span>
+            <strong>⚠️ {disruptionAlert.severity} DISRUPTION ALERT</strong> — {disruptionAlert.summary}
+          </span>
+        </div>
+      )}
 
+      {/* Header bar */}
+      <div className="flex items-center justify-between mb-4">
+        <h1 className="text-base font-semibold text-[#e6edf3]">
+          Orchestrator
+        </h1>
+
+        <div className="flex items-center gap-2 text-xs">
+          {disruptionAlert ? (
+            <span className="bg-[#b62324]/20 text-[#ff7b72] border border-[#b62324]/40 font-semibold px-2 py-0.5 rounded-full flex items-center gap-1">
+              🔔 1 ALERT
+            </span>
+          ) : (
+            <span className="bg-[#238636]/20 text-[#3fb950] border border-[#238636]/40 font-medium px-2 py-0.5 rounded-full flex items-center gap-1">
+              🟢 Operational
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Live Inventory Grid above ChatWindow */}
+      <InventoryGrid
+        tenantId={tenantId}
+        onSelectStockout={(itemName) => {
+          handleSubmit(`Emergency restock needed for ${itemName}`)
+        }}
+      />
+
+      {/* Agent multi-step progress indicator when loading */}
       {loading && (
-        <div className="flex items-center gap-2 text-sm
-                        text-[#8b949e] mb-2">
-          <div className="w-4 h-4 border-2 border-[#58a6ff]
-                          border-t-transparent rounded-full
-                          animate-spin" />
-          <span>AI agents working...</span>
+        <AgentProgress itemCount={20} stockoutCount={2} />
+      )}
+
+      {/* Empty State Onboarding Card (shown when messages.length === 0 and !loading) */}
+      {messages.length === 0 && !loading && (
+        <div className="mb-4 bg-[#161b22] border border-[#30363d] rounded-lg p-5 text-center">
+          <h2 className="text-sm font-semibold text-[#e6edf3] mb-1">
+            👋 Welcome to Sovereign Supply Chain
+          </h2>
+          <p className="text-xs text-[#8b949e] mb-4">
+            Autonomous multi-agent logistics control tower
+          </p>
+          <div className="flex flex-col sm:flex-row gap-2 justify-center">
+            <button
+              onClick={() => handleSubmit("Microcontrollers are out of stock — negotiate now")}
+              className="text-xs bg-[#21262d] hover:bg-[#30363d] text-[#e6edf3] border border-[#30363d] py-1.5 px-3 rounded text-left transition-colors"
+            >
+              🔴 Microcontrollers are out of stock — negotiate now
+            </button>
+            <button
+              onClick={() => handleSubmit("Check semiconductor levels across all hubs")}
+              className="text-xs bg-[#21262d] hover:bg-[#30363d] text-[#e6edf3] border border-[#30363d] py-1.5 px-3 rounded text-left transition-colors"
+            >
+              📦 Check semiconductor levels across all hubs
+            </button>
+            <button
+              onClick={() => handleSubmit("Negotiate restock with Supplier B")}
+              className="text-xs bg-[#21262d] hover:bg-[#30363d] text-[#e6edf3] border border-[#30363d] py-1.5 px-3 rounded text-left transition-colors"
+            >
+              🤝 Negotiate restock with Supplier B
+            </button>
+          </div>
         </div>
       )}
 
@@ -145,6 +249,19 @@ export default function Orchestrator() {
         onClear={() => !hitlPending && setMessages([])}
         disabled={hitlPending}
       />
+
+      {/* Friendly Try Again button if error occurred */}
+      {hasError && lastUserMessage && !loading && (
+        <div className="my-2 flex justify-start">
+          <button
+            onClick={() => handleSubmit(lastUserMessage)}
+            className="flex items-center gap-1.5 text-xs bg-[#21262d] hover:bg-[#30363d] text-[#58a6ff] border border-[#30363d] px-3 py-1.5 rounded transition-colors"
+          >
+            <RefreshCw size={13} />
+            <span>🔄 Try again</span>
+          </button>
+        </div>
+      )}
 
       {hitlPending && (
         <HITLCard
