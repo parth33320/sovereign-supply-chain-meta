@@ -46,7 +46,9 @@ def test_guardrail_fails_closed_on_api_error():
             mock_llm.invoke.side_effect = Exception("API down")
             mock_get_llm.return_value = mock_llm
             mock_co.return_value.invoke.side_effect = Exception("API down")
-            result = check_prompt_inspection("arbitrary prompt that is not whitelisted supply chain term")
+            
+            # Use a string with NO whitelist words so it bypasses step 0 whitelist filter
+            result = check_prompt_inspection("hello world random query entirely unrelated to supply chain or anything else")
             assert result is False  # fails closed
 
 
