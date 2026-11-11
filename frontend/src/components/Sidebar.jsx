@@ -66,6 +66,17 @@ export default function Sidebar({ devMode, adminMode, role, onRoleChange, active
             <span>⚡</span> Orchestrator
           </button>
 
+          <button
+            onClick={() => onNavigate('analytics')}
+            className={`w-full text-left px-2.5 py-1.5 rounded text-xs flex items-center gap-2 transition-colors ${
+              activePage === 'analytics'
+                ? 'bg-[#21262d] text-[#58a6ff] font-semibold'
+                : 'text-[#8b949e] hover:text-[#e6edf3] hover:bg-[#161b22]'
+            }`}
+          >
+            <span>📊</span> Analytics
+          </button>
+
           {role === 'manager' && (
             <button
               onClick={() => onNavigate('manager')}

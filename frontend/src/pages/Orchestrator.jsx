@@ -380,38 +380,6 @@ export default function Orchestrator() {
         />
       )}
 
-      {/* Empty State Onboarding Card (shown when messages.length === 0 and !agentRunning) */}
-      {messages.length === 0 && !agentRunning && (
-        <div className="mb-4 bg-[#161b22] border border-[#30363d] rounded-lg p-5 text-center">
-          <h2 className="text-sm font-semibold text-[#e6edf3] mb-1">
-            👋 Welcome to Sovereign Supply Chain
-          </h2>
-          <p className="text-xs text-[#8b949e] mb-4">
-            Autonomous multi-agent logistics control tower
-          </p>
-          <div className="flex flex-col sm:flex-row gap-2 justify-center">
-            <button
-              onClick={() => handleSubmit("Microcontrollers are out of stock — negotiate now")}
-              className="text-xs bg-[#21262d] hover:bg-[#30363d] text-[#e6edf3] border border-[#30363d] py-1.5 px-3 rounded text-left transition-colors"
-            >
-              🔴 Microcontrollers are out of stock — negotiate now
-            </button>
-            <button
-              onClick={() => handleSubmit("Check semiconductor levels across all hubs")}
-              className="text-xs bg-[#21262d] hover:bg-[#30363d] text-[#e6edf3] border border-[#30363d] py-1.5 px-3 rounded text-left transition-colors"
-            >
-              📦 Check semiconductor levels across all hubs
-            </button>
-            <button
-              onClick={() => handleSubmit("Negotiate restock with Supplier B")}
-              className="text-xs bg-[#21262d] hover:bg-[#30363d] text-[#e6edf3] border border-[#30363d] py-1.5 px-3 rounded text-left transition-colors"
-            >
-              🤝 Negotiate restock with Supplier B
-            </button>
-          </div>
-        </div>
-      )}
-
       <ChatWindow
         messages={messages}
         hidden={chatHidden}
