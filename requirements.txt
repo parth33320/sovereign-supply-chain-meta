@@ -2,7 +2,6 @@ mcp<2
 langchain
 langchain-core
 langgraph
-streamlit<=1.52.0
 pydantic
 tenacity
 langchain-openai
