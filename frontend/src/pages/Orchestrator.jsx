@@ -16,10 +16,10 @@ export default function Orchestrator() {
   const [chatHidden, setChatHidden] = useState(false)
   const [logHidden, setLogHidden] = useState(false)
   const [logEntries, setLogEntries] = useState([])
-  const [loading, setLoading] = useState(false)
+  const [agentRunning, setAgentRunning] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const [pendingPO, setPendingPO] = useState(null)
   const [threadId] = useState(() => uuidv4())
-  const [helpShown, setHelpShown] = useState(false)
   const [tenantId] = useState('Tenant_A')
   const [disruptionAlert, setDisruptionAlert] = useState(null)
   const [lastUserMessage, setLastUserMessage] = useState(null)
@@ -57,11 +57,11 @@ export default function Orchestrator() {
   }
 
   const handleSubmit = useCallback(async (text) => {
-    if (loading) return
+    if (agentRunning) return
     setLastUserMessage(text)
     setHasError(false)
     addMsg('user', text)
-    setLoading(true)
+    setAgentRunning(true)
     try {
       const res = await sendChat(text, threadId, tenantId)
       if (res.blocked) {
@@ -77,16 +77,20 @@ export default function Orchestrator() {
       setHasError(true)
       addMsg('assistant', friendlyError(e))
     } finally {
-      setLoading(false)
+      setAgentRunning(false)
     }
-  }, [loading, threadId, tenantId])
+  }, [agentRunning, threadId, tenantId])
 
   const handleFile = useCallback(async (file) => {
-    setLoading(true)
+    setUploading(true)
     setHasError(false)
     addMsg('user', `📎 ${file.name}`)
     try {
       const res = await uploadFile(file)
+      if (res.error) {
+        addMsg('assistant', `⚠️ ${res.error}`)
+        return
+      }
       if (res.type === 'audio') {
         addMsg('assistant',
           `🎙️ Transcribed: "${res.transcript}"`)
@@ -94,43 +98,55 @@ export default function Orchestrator() {
         return
       }
       if (res.type === 'shelf') {
-        const a = res.analysis
+        const segs = res.analysis?.segments || []
+        const lines = segs.map(s =>
+          `${s.label || s.sku || 'Item'}: ` +
+          `${s.fill_pct ?? s.fill_level ?? '?'}% — ` +
+          `${s.status || 'unknown'}`
+        ).join('\n')
         addMsg('assistant',
           `📦 Warehouse Shelf Analysis (Meta SAM 3.1):\n` +
-          `${JSON.stringify(a?.summary || a, null, 2)}`)
+          (lines || res.analysis?.summary || JSON.stringify(res.analysis)))
       } else if (res.type === 'invoice') {
         const e = res.extraction
+        const lines = [
+          e.supplier ? `Supplier: ${e.supplier}` : null,
+          e.total ? `Total: ${e.total}` : null,
+          e.date ? `Date: ${e.date}` : null,
+        ].filter(Boolean).join('\n')
         addMsg('assistant',
           `📄 Document Extraction (Meta Muse Image 1.0):\n` +
-          `${JSON.stringify(e, null, 2)}`)
+          (lines || JSON.stringify(e)))
       }
     } catch (err) {
       setHasError(true)
-      addMsg('assistant', friendlyError(err))
+      addMsg('assistant',
+        `⚠️ Upload failed: ${friendlyError(err)}`)
     } finally {
-      setLoading(false)
+      setUploading(false)
     }
   }, [handleSubmit])
 
   const handleVoice = useCallback(async (blob) => {
-    setLoading(true)
+    setUploading(true)
     setHasError(false)
     try {
       const res = await sendVoice(blob)
       addMsg('user', `🎙️ "${res.transcript}"`)
       await handleSubmit(res.transcript)
-    } catch (err) {
+    } catch {
       setHasError(true)
-      addMsg('assistant', friendlyError(err))
+      addMsg('assistant',
+        '⚠️ Voice transcription failed. Please try again.')
     } finally {
-      setLoading(false)
+      setUploading(false)
     }
   }, [handleSubmit])
 
   const handleApprove = async () => {
-    setLoading(true)
+    setAgentRunning(true)
     try {
-      const res = await approveHITL(threadId, tenantId)
+      await approveHITL(threadId, tenantId)
       addMsg('assistant',
         `✅ PO approved and dispatched. ETA ${
           pendingPO?.lead_time || '?'} days.`)
@@ -138,7 +154,7 @@ export default function Orchestrator() {
     } catch (err) {
       addMsg('assistant', friendlyError(err))
     } finally {
-      setLoading(false)
+      setAgentRunning(false)
     }
   }
 
@@ -150,18 +166,6 @@ export default function Orchestrator() {
       console.error(err)
     }
     setPendingPO(null)
-  }
-
-  const handleHelp = () => {
-    if (helpShown) return
-    setHelpShown(true)
-    addMsg('assistant',
-      `Autonomous supply chain orchestration powered by Meta AI.\n\n` +
-      `Try these commands:\n` +
-      `• Check stock levels for Widget-A\n` +
-      `• Reorder 500 Microcontrollers\n` +
-      `• Emergency restock Semiconductors\n\n` +
-      `Upload files via 📎: shelf images, invoices, or voice commands.`)
   }
 
   const hitlPending = !!pendingPO
@@ -205,13 +209,13 @@ export default function Orchestrator() {
         }}
       />
 
-      {/* Agent multi-step progress indicator when loading */}
-      {loading && (
+      {/* Agent multi-step progress indicator when agentRunning */}
+      {agentRunning && (
         <AgentProgress itemCount={20} stockoutCount={2} />
       )}
 
-      {/* Empty State Onboarding Card (shown when messages.length === 0 and !loading) */}
-      {messages.length === 0 && !loading && (
+      {/* Empty State Onboarding Card (shown when messages.length === 0 and !agentRunning) */}
+      {messages.length === 0 && !agentRunning && (
         <div className="mb-4 bg-[#161b22] border border-[#30363d] rounded-lg p-5 text-center">
           <h2 className="text-sm font-semibold text-[#e6edf3] mb-1">
             👋 Welcome to Sovereign Supply Chain
@@ -251,7 +255,7 @@ export default function Orchestrator() {
       />
 
       {/* Friendly Try Again button if error occurred */}
-      {hasError && lastUserMessage && !loading && (
+      {hasError && lastUserMessage && !agentRunning && (
         <div className="my-2 flex justify-start">
           <button
             onClick={() => handleSubmit(lastUserMessage)}
@@ -272,12 +276,18 @@ export default function Orchestrator() {
         />
       )}
 
+      {uploading && (
+        <div className="flex items-center gap-2 text-xs text-[#8b949e] mb-2 px-1">
+          <div className="w-3 h-3 border border-[#58a6ff] border-t-transparent rounded-full animate-spin" />
+          <span>Processing file...</span>
+        </div>
+      )}
+
       <InputBar
         onSubmit={handleSubmit}
         onFileUpload={handleFile}
         onVoice={handleVoice}
-        onHelpClick={handleHelp}
-        disabled={hitlPending || loading}
+        disabled={hitlPending || agentRunning}
       />
 
       <ActivityLog
