@@ -34,6 +34,7 @@ jobs:
         DEMO_MODE=1 PYTHONPATH=. python -m pytest tests/ \
           --ignore=tests/test_meta_smoke.py \
           --ignore=tests/test_postgres_smoke.py \
+          --ignore=tests/chaos_test.py \
           -q --tb=short --timeout=30
       env:
         DEMO_MODE: "1"

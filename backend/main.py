@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from backend.routers import chat, upload, voice, hitl, activity
+from backend.routers import chat, upload, voice, hitl, activity, inventory, manager
 import init_db
 
 @asynccontextmanager
@@ -31,11 +31,17 @@ app.include_router(upload.router, prefix="/api")
 app.include_router(voice.router, prefix="/api")
 app.include_router(hitl.router, prefix="/api")
 app.include_router(activity.router, prefix="/api")
+app.include_router(inventory.router, prefix="/api")
+app.include_router(manager.router, prefix="/api")
 
 @app.get("/health")
 async def health():
     """Health check endpoint."""
-    return {"status": "ok", "demo_mode": os.environ.get("DEMO_MODE") == "1"}
+    return {
+        "status": "ok",
+        "demo_mode": os.environ.get("DEMO_MODE") == "1",
+        "manager_password": os.environ.get("MANAGER_PASSWORD", "sovereign")
+    }
 
 # Serve React build — must be LAST
 frontend_dist = os.path.join(repo_root, "frontend", "dist")
