@@ -10,6 +10,11 @@ router = APIRouter()
 class RequestAction(BaseModel):
     request_id: int
 
+@router.get("/manager/login")
+async def manager_login() -> Dict[str, str]:
+    """Authenticates manager without password or token requirement."""
+    return {"role": "manager"}
+
 @router.get("/manager/pending")
 async def get_manager_pending() -> List[Dict[str, Any]]:
     """Returns all pending administrative and restock requests."""

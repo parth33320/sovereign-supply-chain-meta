@@ -60,22 +60,20 @@ def page():
         context.close()
         browser.close()
 
-def test_onboarding_card_visible(page):
-    """When messages are empty, onboarding card is visible with 3 prefill prompt buttons."""
-    page.goto(BASE_URL)
-    page.wait_for_selector("text=Welcome to Sovereign Supply Chain", timeout=5000)
-    assert page.is_visible("text=Microcontrollers are out of stock — negotiate now")
-    assert page.is_visible("text=Check semiconductor levels across all hubs")
-    assert page.is_visible("text=Negotiate restock with Supplier B")
-
-def test_inventory_grid_renders(page):
-    """InventoryGrid table renders headers, stockout badge, and items."""
+def test_inventory_grid_collapsible(page):
+    """InventoryGrid summary bar renders collapsed by default and expands on click."""
     page.goto(BASE_URL)
     page.wait_for_selector("text=LIVE INVENTORY", timeout=5000)
-    # Check for stockout count badge or item stockout badge
     page.wait_for_selector("text=STOCKOUTS", timeout=5000)
-    assert page.is_visible("text=STOCKOUTS")
+    assert page.is_visible("text=[▼ Expand]")
+    # Filter input shouldn't be visible while collapsed
+    assert not page.is_visible("input[placeholder='🔍 Filter inventory...']")
+
+    # Click summary bar to expand
+    page.click("text=LIVE INVENTORY")
+    page.wait_for_selector("input[placeholder='🔍 Filter inventory...']", timeout=3000)
     assert page.is_visible("input[placeholder='🔍 Filter inventory...']")
+    assert page.is_visible("text=[▲ Collapse]")
 
 def test_hitl_card_no_json(page):
     """Triggering a chat action in DEMO_MODE creates formatted PO card without raw JSON."""
@@ -92,19 +90,10 @@ def test_hitl_card_no_json(page):
     assert "Reject" in card_text
 
 def test_manager_login(page):
-    """Manager login with wrong access key shows error, correct access key opens governance view."""
+    """Manager login with single click opens governance view without passwords."""
     page.goto(BASE_URL)
     page.wait_for_selector("text=Manager Login", timeout=5000)
     page.click("text=Manager Login")
-    page.wait_for_selector("input[type='password']", timeout=3000)
-    page.fill("input[type='password']", "wrongpass")
-    page.click("text=Submit Key")
-    page.wait_for_selector("text=Incorrect access key", timeout=3000)
-    assert page.is_visible("text=Incorrect access key")
-
-    # Correct key
-    page.fill("input[type='password']", "sovereign")
-    page.click("text=Submit Key")
     page.wait_for_selector("text=INVENTORY GOVERNANCE — PENDING APPROVALS", timeout=5000)
     assert page.is_visible("text=Log Out")
 

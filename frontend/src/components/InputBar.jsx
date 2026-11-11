@@ -1,6 +1,11 @@
 import { useState, useRef } from 'react'
-import { Paperclip, Mic, Send, HelpCircle, X } from 'lucide-react'
+import { Paperclip, Mic, Send, HelpCircle, X, Download } from 'lucide-react'
 import Tooltip from './Tooltip'
+import {
+  SAMPLE_SHELF_DATA_URI,
+  SAMPLE_INVOICE_DATA_URI,
+  SAMPLE_VOICE_DATA_URI
+} from '../assets/demoAssets'
 
 export default function InputBar({ onSubmit, onFileUpload, onVoice, disabled }) {
   const [text, setText] = useState('')
@@ -107,39 +112,102 @@ export default function InputBar({ onSubmit, onFileUpload, onVoice, disabled }) 
         <Tooltip
           position="top"
           content={
-            <div className="space-y-3">
+            <div className="space-y-3 max-w-sm text-left">
               <p className="font-semibold text-[#e6edf3] text-xs">
                 How to use this interface
               </p>
-              <div className="space-y-2 text-[#8b949e]">
+              <div className="space-y-2.5 text-[#8b949e] text-xs">
                 <div>
-                  <span className="text-[#e6edf3] font-medium">
+                  <span className="text-[#e6edf3] font-medium flex items-center gap-1">
                     📎 Attach file
                   </span>
-                  <p className="mt-0.5">
-                    Shelf image → AI scans stock levels<br/>
-                    Invoice/BOL → AI extracts supplier & line items<br/>
-                    Audio file → AI transcribes your voice command
+                  <p className="mt-0.5 leading-relaxed">
+                    Shelf image → AI scans stock levels<br />
+                    <a
+                      href={SAMPLE_SHELF_DATA_URI}
+                      download="sample-shelf.png"
+                      className="inline-flex items-center gap-1 text-[#58a6ff] hover:underline mt-0.5 text-[11px]"
+                    >
+                      <Download size={11} /> 🖼️ Download sample-shelf.png
+                    </a>
+                  </p>
+                  <p className="mt-1 leading-relaxed">
+                    Invoice/BOL → AI extracts supplier & line items<br />
+                    <a
+                      href={SAMPLE_INVOICE_DATA_URI}
+                      download="invoice.png"
+                      className="inline-flex items-center gap-1 text-[#58a6ff] hover:underline mt-0.5 text-[11px]"
+                    >
+                      <Download size={11} /> 🧾 Download invoice.png
+                    </a>
+                  </p>
+                  <p className="mt-1 leading-relaxed">
+                    Audio file → AI transcribes your voice command<br />
+                    <a
+                      href={SAMPLE_VOICE_DATA_URI}
+                      download="sample-voice.wav"
+                      className="inline-flex items-center gap-1 text-[#58a6ff] hover:underline mt-0.5 text-[11px]"
+                    >
+                      <Download size={11} /> 🎙️ Download sample-voice.wav
+                    </a>
                   </p>
                 </div>
-                <div>
-                  <span className="text-[#e6edf3] font-medium">
+
+                <div className="border-t border-[#30363d] pt-2">
+                  <span className="text-[#e6edf3] font-medium flex items-center gap-1">
                     🎙️ Record voice
                   </span>
-                  <p className="mt-0.5">
+                  <p className="mt-0.5 leading-relaxed">
                     Click mic, speak your command, click stop.
                     Audio is transcribed and processed automatically.
                   </p>
                 </div>
-                <div>
-                  <span className="text-[#e6edf3] font-medium">
-                    ✍️ Type a command
+
+                <div className="border-t border-[#30363d] pt-2">
+                  <span className="text-[#e6edf3] font-medium flex items-center gap-1">
+                    ⌨️ Type a command
                   </span>
-                  <p className="mt-0.5">
-                    "Check stock levels for Widget-A"<br/>
-                    "Emergency restock Semiconductors"<br/>
-                    "Reorder 500 Microcontrollers"
-                  </p>
+                  <div className="mt-1 space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[#e6edf3] truncate">"Check stock levels for Widget-A"</span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setText("Check stock levels for Widget-A")
+                        }}
+                        className="text-[10px] bg-[#21262d] hover:bg-[#30363d] text-[#58a6ff] border border-[#30363d] px-1.5 py-0.5 rounded cursor-pointer transition-colors shrink-0"
+                      >
+                        [fill]
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[#e6edf3] truncate">"Emergency restock Semiconductors"</span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setText("Emergency restock Semiconductors")
+                        }}
+                        className="text-[10px] bg-[#21262d] hover:bg-[#30363d] text-[#58a6ff] border border-[#30363d] px-1.5 py-0.5 rounded cursor-pointer transition-colors shrink-0"
+                      >
+                        [fill]
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[#e6edf3] truncate">"Reorder 500 Microcontrollers"</span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setText("Reorder 500 Microcontrollers")
+                        }}
+                        className="text-[10px] bg-[#21262d] hover:bg-[#30363d] text-[#58a6ff] border border-[#30363d] px-1.5 py-0.5 rounded cursor-pointer transition-colors shrink-0"
+                      >
+                        [fill]
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
