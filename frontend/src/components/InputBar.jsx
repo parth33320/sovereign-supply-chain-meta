@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Paperclip, Mic, Send, HelpCircle, X } from 'lucide-react'
+import { Paperclip, Mic, Send, HelpCircle, X, Download } from 'lucide-react'
 import Tooltip from './Tooltip'
 import {
   SAMPLE_SHELF_DATA_URI,
