@@ -56,8 +56,7 @@ def check_and_store_invoice_hash(data: bytes) -> tuple[bool, str]:
         conn.close()
 
 
-def 
-e_audio(file_bytes: bytes) -> str:
+def transcribe_audio(file_bytes: bytes, filename: str = "", source: str = "upload") -> str:
     """Invokes voice handler transcription."""
     from voice_handler import transcribe_audio as _transcribe
     return _transcribe(file_bytes, filename=filename, source=source)
