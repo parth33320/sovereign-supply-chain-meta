@@ -48,6 +48,21 @@ export async function sendChatStream(message, threadId, tenantId = 'Tenant_A', o
     }
   }
 
+  // Process any data remaining in the buffer after stream ends
+  if (buffer.trim()) {
+    for (const part of buffer.split('\n\n')) {
+      const line = part.trim()
+      if (line.startsWith('data:')) {
+        try {
+          const data = JSON.parse(line.replace(/^data:\s*/, ''))
+          if (data.node === 'complete' || data.response !== undefined) {
+            finalResult = data
+          }
+        } catch {}
+      }
+    }
+  }
+
   return finalResult || { response: 'Completed.' }
 }
 

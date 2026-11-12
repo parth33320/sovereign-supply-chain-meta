@@ -185,6 +185,15 @@ export default function Orchestrator() {
         addMsg('assistant',
           `📦 Warehouse Shelf Analysis (Meta SAM 3.1):\n` +
           (lines || res.analysis?.summary || JSON.stringify(res.analysis, null, 2)))
+        // Find low/empty items and trigger restock negotiation
+        const lowItems = segs
+          .filter(s => (s.status || '').toUpperCase() === 'LOW' || (s.status || '').toUpperCase() === 'EMPTY')
+          .map(s => s.label || s.sku)
+          .filter(Boolean)
+        const restockCmd = lowItems.length > 0
+          ? `Emergency restock needed for ${lowItems.join(', ')} — stockout detected`
+          : `Check stock levels and initiate reorder for low inventory items`
+        await handleSubmit(restockCmd)
       } else if (res.type === 'invoice') {
         const e = res.extraction || {}
         const items = Array.isArray(e.items)
@@ -199,6 +208,10 @@ export default function Orchestrator() {
         addMsg('assistant',
           `📄 Document Extraction (Meta Muse Image 1.0):\n` +
           (lines || JSON.stringify(e, null, 2)))
+        // Trigger PO approval workflow from invoice
+        const supplier = e.supplier || 'supplier'
+        const total = e.total || 'quoted amount'
+        await handleSubmit(`Process purchase order from ${supplier} for ${total} — awaiting approval`)
       }
     } catch (err) {
       setMessages(prev => prev.filter(m => m.id !== tempId))

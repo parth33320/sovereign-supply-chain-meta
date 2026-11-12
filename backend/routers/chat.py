@@ -46,13 +46,13 @@ def run_graph(message: str, thread_id: str,
     ]
 
     if demo:
+        import time
         # Simulate node transitions in demo mode
         for node, label in transitions:
             if cancel_registry.is_cancelled(thread_id):
                 return {"status": "cancelled"}
             if event_callback:
                 event_callback(node, label)
-            import time
             time.sleep(0.3)
 
         if cancel_registry.is_cancelled(thread_id):
@@ -73,8 +73,9 @@ def run_graph(message: str, thread_id: str,
             "selected_supplier": "FastShip Supply",
             "reasoning": "FastShip Supply offers the lowest unit cost ($8.10) and lowest lead time (3 days), comfortably meeting the 5-day constraint."
         }
+        # Use plain dict for messages to avoid langchain import issues in demo
         return {
-            "messages": [HumanMessage(content=message), type("AIMsg", (), {"content": plan})()],
+            "messages": [{"role": "user", "content": message}, {"role": "assistant", "content": plan}],
             "status": "awaiting_human",
             "pending_po": {
                 "po_id": "PO-948201",
@@ -192,7 +193,10 @@ async def chat_stream(req: ChatRequest):
             response_text = ""
             if messages:
                 last = messages[-1]
-                response_text = getattr(last, "content", str(last))
+                if isinstance(last, dict):
+                    response_text = last.get("content", "")
+                else:
+                    response_text = getattr(last, "content", str(last))
 
             pending_po = result.get("pending_po")
             hitl_required = result.get("status") == "awaiting_human" or pending_po is not None
@@ -257,7 +261,10 @@ async def chat(req: ChatRequest):
         response_text = ""
         if messages:
             last = messages[-1]
-            response_text = getattr(last, "content", str(last))
+            if isinstance(last, dict):
+                response_text = last.get("content", "")
+            else:
+                response_text = getattr(last, "content", str(last))
 
         pending_po = result.get("pending_po")
         hitl_required = result.get("status") == "awaiting_human"

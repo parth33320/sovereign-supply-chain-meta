@@ -26,7 +26,7 @@ async def activity_stream(request: Request, thread_id: str = ""):
                     "ts": ts,
                     "icon": entry.get("icon", "⚡"),
                     "source": entry.get("source", "system"),
-                    "msg": entry.get("msg", "")[:80]
+                    "msg": entry.get("msg", "")
                 }
                 yield f"data: {json.dumps(payload)}\n\n"
                 seen += 1

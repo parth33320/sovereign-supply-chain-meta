@@ -38,8 +38,8 @@ export default function ActivityLog({ entries, hidden,
         <div className="h-40 overflow-y-auto border border-[#30363d]
                         rounded-lg bg-[#0d1117] p-3 font-mono
                         text-xs text-[#8b949e] space-y-1">
-          {entries.map((e, i) => (
-            <div key={i} className="truncate">
+          {[...entries].reverse().map((e, i) => (
+            <div key={i} className="break-all whitespace-pre-wrap">
               [{e.ts}] {e.icon} {e.source}: {e.msg}
             </div>
           ))}
