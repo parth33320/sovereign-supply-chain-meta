@@ -8,6 +8,7 @@ if repo_root not in sys.path:
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from backend.routers import chat, upload, voice, hitl, activity, inventory, manager, whatif
@@ -41,11 +42,42 @@ async def health():
     return {
         "status": "ok",
         "demo_mode": os.environ.get("DEMO_MODE") == "1",
-        "manager_password": os.environ.get("MANAGER_PASSWORD", "sovereign")
+        "manager_password": os.environ.get("MANAGER_PASSWORD", "sovereign"),
+        "frontend_dist": os.path.exists(os.path.join(repo_root, "frontend", "dist")),
     }
 
-# Serve React build — must be LAST
+# Serve React build — static assets served directly, SPA fallback for all other routes
 frontend_dist = os.path.join(repo_root, "frontend", "dist")
+print(f"[startup] repo_root={repo_root} frontend_dist={frontend_dist} exists={os.path.exists(frontend_dist)}")
+
 if os.path.exists(frontend_dist):
-    app.mount("/", StaticFiles(directory=frontend_dist, html=True),
-              name="static")
+    # /assets/* and other static files served directly
+    assets_dir = os.path.join(frontend_dist, "assets")
+    if os.path.exists(assets_dir):
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+    # Serve favicon and other root-level static files
+    for static_file in ("favicon.svg", "icons.svg"):
+        static_path = os.path.join(frontend_dist, static_file)
+        if os.path.exists(static_path):
+            @app.get(f"/{static_file}")
+            async def _serve_static(p=static_path):
+                return FileResponse(p)
+
+    # SPA catch-all: serve index.html for any unmatched path
+    index_html = os.path.join(frontend_dist, "index.html")
+
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        """Serve React SPA — handles client-side routing."""
+        # Check if file exists (e.g. /favicon.svg, /assets/*)
+        file_path = os.path.join(frontend_dist, full_path)
+        if os.path.isfile(file_path):
+            return FileResponse(file_path)
+        return FileResponse(index_html)
+else:
+    print(f"[startup] WARNING: frontend/dist not found at {frontend_dist} — UI will not be served")
+
+    @app.get("/")
+    async def no_frontend():
+        return JSONResponse({"error": "Frontend not built", "hint": "Run: cd frontend && npm run build"})
