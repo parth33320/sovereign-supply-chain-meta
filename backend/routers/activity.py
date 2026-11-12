@@ -15,7 +15,8 @@ async def activity_stream(request: Request, thread_id: str = ""):
     """Streams activity log updates via Server-Sent Events (SSE)."""
     async def event_generator():
         seen = 0
-        yield "data: {\"icon\": \"⚡\", \"source\": \"system\", \"msg\": \"Connected\"}\n\n"
+        ts = datetime.now(timezone.utc).strftime("%H:%M:%S")
+        yield f"data: {{\"ts\": \"{ts}\", \"icon\": \"⚡\", \"source\": \"system\", \"msg\": \"Connected\"}}\n\n"
         is_test = os.environ.get("PYTEST_CURRENT_TEST") is not None
         while True:
             log = get_activity_log()

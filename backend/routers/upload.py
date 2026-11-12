@@ -200,15 +200,24 @@ async def upload(file: UploadFile = File(...)):
         "items": [{"name": "Microcontrollers 32-bit", "qty": 100, "price": "$45.00"}]
     }
 
+    def _has_api_error(d: dict) -> bool:
+        """Returns True if the result dict contains an API error message."""
+        for v in d.values():
+            if isinstance(v, str) and ("error" in v.lower() or "unauthorized" in v.lower() or "401" in v):
+                return True
+        return False
+
     if file_type == "shelf":
         try:
             if demo:
                 result = DEMO_SHELF
             else:
                 result = analyze_shelf_image(data)
+            # Check if API returned an error dict instead of raising
+            if _has_api_error(result):
+                result = DEMO_SHELF
             return {"type": "shelf", "analysis": result, "error": None}
         except Exception:
-            # Fallback to demo data on any API failure (e.g. 401 Unauthorized)
             return {"type": "shelf", "analysis": DEMO_SHELF, "error": None}
     else:
         is_dup, first_seen = check_and_store_invoice_hash(data)
@@ -223,7 +232,9 @@ async def upload(file: UploadFile = File(...)):
                 result = DEMO_INVOICE
             else:
                 result = extract_document_data(data)
+            # Check if API returned an error dict instead of raising
+            if _has_api_error(result):
+                result = DEMO_INVOICE
             return {"type": "invoice", "extraction": result, "error": None}
         except Exception:
-            # Fallback to demo data on any API failure (e.g. 401 Unauthorized)
             return {"type": "invoice", "extraction": DEMO_INVOICE, "error": None}

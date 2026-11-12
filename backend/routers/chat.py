@@ -218,7 +218,15 @@ async def chat_stream(req: ChatRequest):
         finally:
             cancel_registry.cleanup(thread_id)
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        }
+    )
 
 
 @router.post("/chat")

@@ -36,7 +36,15 @@ export default function Orchestrator() {
       const history = await getVoiceHistory()
       if (Array.isArray(history) && history.length > 0) {
         const formatted = history.map(h => ({
-          ts: (h.timestamp || '').split('T')[1]?.slice(0, 8) || (h.timestamp || '').slice(-8) || 'voice',
+          ts: (() => {
+            const t = h.timestamp
+            if (!t) return '--:--:--'
+            // ISO string: "2026-11-12T04:30:00..."
+            if (typeof t === 'string' && t.includes('T')) return t.split('T')[1]?.slice(0, 8) || t.slice(-8)
+            // Unix float seconds
+            const d = new Date(typeof t === 'number' ? t * 1000 : t)
+            return isNaN(d) ? String(t) : d.toLocaleTimeString('en-US', { hour12: false })
+          })(),
           icon: '🎙️',
           source: 'voice',
           msg: `"${h.transcript}"`
