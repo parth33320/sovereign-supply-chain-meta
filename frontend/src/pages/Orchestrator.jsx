@@ -387,22 +387,20 @@ export default function Orchestrator() {
         }}
       />
 
-      {/* Agent multi-step progress indicator when agentRunning */}
-      {agentRunning && (
-        <AgentProgress
-          currentNode={currentNode}
-          currentLabel={currentLabel}
-          itemCount={20}
-          stockoutCount={2}
-        />
-      )}
-
       <ChatWindow
         messages={messages}
         hidden={chatHidden}
         onToggle={() => setChatHidden(p => !p)}
         onClear={() => !hitlPending && setMessages([])}
         disabled={hitlPending}
+        agentRunning={agentRunning}
+        currentNode={currentNode}
+        currentLabel={currentLabel}
+        isPaused={hitlPending}
+        pendingPO={pendingPO}
+        threadId={threadId}
+        onApprove={handleApprove}
+        onReject={handleReject}
       />
 
       {/* Friendly Try Again button if error occurred */}
@@ -416,15 +414,6 @@ export default function Orchestrator() {
             <span>🔄 Try again</span>
           </button>
         </div>
-      )}
-
-      {hitlPending && (
-        <HITLCard
-          po={pendingPO}
-          threadId={threadId}
-          onApprove={handleApprove}
-          onReject={handleReject}
-        />
       )}
 
       {uploading && (

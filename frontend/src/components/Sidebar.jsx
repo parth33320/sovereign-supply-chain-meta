@@ -40,7 +40,7 @@ export default function Sidebar({ devMode, adminMode, role, onRoleChange, active
     <aside
       className={`${
         collapsed ? 'w-12 px-1' : 'w-48 px-3'
-      } bg-[#0d1117] border-r border-[#30363d] flex flex-col py-4 shrink-0 h-screen sticky top-0 justify-between transition-all duration-200 select-none`}
+      } bg-[#0d1117] border-r border-[#30363d] flex flex-col py-4 shrink-0 h-screen sticky top-0 justify-between transition-all duration-200 select-none overflow-hidden`}
     >
       <div>
         {/* Brand / Logo */}
@@ -79,13 +79,17 @@ export default function Sidebar({ devMode, adminMode, role, onRoleChange, active
 
           <button
             onClick={() => onNavigate('analytics')}
-            className={`w-full text-left px-2.5 py-1.5 rounded text-xs flex items-center gap-2 transition-colors ${
+            title="Analytics"
+            className={`w-full text-left py-1.5 rounded text-xs flex items-center transition-colors ${
+              collapsed ? 'justify-center px-1' : 'px-2.5 gap-2'
+            } ${
               activePage === 'analytics'
                 ? 'bg-[#21262d] text-[#58a6ff] font-semibold'
                 : 'text-[#8b949e] hover:text-[#e6edf3] hover:bg-[#161b22]'
             }`}
           >
-            <span>📊</span> Analytics
+            <span className="text-sm leading-none">📊</span>
+            {!collapsed && <span className="truncate whitespace-nowrap">Analytics</span>}
           </button>
 
           {role === 'manager' && (

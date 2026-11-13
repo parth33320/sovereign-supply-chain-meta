@@ -1,8 +1,13 @@
 import { useEffect, useRef } from 'react'
+import AgentProgress from './AgentProgress'
+import HITLCard from './HITLCard'
 
 export default function ChatWindow({ messages, hidden,
                                      onToggle, onClear,
-                                     disabled }) {
+                                     disabled,
+                                     agentRunning, currentNode, currentLabel,
+                                     isPaused, pendingPO, threadId,
+                                     onApprove, onReject }) {
   const bottomRef = useRef(null)
 
   useEffect(() => {
@@ -74,6 +79,30 @@ export default function ChatWindow({ messages, hidden,
               </span>
             </div>
           ))}
+          {/* Agent progress inline in chat thread */}
+          {agentRunning && (
+            <div className="px-1 py-2">
+              <AgentProgress
+                currentNode={currentNode}
+                currentLabel={currentLabel}
+                itemCount={20}
+                stockoutCount={2}
+              />
+            </div>
+          )}
+
+          {/* HITL purchase-order approval — inline in chat thread */}
+          {isPaused && pendingPO && (
+            <div className="px-1 py-2">
+              <HITLCard
+                po={pendingPO}
+                threadId={threadId}
+                onApprove={onApprove}
+                onReject={onReject}
+              />
+            </div>
+          )}
+
           <div ref={bottomRef} />
         </div>
       )}
