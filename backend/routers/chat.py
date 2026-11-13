@@ -120,6 +120,22 @@ def run_graph(message: str, thread_id: str,
                     mapped_node, mapped_label = node_labels[node_name]
                     event_callback(mapped_node, mapped_label)
                 result = node_output
+
+        # After stream, read full accumulated graph state so we get
+        # pending_po and status even when graph interrupted mid-run
+        try:
+            full_state = graph.get_state(config)
+            if full_state and full_state.values:
+                merged = dict(full_state.values)
+                if result:
+                    merged.update(result)
+                # If graph is interrupted before human_review, mark as awaiting
+                if full_state.next and "human_review" in full_state.next:
+                    merged["status"] = "awaiting_human"
+                result = merged
+        except Exception:
+            pass  # fall back to last node output if get_state fails
+
         return result or {}
     except Exception as e:
         if cancel_registry.is_cancelled(thread_id):
@@ -199,7 +215,8 @@ async def chat_stream(req: ChatRequest):
                     response_text = getattr(last, "content", str(last))
 
             pending_po = result.get("pending_po")
-            hitl_required = result.get("status") == "awaiting_human" or pending_po is not None
+            status = result.get("status", "")
+            hitl_required = status in ("awaiting_human", "drafted") or pending_po is not None
 
             get_activity_log().append({
                 "icon": "🚀", "source": "orchestrator",
@@ -275,7 +292,8 @@ async def chat(req: ChatRequest):
                 response_text = getattr(last, "content", str(last))
 
         pending_po = result.get("pending_po")
-        hitl_required = result.get("status") == "awaiting_human"
+        status = result.get("status", "")
+        hitl_required = status in ("awaiting_human", "drafted") or pending_po is not None
 
         get_activity_log().append({
             "icon": "🚀", "source": "orchestrator",
