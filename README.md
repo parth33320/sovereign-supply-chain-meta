@@ -1,4 +1,4 @@
-## Quickstart
+## Quickstart 
 ```bash
 git clone <repo-url>
 cd sovereign-supply-chain-meta
