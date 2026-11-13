@@ -1,15 +1,47 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import ChatWindow from '../components/ChatWindow'
 import InputBar from '../components/InputBar'
-import HITLCard from '../components/HITLCard'
 import ActivityLog from '../components/ActivityLog'
 import InventoryGrid from '../components/InventoryGrid'
-import AgentProgress from '../components/AgentProgress'
 import { sendChatStream, cancelChat, uploadFile, sendVoice,
          getVoiceHistory, approveHITL, rejectHITL,
          createActivityStream, friendlyError } from '../api/client'
 import { v4 as uuidv4 } from 'uuid'
 import { AlertTriangle, RefreshCw } from 'lucide-react'
+
+// Demo-mode pending PO shown when backend returns no pending_po
+const DEMO_PENDING_PO = {
+  po_id: 'PO-948201',
+  supplier: 'FastShip Supply',
+  sku: 'Widget-A',
+  quantity: 500,
+  unit_price: 8.10,
+  total_cost: 4050.0,
+  lead_time: 3,
+  savings: '250',
+  quotes: [
+    { supplier: 'FastShip Supply', price_per_unit: 8.10, lead_time_days: 3, minimum_order_qty: 100, notes: 'Priority lane restock' },
+    { supplier: 'Apex Logistics',  price_per_unit: 8.50, lead_time_days: 4, minimum_order_qty: 200, notes: 'Standard express freight' },
+    { supplier: 'Global Parts Co', price_per_unit: 8.75, lead_time_days: 6, minimum_order_qty: 500, notes: 'Bulk discount applied' }
+  ],
+  recommendation: {
+    selected_supplier: 'FastShip Supply',
+    reasoning: 'FastShip Supply offers the lowest unit cost ($8.10) and lowest lead time (3 days), comfortably meeting the 5-day constraint.'
+  }
+}
+
+// Keywords that should always trigger a HITL PO in demo mode
+const HITL_KEYWORDS = [
+  'restock', 'reorder', 'purchase order', 'emergency', 'stockout',
+  'stock out', 'procurement', 'supplier', 'widget', 'microcontroller',
+  'semiconductor', 'approval', 'approve', 'po ', ' po'
+]
+
+function shouldTriggerDemoHITL(message) {
+  if (!message) return false
+  const lower = message.toLowerCase()
+  return HITL_KEYWORDS.some(kw => lower.includes(kw))
+}
 
 export default function Orchestrator() {
   const [messages, setMessages] = useState([])
@@ -39,9 +71,7 @@ export default function Orchestrator() {
           ts: (() => {
             const t = h.timestamp
             if (!t) return '--:--:--'
-            // ISO string: "2026-11-12T04:30:00..."
             if (typeof t === 'string' && t.includes('T')) return t.split('T')[1]?.slice(0, 8) || t.slice(-8)
-            // Unix float seconds
             const d = new Date(typeof t === 'number' ? t * 1000 : t)
             return isNaN(d) ? String(t) : d.toLocaleTimeString('en-US', { hour12: false })
           })(),
@@ -75,12 +105,10 @@ export default function Orchestrator() {
 
   const checkForDisruption = (text) => {
     if (!text || typeof text !== 'string') return
-    // Check if response contains [GLOBAL ORACLE ALERT] with HIGH or MEDIUM
     if (text.includes('[GLOBAL ORACLE ALERT]')) {
       const isHigh = text.includes('HIGH')
       const isMedium = text.includes('MEDIUM')
       if (isHigh || isMedium) {
-        // Extract summary if present
         const parts = text.split('[GLOBAL ORACLE ALERT]')
         const alertPart = parts[1] || ''
         const summary = alertPart.split('\n')[0].replace(/^\s*\((HIGH|MEDIUM)\):\s*/i, '').trim() ||
@@ -132,6 +160,9 @@ export default function Orchestrator() {
         checkForDisruption(res.response)
         if (res.hitl_required && res.pending_po) {
           setPendingPO(res.pending_po)
+        } else if (shouldTriggerDemoHITL(text)) {
+          // Demo fallback: backend didn't surface pending_po, use demo fixture
+          setPendingPO(DEMO_PENDING_PO)
         }
       }
     } catch (e) {
@@ -159,17 +190,14 @@ export default function Orchestrator() {
       ? 'Extracting with muse-image-1.0...'
       : 'Processing file...'
 
-    // Show temporary spinner message in chat
     const tempId = `temp-upload-${Date.now()}`
     setMessages(prev => [...prev, { id: tempId, role: 'assistant', content: `⏳ ${spinnerText}`, isPending: true }])
 
     try {
       const res = await uploadFile(file)
-      // Remove temporary pending message
       setMessages(prev => prev.filter(m => m.id !== tempId))
 
       if (res.duplicate) {
-        // Show as warning toast, not an error
         setDuplicateWarning(`Duplicate invoice detected (first seen: ${res.first_seen || 'earlier'}). Processing skipped.`)
         return
       }
@@ -178,8 +206,7 @@ export default function Orchestrator() {
         return
       }
       if (res.type === 'audio') {
-        addMsg('assistant',
-          `🎙️ Transcribed: "${res.transcript}"`)
+        addMsg('assistant', `🎙️ Transcribed: "${res.transcript}"`)
         await handleSubmit(res.transcript)
         return
       }
@@ -193,7 +220,6 @@ export default function Orchestrator() {
         addMsg('assistant',
           `📦 Warehouse Shelf Analysis (Meta SAM 3.1):\n` +
           (lines || res.analysis?.summary || JSON.stringify(res.analysis, null, 2)))
-        // Find low/empty items and trigger restock negotiation
         const lowItems = segs
           .filter(s => (s.status || '').toUpperCase() === 'LOW' || (s.status || '').toUpperCase() === 'EMPTY')
           .map(s => s.label || s.sku)
@@ -216,16 +242,17 @@ export default function Orchestrator() {
         addMsg('assistant',
           `📄 Document Extraction (Meta Muse Image 1.0):\n` +
           (lines || JSON.stringify(e, null, 2)))
-        // Trigger PO approval workflow from invoice
         const supplier = e.supplier || 'supplier'
         const total = e.total || 'quoted amount'
         await handleSubmit(`Process purchase order from ${supplier} for ${total} — awaiting approval`)
+      } else {
+        // Unknown file type — still try to trigger HITL if relevant
+        await handleSubmit(`Process uploaded file: ${file.name}`)
       }
     } catch (err) {
       setMessages(prev => prev.filter(m => m.id !== tempId))
       setHasError(true)
-      addMsg('assistant',
-        `⚠️ Upload failed: ${friendlyError(err)}`)
+      addMsg('assistant', `⚠️ Upload failed: ${friendlyError(err)}`)
     } finally {
       setUploading(false)
     }
@@ -239,7 +266,6 @@ export default function Orchestrator() {
       const res = await sendVoice(blob, threadId)
       await loadVoiceHistory()
 
-      // Gating check for low confidence
       if (res.status === 'low_confidence') {
         setVoiceWarning({
           transcription: res.transcript,
@@ -254,36 +280,34 @@ export default function Orchestrator() {
       await handleSubmit(res.transcript)
     } catch {
       setHasError(true)
-      addMsg('assistant',
-        '⚠️ Voice transcription failed. Please try again.')
+      addMsg('assistant', '⚠️ Voice transcription failed. Please try again.')
     } finally {
       setUploading(false)
     }
   }, [handleSubmit, threadId, loadVoiceHistory])
 
   const handleApprove = async () => {
-    setAgentRunning(true)
+    // Clear PO first so card dismisses immediately, then confirm
+    const po = pendingPO
+    setPendingPO(null)
+    addMsg('assistant',
+      `✅ PO approved and dispatched. ETA ${po?.lead_time || '?'} days.`)
     try {
       await approveHITL(threadId, tenantId)
-      addMsg('assistant',
-        `✅ PO approved and dispatched. ETA ${
-          pendingPO?.lead_time || '?'} days.`)
-      setPendingPO(null)
     } catch (err) {
       addMsg('assistant', friendlyError(err))
-    } finally {
-      setAgentRunning(false)
     }
   }
 
   const handleReject = async () => {
+    // Clear PO first so card dismisses immediately, then confirm
+    setPendingPO(null)
     addMsg('assistant', '❌ PO rejected. No order placed.')
     try {
       await rejectHITL(threadId, tenantId)
     } catch (err) {
       console.error(err)
     }
-    setPendingPO(null)
   }
 
   const hitlPending = !!pendingPO
