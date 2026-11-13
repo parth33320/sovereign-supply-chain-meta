@@ -47,17 +47,9 @@ export async function sendChatStream(message, threadId, tenantId = 'Tenant_A', o
   while (true) {
     const { done, value } = await reader.read()
     if (done) {
-      // Flush any remaining buffer on stream close
+      // Flush remaining buffer — append sentinel so the split captures the last event
       if (buffer.trim()) {
-        const line = buffer.trim()
-        if (line.startsWith('data:')) {
-          try {
-            const data = JSON.parse(line.replace(/^data:\s*/, ''))
-            if (data.blocked || data.node === 'complete' || data.response !== undefined) {
-              finalResult = data
-            }
-          } catch {}
-        }
+        processChunk('\n\n')
       }
       break
     }
