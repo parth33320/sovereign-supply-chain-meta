@@ -715,10 +715,12 @@ if 'demo_pending_po' not in st.session_state:
     st.session_state.demo_pending_po = None
 if 'demo_pending_plan' not in st.session_state:
     st.session_state.demo_pending_plan = ""
-if 'activity_log' not in st.session_state:
+BUILD_ID = os.environ.get("RENDER_GIT_COMMIT", "dev")[:8]
+if 'activity_log' not in st.session_state or st.session_state.get("build_id") != BUILD_ID:
     st.session_state.activity_log = [
-        {"ts": time.strftime("%H:%M:%S"), "icon": "⚡", "source": "system", "msg": "System initialized in Sovereign Mode (Ready)"}
+        {"ts": time.strftime("%H:%M:%S"), "icon": "⚡", "source": "system", "msg": f"System ready (build {BUILD_ID})"}
     ]
+    st.session_state.build_id = BUILD_ID
 if 'activity_log_expanded' not in st.session_state:
     st.session_state.activity_log_expanded = False
 
@@ -820,7 +822,11 @@ def execute_agent_synchronous(dispatched_prompt: str, tenant_id: str, request_id
                 for m in final_messages:
                     if isinstance(m, AIMessage):
                         if not any(chat["content"] == m.content for chat in st.session_state.chat_history):
-                            st.session_state.chat_history.append({"role": "assistant", "content": m.content})
+                            st.session_state.chat_history.append({
+                                "role": "assistant",
+                                "content": m.content,
+                                "ts": time.strftime("%H:%M:%S")
+                            })
                         if "[GLOBAL ORACLE ALERT]" in m.content:
                             match = re.search(r"\[GLOBAL ORACLE ALERT\]\s*\((.*?)\):\s*(.*)", m.content)
                             if match:
@@ -951,7 +957,11 @@ if st.session_state.get("auto_submit_prompt"):
         st.session_state.waf_history.append({"timestamp": time.strftime("%H:%M:%S"), "count": 1})
         log_activity("guardrails", "Prompt injection blocked: malicious pattern", icon="❌")
         block_msg = "⚠️ That input was blocked by safety guardrails.\n\nTry:\n• Check stock levels for Widget-A\n• Reorder 500 Microcontrollers\n• Emergency restock Semiconductors"
-        st.session_state.chat_history.append({"role": "assistant", "content": block_msg})
+        st.session_state.chat_history.append({
+            "role": "assistant",
+            "content": block_msg,
+            "ts": time.strftime("%H:%M:%S")
+        })
         st.session_state["prefill_prompt"] = ""
         st.session_state.prefilled_prompt = ""
     elif check_missing_item_and_suggest(to_submit, tenant_id):
@@ -968,7 +978,11 @@ if st.session_state.get("auto_submit_prompt"):
             show_user_error("Rate limit reached.", "Please wait a few seconds before sending another request.")
             st.stop()
 
-        st.session_state.chat_history.append({"role": "user", "content": to_submit})
+        st.session_state.chat_history.append({
+            "role": "user",
+            "content": to_submit,
+            "ts": time.strftime("%H:%M:%S")
+        })
         request_id = str(uuid.uuid4())
         dispatched_prompt = to_submit
         if st.session_state.get("shelf_context") and st.session_state["shelf_context"].get("summary"):
@@ -977,24 +991,82 @@ if st.session_state.get("auto_submit_prompt"):
 
         st.session_state.pending_prompt = dispatched_prompt
         if DEMO_MODE:
-            resp_plan = (
-                f"Orchestrator Analysis for '{to_submit}':\n"
-                f"• Tenant: {tenant_id}\n"
-                f"• Stock level verified across regional hubs.\n"
-                f"• Draft reallocation route: Warehouse-West to Distribution-East.\n"
-                f"• Optimal carrier dispatch generated with ETA 24 hours."
-            )
-            st.session_state.chat_history.append({"role": "assistant", "content": resp_plan})
-            st.session_state.demo_pending_plan = resp_plan
-            st.session_state.demo_paused_for_hitl = True
-            st.session_state.demo_pending_po = {
-                "po_id": "PO-948201",
-                "items": [{"sku": "SKU-STEEL-BEAMS", "qty": 500}],
-                "restock_quantity": 500,
-                "price_per_unit": 42.50,
-                "lead_time_days": 3,
-                "supplier": "Apex Logistics Supplier AI"
+            # Determine what item the demo should focus on
+            shelf_ctx = st.session_state.get("shelf_context")
+
+            # Priority 1: shelf image was uploaded — use lowest-stock item
+            if shelf_ctx and shelf_ctx.get("items"):
+                items = shelf_ctx["items"]
+                # Find emptiest item
+                worst = min(items, key=lambda x: x.get("fill_pct", 100))
+                demo_sku = worst.get("sku", "Widget-A")
+                demo_item_name = worst.get("name", "Widget-A")
+            # Priority 2: parse item from text input
+            elif to_submit:
+                # Extract item name from common patterns
+                import re
+                m = re.search(
+                    r"(?:restock|reorder|stock|check)\s+(?:\d+\s+)?(?:units?\s+of\s+)?([A-Za-z0-9\-\s]+?)(?:\s*$|\s*—|\s*,|\s*\.)",
+                    to_submit, re.IGNORECASE
+                )
+                demo_item_name = m.group(1).strip() if m else "Widget-A"
+                demo_sku = "SKU-" + demo_item_name.upper().replace(" ", "-")
+            else:
+                demo_item_name = "Widget-A"
+                demo_sku = "SKU-WIDGET-A"
+
+            # Look up item in live inventory to get real reorder quantity
+            try:
+                inv_rows = execute_query(
+                    "SELECT item_name, quantity FROM inventory WHERE tenant_id = ? AND LOWER(item_name) LIKE ?",
+                    [tenant_id, f"%{demo_item_name.lower()[:8]}%"]
+                )
+                if inv_rows:
+                    matched = inv_rows[0]
+                    demo_item_name = matched["item_name"]
+                    current_qty = matched["quantity"]
+                else:
+                    current_qty = 0
+            except Exception:
+                current_qty = 0
+
+            reorder_qty = max(500, (1000 - current_qty))
+            demo_po = {
+                "po_id": f"PO-{uuid.uuid4().hex[:6].upper()}",
+                "items": [{"sku": demo_sku, "qty": reorder_qty}],
+                "restock_quantity": reorder_qty,
+                "price_per_unit": 14.20,
+                "lead_time_days": 4,
+                "supplier": "Global Electronics Supplier AI",
+                "item_name": demo_item_name,
             }
+
+            qty = demo_po["restock_quantity"]
+            price = demo_po["price_per_unit"]
+            total = qty * price
+            lead = demo_po["lead_time_days"]
+            supplier = demo_po["supplier"]
+            po_id = demo_po["po_id"]
+            item_name = demo_po["item_name"]
+
+            append_activity_log("✅", "disruption-radar", "Disruption radar scan complete")
+            append_activity_log("✅", "inventory", f"Stockout confirmed: {item_name}")
+            append_activity_log("⚡", "a2a", f"Negotiated ${price}/unit with {supplier}")
+            append_activity_log("⏸️", "hitl", f"Paused for operator approval: {po_id}")
+
+            po_bubble = (
+                f"Stockout detected for **{item_name}**. Negotiated **${price}/unit** with {supplier}. "
+                f"Approval required.\n\n"
+                f"⚡ **{po_id}** · {qty} units · ${price}/unit · **${total:,.2f}** · {lead} days"
+            )
+            st.session_state.chat_history.append({
+                "role": "assistant",
+                "content": po_bubble,
+                "ts": time.strftime("%H:%M:%S")
+            })
+            st.session_state.demo_pending_plan = po_bubble
+            st.session_state.demo_pending_po = demo_po
+            st.session_state.demo_paused_for_hitl = True
         else:
             execute_agent_synchronous(dispatched_prompt, tenant_id, request_id)
         st.rerun()
@@ -1375,6 +1447,9 @@ elif selected_module == "Orchestrator":
                     st.write("🤖 How can I assist with your supply chain today?")
             for msg in st.session_state.chat_history:
                 with st.chat_message(msg["role"]):
+                    ts = msg.get("ts", "")
+                    if ts:
+                        st.caption(ts)
                     st.write(msg["content"])
 
             # Native Drawers inside chat container boundary
@@ -1473,9 +1548,25 @@ elif selected_module == "Orchestrator":
                     ""
                 )
                 conf_msg = f"🤖 ✅ Purchase Order {po_id or 'PO-9402'} approved and dispatched. Carrier route initiated with ETA {lead_time} days."
-                st.session_state.chat_history.append({"role": "assistant", "content": conf_msg})
+                st.session_state.chat_history.append({
+                    "role": "assistant",
+                    "content": conf_msg,
+                    "ts": time.strftime("%H:%M:%S")
+                })
                 append_activity_log("⚡", "orchestrator", f"{po_id or 'PO-9402'} approved by operator")
                 if DEMO_MODE:
+                    if st.session_state.get("demo_pending_po"):
+                        po = st.session_state.demo_pending_po
+                        item = po.get("item_name", "")
+                        qty = po.get("restock_quantity", 500)
+                        if item:
+                            try:
+                                execute_mutation(
+                                    "UPDATE inventory SET quantity = quantity + ? WHERE tenant_id = ? AND LOWER(item_name) LIKE ?",
+                                    [qty, tenant_id, f"%{item.lower()[:8]}%"]
+                                )
+                            except Exception:
+                                pass
                     st.session_state.demo_paused_for_hitl = False
                     st.session_state.demo_pending_po = None
                 else:
@@ -1492,7 +1583,11 @@ elif selected_module == "Orchestrator":
                     st.session_state.get('demo_pending_plan', st.session_state.get('pending_plan', ''))
                 )
                 rej_msg = f"🤖 ❌ Purchase Order {po_id or 'PO-9402'} rejected by operator."
-                st.session_state.chat_history.append({"role": "assistant", "content": rej_msg})
+                st.session_state.chat_history.append({
+                    "role": "assistant",
+                    "content": rej_msg,
+                    "ts": time.strftime("%H:%M:%S")
+                })
                 append_activity_log("❌", "orchestrator", f"{po_id or 'PO-9402'} rejected by operator")
                 if DEMO_MODE:
                     st.session_state.demo_paused_for_hitl = False
@@ -1514,7 +1609,8 @@ elif selected_module == "Orchestrator":
                     st.session_state.shelf_context = analysis
                     st.session_state.chat_history.append({
                         "role": "assistant",
-                        "content": f"🤖 **Warehouse Shelf Analyzed:** {analysis.get('summary', 'Low stock detected.')}"
+                        "content": f"🤖 **Warehouse Shelf Analyzed:** {analysis.get('summary', 'Low stock detected.')}",
+                        "ts": time.strftime("%H:%M:%S")
                     })
                     st.session_state.pending_image_choice = None
                     st.session_state.active_input_mode = None
@@ -1610,7 +1706,11 @@ elif selected_module == "Orchestrator":
                     "```\nReorder 500 Microcontrollers\n```\n"
                     "```\nEmergency restock Semiconductors\n```"
                 )
-                st.session_state.chat_history.append({"role": "assistant", "content": help_text})
+                st.session_state.chat_history.append({
+                    "role": "assistant",
+                    "content": help_text,
+                    "ts": time.strftime("%H:%M:%S")
+                })
                 append_activity_log("ℹ️", "help", "Help guide displayed")
                 st.rerun()
 
