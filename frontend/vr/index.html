@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Supply Chain AR Walk</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #000; font-family: -apple-system, sans-serif; color: #fff; }
+#ui {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: env(safe-area-inset-top,16px) 16px env(safe-area-inset-bottom,16px);
+  z-index: 100; pointer-events: none;
+}
+#enter-btn {
+  pointer-events: all;
+  padding: 20px 48px; font-size: 22px; font-weight: bold;
+  background: #0066ff; color: #fff; border: none;
+  border-radius: 16px; cursor: pointer; letter-spacing: 0.5px;
+}
+#enter-btn:active { background: #0044cc; }
+#mode-badge {
+  pointer-events: all;
+  margin-top: 16px; padding: 8px 20px;
+  background: rgba(0,102,255,0.25); border: 1px solid #0066ff;
+  border-radius: 20px; font-size: 14px; color: #66aaff;
+  display: none;
+}
+#status {
+  pointer-events: all;
+  margin-top: 12px; font-size: 13px; color: #888;
+  text-align: center; max-width: 320px; line-height: 1.5;
+}
+#ar-panel {
+  position: fixed; bottom: 24px; left: 12px; right: 12px;
+  background: rgba(0,8,24,0.92); border-radius: 18px;
+  padding: 18px; max-height: 55vh; overflow-y: auto;
+  backdrop-filter: blur(12px); z-index: 200;
+  pointer-events: all;
+}
+#scan-btn {
+  position: fixed; bottom: 24px; right: 20px;
+  width: 64px; height: 64px; border-radius: 50%;
+  background: #0066ff; border: none; color: #fff;
+  font-size: 28px; cursor: pointer; z-index: 300;
+  display: none; pointer-events: all;
+  box-shadow: 0 4px 20px rgba(0,102,255,0.5);
+}
+#toggle-btn {
+  position: fixed; bottom: 24px; left: 20px;
+  width: 64px; height: 64px; border-radius: 50%;
+  background: rgba(0,8,24,0.8); border: 2px solid #0066ff;
+  color: #66aaff; font-size: 13px; font-weight: bold;
+  cursor: pointer; z-index: 300; display: none;
+  pointer-events: all;
+}
+canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+
+<div id="ui">
+  <button id="enter-btn" onclick="enterAR()">🏭 Enter AR Walk</button>
+  <div id="mode-badge">Mode: <span id="mode-label">SHELF</span></div>
+  <div id="status">Open in Meta Quest Browser to begin AR session</div>
+</div>
+
+<button id="scan-btn" title="Pinch or tap to scan">📸</button>
+<button id="toggle-btn" onclick="toggleMode()">SHELF</button>
+<div id="ar-panel" style="display:none"></div>
+
+<script>
+// ── CONFIG ────────────────────────────────────────────────────────────────────
+const API_BASE = "";
+
+// ── STATE ─────────────────────────────────────────────────────────────────────
+let xrSession = null;
+let xrRefSpace = null;
+let gl = null;
+let mode = "shelf";
+let scanning = false;
+let handRight = null;
+let handLeft  = null;
+let pinchWasDown = { left: false, right: false };
+
+// ── ENTRY ─────────────────────────────────────────────────────────────────────
+async function enterAR() {
+  if (!navigator.xr) {
+    // Desktop/non-Quest fallback: just show demo panel directly
+    showDesktopDemo();
+    return;
+  }
+
+  const supported = await navigator.xr.isSessionSupported("immersive-ar").catch(() => false);
+  if (!supported) {
+    showDesktopDemo();
+    return;
+  }
+
+  try {
+    xrSession = await navigator.xr.requestSession("immersive-ar", {
+      requiredFeatures: ["local-floor"],
+      optionalFeatures: ["hand-tracking", "camera-access", "dom-overlay"],
+      domOverlay: { root: document.body }
+    });
+  } catch(e) {
+    setStatus("AR failed: " + e.message + " — showing demo mode");
+    showDesktopDemo();
+    return;
+  }
+
+  const canvas = document.getElementById("canvas");
+  gl = canvas.getContext("webgl2", { xrCompatible: true });
+  await gl.makeXRCompatible();
+  xrSession.updateRenderState({ baseLayer: new XRWebGLLayer(xrSession, gl) });
+  xrRefSpace = await xrSession.requestReferenceSpace("local-floor");
+
+  xrSession.addEventListener("end", () => {
+    xrSession = null;
+    setStatus("Session ended.");
+    document.getElementById("scan-btn").style.display = "none";
+    document.getElementById("toggle-btn").style.display = "none";
+  });
+
+  document.getElementById("enter-btn").style.display = "none";
+  document.getElementById("mode-badge").style.display = "block";
+  document.getElementById("scan-btn").style.display = "flex";
+  document.getElementById("toggle-btn").style.display = "flex";
+  document.getElementById("scan-btn").onclick = () => triggerScan();
+
+  setStatus("👐 Pinch RIGHT to scan · Pinch LEFT to toggle mode");
+  xrSession.requestAnimationFrame(onXRFrame);
+}
+
+// ── DESKTOP DEMO (no Quest needed — for browser testing) ──────────────────────
+function showDesktopDemo() {
+  document.getElementById("enter-btn").style.display = "none";
+  document.getElementById("scan-btn").style.display = "flex";
+  document.getElementById("toggle-btn").style.display = "flex";
+  document.getElementById("mode-badge").style.display = "block";
+  document.getElementById("scan-btn").onclick = () => triggerScan();
+  setStatus("Demo mode — tap 📸 to simulate a scan");
+}
+
+// ── XR FRAME LOOP ─────────────────────────────────────────────────────────────
+function onXRFrame(time, frame) {
+  if (!xrSession) return;
+  xrSession.requestAnimationFrame(onXRFrame);
+
+  const pose = frame.getViewerPose(xrRefSpace);
+  if (!pose) return;
+
+  // Collect hand input sources
+  for (const src of xrSession.inputSources) {
+    if (!src.hand) continue;
+    if (src.handedness === "right") handRight = src;
+    if (src.handedness === "left")  handLeft  = src;
+  }
+
+  if (!scanning) {
+    const rPinch = detectPinch(frame, handRight);
+    const lPinch = detectPinch(frame, handLeft);
+
+    // Edge-trigger: only fire on pinch DOWN (not held)
+    if (rPinch && !pinchWasDown.right) triggerScan();
+    if (lPinch && !pinchWasDown.left)  { toggleMode(); }
+    pinchWasDown.right = rPinch;
+    pinchWasDown.left  = lPinch;
+  }
+
+  // Clear framebuffer (passthrough is composited by OS)
+  const baseLayer = xrSession.renderState.baseLayer;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, baseLayer.framebuffer);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+}
+
+// ── PINCH DETECTION ───────────────────────────────────────────────────────────
+function detectPinch(frame, src) {
+  if (!src?.hand || !xrRefSpace) return false;
+  try {
+    const idx = frame.getJointPose(src.hand.get("index-finger-tip"), xrRefSpace);
+    const thm = frame.getJointPose(src.hand.get("thumb-tip"), xrRefSpace);
+    if (!idx || !thm) return false;
+    const p = idx.transform.position, q = thm.transform.position;
+    const d = Math.hypot(p.x-q.x, p.y-q.y, p.z-q.z);
+    return d < 0.025;
+  } catch { return false; }
+}
+
+// ── SCAN TRIGGER ──────────────────────────────────────────────────────────────
+async function triggerScan() {
+  if (scanning) return;
+  scanning = true;
+  setStatus("📸 Scanning " + mode + "…");
+  document.getElementById("scan-btn").style.opacity = "0.4";
+
+  // Always use demo endpoint for now (real endpoint needs valid base64 image)
+  const endpoint = mode === "shelf"
+    ? "/api/vr/shelf-scan/demo"
+    : "/api/vr/invoice-scan/demo";
+
+  try {
+    const res = await fetch(API_BASE + endpoint, { method: "POST" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    renderPanel(data);
+    setStatus("✅ Done · Pinch RIGHT to rescan · Pinch LEFT to toggle");
+  } catch(e) {
+    setStatus("❌ " + e.message + " — check API_BASE tunnel URL");
+  }
+
+  document.getElementById("scan-btn").style.opacity = "1";
+  setTimeout(() => { scanning = false; }, 1500);
+}
+
+// ── MODE TOGGLE ───────────────────────────────────────────────────────────────
+function toggleMode() {
+  mode = mode === "shelf" ? "invoice" : "shelf";
+  document.getElementById("mode-label").textContent = mode.toUpperCase();
+  document.getElementById("toggle-btn").textContent = mode.toUpperCase();
+  document.getElementById("ar-panel").style.display = "none";
+  setStatus("Mode: " + mode.toUpperCase() + " · Pinch RIGHT to scan");
+}
+
+// ── PANEL RENDERER ────────────────────────────────────────────────────────────
+function renderPanel(data) {
+  const panel = document.getElementById("ar-panel");
+  panel.style.display = "block";
+  panel.innerHTML = "";
+
+  if (data.type === "shelf") {
+    panel.style.borderTop = "3px solid #0066ff";
+    let html = `<div style="font-size:17px;font-weight:700;color:#4499ff;margin-bottom:12px">🏭 Shelf Scan — Bay A-14</div>`;
+    if (data.action_required) {
+      html += `<div style="background:#ff330022;border:1px solid #ff4444;border-radius:10px;padding:10px;margin-bottom:12px;color:#ff9999;font-size:13px">⚠️ Action required: low/empty stock detected</div>`;
+    }
+    for (const z of data.zones) {
+      html += `
+        <div style="display:flex;align-items:center;padding:7px 0;border-bottom:1px solid #ffffff15">
+          <span style="width:11px;height:11px;border-radius:50%;background:${z.color};display:inline-block;margin-right:10px;flex-shrink:0"></span>
+          <span style="flex:1;font-size:14px">${z.sku}</span>
+          <span style="font-size:13px;color:${z.color};font-weight:600">${z.status === "empty" ? "EMPTY" : z.status === "low" ? "LOW: "+z.qty : z.qty+" units"}</span>
+        </div>`;
+    }
+    html += `<div style="margin-top:10px;color:#555;font-size:11px">${data.summary}</div>`;
+    panel.innerHTML = html;
+
+  } else if (data.type === "invoice") {
+    panel.style.borderTop = "3px solid #00cc88";
+    let items = (data.items||[]).map(i =>
+      `<div style="padding:5px 0;border-bottom:1px solid #ffffff11;font-size:13px;color:#ccc">
+        ${i.sku} &nbsp;·&nbsp; qty: ${i.qty} &nbsp;·&nbsp; $${i.cost}
+      </div>`
+    ).join("");
+    panel.innerHTML = `
+      <div style="font-size:17px;font-weight:700;color:#00cc88;margin-bottom:12px">📄 Invoice Scan</div>
+      <div style="font-size:14px;margin-bottom:4px"><b>Supplier:</b> ${data.supplier}</div>
+      <div style="font-size:13px;color:#888;margin-bottom:10px"><b>Dates:</b> ${data.dates.join(", ")}</div>
+      <div style="font-size:13px;font-weight:600;margin-bottom:6px">Line Items:</div>
+      ${items}
+      <div style="margin-top:10px;font-size:14px"><b>Total:</b> ${data.total}</div>
+      <div style="margin-top:10px;background:#00441122;border:1px solid #00cc88;border-radius:10px;padding:10px;font-size:13px;color:#88ffcc">
+        <b>Draft Action:</b> ${data.draft_instruction}
+      </div>`;
+  }
+
+  // Close button
+  const close = document.createElement("div");
+  close.innerHTML = "✕ close";
+  close.style.cssText = "text-align:center;margin-top:14px;color:#555;font-size:12px;cursor:pointer;padding:4px";
+  close.onclick = () => { panel.style.display = "none"; };
+  panel.appendChild(close);
+}
+
+// ── UTILS ─────────────────────────────────────────────────────────────────────
+function setStatus(msg) {
+  document.getElementById("status").textContent = msg;
+}
+</script>
+</body>
+</html>

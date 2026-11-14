@@ -5,33 +5,64 @@ Exposes warehouse_vision and document_vision over HTTP for the Quest WebXR front
 Run alongside Streamlit:  uvicorn vr_api:app --port 8502 --reload
 """
 import base64
-import io
 import os
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
-
-# Import your existing modules
-from warehouse_vision import analyze_shelf_image
-from document_vision import extract_document_data
 
 app = FastAPI(title="Supply Chain VR API")
 
-# Allow Quest browser + local dev
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],          # tighten to your GitHub Pages URL before demo
+    allow_origins=["*"],
     allow_methods=["POST", "GET"],
     allow_headers=["*"],
 )
 
 class ImagePayload(BaseModel):
-    image_b64: str          # base64-encoded JPEG from Quest camera
+    image_b64: str
     mime_type: str = "image/jpeg"
+
+@app.get("/")
+async def serve_frontend():
+    return FileResponse(
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend", "vr", "index.html")
+    )
 
 @app.get("/health")
 def health():
     return {"status": "ok", "version": "S15"}
+
+@app.post("/api/vr/shelf-scan/demo")
+async def shelf_scan_demo():
+    return {
+        "type": "shelf",
+        "summary": "Bay A-14: 3 of 6 SKUs require attention.",
+        "action_required": True,
+        "zones": [
+            {"sku": "Semiconductors",     "qty": 0,  "status": "empty", "color": "#ff3333", "label": "Semiconductors: EMPTY"},
+            {"sku": "Copper Wire Spools", "qty": 3,  "status": "low",   "color": "#ffaa00", "label": "Copper Wire Spools: LOW: 3"},
+            {"sku": "Microcontrollers",   "qty": 0,  "status": "empty", "color": "#ff3333", "label": "Microcontrollers: EMPTY"},
+            {"sku": "Steel Bearings",     "qty": 24, "status": "ok",    "color": "#00ff88", "label": "Steel Bearings: 24 units"},
+            {"sku": "Polymer Pellets",    "qty": 18, "status": "ok",    "color": "#00ff88", "label": "Polymer Pellets: 18 units"},
+            {"sku": "Circuit Boards",     "qty": 2,  "status": "low",   "color": "#ffaa00", "label": "Circuit Boards: LOW: 2"},
+        ]
+    }
+
+@app.post("/api/vr/invoice-scan/demo")
+async def invoice_scan_demo():
+    return {
+        "type": "invoice",
+        "supplier": "Acme Semiconductor Co.",
+        "dates": ["2026-11-10", "2026-11-18"],
+        "items": [
+            {"sku": "Semiconductors",   "qty": 500,  "cost": "12500.00"},
+            {"sku": "Microcontrollers", "qty": 1000, "cost": "8750.00"},
+        ],
+        "total": "$21,250.00",
+        "draft_instruction": "Approve PO for 500 Semiconductors + 1000 Microcontrollers from Acme. Delivery by Nov 18."
+    }
 
 @app.post("/api/vr/shelf-scan")
 async def shelf_scan(payload: ImagePayload):
@@ -45,7 +76,7 @@ async def shelf_scan(payload: ImagePayload):
         raise HTTPException(status_code=400, detail="Invalid base64 image")
 
     try:
-        result = analyze_shelf_image(image_bytes)
+        result = _get_shelf_analyzer()(image_bytes)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Shelf analysis failed: {e}")
 
@@ -66,7 +97,7 @@ async def invoice_scan(payload: ImagePayload):
         raise HTTPException(status_code=400, detail="Invalid base64 image")
 
     try:
-        result = extract_document_data(image_bytes)
+        result = _get_invoice_extractor()(image_bytes)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Invoice extraction failed: {e}")
 
