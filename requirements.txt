@@ -25,3 +25,5 @@ httpx==0.28.0
 pytest-timeout==2.4.0
 setuptools
 streamlit<=1.52.0
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
