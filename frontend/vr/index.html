@@ -7,110 +7,186 @@
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { background: #000; font-family: -apple-system, sans-serif; color: #fff; }
-#ui {
-  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-  display: flex; flex-direction: column;
-  align-items: center; justify-content: center;
-  padding: env(safe-area-inset-top,16px) 16px env(safe-area-inset-bottom,16px);
-  z-index: 100; pointer-events: none;
-}
+
 #enter-btn {
-  pointer-events: all;
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
   padding: 20px 48px; font-size: 22px; font-weight: bold;
   background: #0066ff; color: #fff; border: none;
-  border-radius: 16px; cursor: pointer; letter-spacing: 0.5px;
+  border-radius: 16px; cursor: pointer; z-index: 200;
 }
 #enter-btn:active { background: #0044cc; }
+
+#status {
+  position: fixed; top: calc(50% + 60px); left: 50%; transform: translateX(-50%);
+  font-size: 13px; color: #888; text-align: center;
+  max-width: 320px; line-height: 1.5; z-index: 200;
+}
+
 #mode-badge {
-  pointer-events: all;
-  margin-top: 16px; padding: 8px 20px;
-  background: rgba(0,102,255,0.25); border: 1px solid #0066ff;
-  border-radius: 20px; font-size: 14px; color: #66aaff;
+  position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+  padding: 8px 20px; background: rgba(0,102,255,0.25);
+  border: 1px solid #0066ff; border-radius: 20px;
+  font-size: 14px; color: #66aaff; z-index: 200;
   display: none;
 }
-#status {
-  pointer-events: all;
-  margin-top: 12px; font-size: 13px; color: #888;
-  text-align: center; max-width: 320px; line-height: 1.5;
-}
-#ar-panel {
-  position: fixed; bottom: 24px; left: 12px; right: 12px;
-  background: rgba(0,8,24,0.92); border-radius: 18px;
-  padding: 18px; max-height: 55vh; overflow-y: auto;
-  backdrop-filter: blur(12px); z-index: 200;
-  pointer-events: all;
-}
+
 #scan-btn {
-  position: fixed; bottom: 24px; right: 20px;
-  width: 64px; height: 64px; border-radius: 50%;
+  position: fixed; bottom: 32px; right: 24px;
+  width: 72px; height: 72px; border-radius: 50%;
   background: #0066ff; border: none; color: #fff;
-  font-size: 28px; cursor: pointer; z-index: 300;
-  display: none; pointer-events: all;
-  box-shadow: 0 4px 20px rgba(0,102,255,0.5);
+  font-size: 30px; cursor: pointer; z-index: 300;
+  display: none;
+  box-shadow: 0 4px 24px rgba(0,102,255,0.6);
 }
+
 #toggle-btn {
-  position: fixed; bottom: 24px; left: 20px;
-  width: 64px; height: 64px; border-radius: 50%;
-  background: rgba(0,8,24,0.8); border: 2px solid #0066ff;
-  color: #66aaff; font-size: 13px; font-weight: bold;
+  position: fixed; bottom: 32px; left: 24px;
+  width: 72px; height: 72px; border-radius: 50%;
+  background: rgba(0,8,24,0.9); border: 2px solid #0066ff;
+  color: #66aaff; font-size: 12px; font-weight: bold;
   cursor: pointer; z-index: 300; display: none;
-  pointer-events: all;
 }
+
+#upload-btn {
+  position: fixed; bottom: 120px; right: 24px;
+  width: 56px; height: 56px; border-radius: 50%;
+  background: rgba(0,8,24,0.9); border: 2px solid #00cc88;
+  color: #00cc88; font-size: 22px; cursor: pointer;
+  z-index: 300; display: none;
+}
+
+#upload-input { display: none; }
+
+#ar-panel {
+  position: fixed; bottom: 24px; left: 12px; right: 100px;
+  background: rgba(0,8,24,0.95); border-radius: 18px;
+  padding: 18px; max-height: 60vh; overflow-y: auto;
+  backdrop-filter: blur(12px); z-index: 200;
+  display: none;
+}
+
+#webcam-preview {
+  position: fixed; top: 10px; right: 10px;
+  width: 120px; height: 90px; border-radius: 8px;
+  border: 1px solid #0066ff33; display: none;
+  z-index: 150; opacity: 0.6;
+}
+
 canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; }
 </style>
 </head>
 <body>
-<canvas id="canvas"></canvas>
 
-<div id="ui">
-  <button id="enter-btn" onclick="enterAR()">🏭 Enter AR Walk</button>
-  <div id="mode-badge">Mode: <span id="mode-label">SHELF</span></div>
-  <div id="status">Open in Meta Quest Browser to begin AR session</div>
-</div>
+<canvas id="canvas"></canvas>
+<video id="webcam-preview" autoplay muted playsinline></video>
+
+<button id="enter-btn" onclick="enterAR()">🏭 Enter AR Walk</button>
+<div id="status">Open in Meta Quest Browser or XR Simulator for full AR</div>
+<div id="mode-badge">Mode: <span id="mode-label">SHELF</span></div>
 
 <button id="scan-btn" title="Pinch or tap to scan">📸</button>
 <button id="toggle-btn" onclick="toggleMode()">SHELF</button>
-<div id="ar-panel" style="display:none"></div>
+<button id="upload-btn" title="Upload image">📁</button>
+<input type="file" id="upload-input" accept="image/*">
+<div id="ar-panel"></div>
 
 <script>
 // ── CONFIG ────────────────────────────────────────────────────────────────────
-const API_BASE = "";
+const API_BASE = "";   // same origin — served by vr_api.py on port 8502
 
 // ── STATE ─────────────────────────────────────────────────────────────────────
+let mode = "shelf";
+let scanning = false;
 let xrSession = null;
 let xrRefSpace = null;
 let gl = null;
-let mode = "shelf";
-let scanning = false;
 let handRight = null;
-let handLeft  = null;
+let handLeft = null;
 let pinchWasDown = { left: false, right: false };
+let webcamStream = null;
 
 // ── ENTRY ─────────────────────────────────────────────────────────────────────
 async function enterAR() {
-  if (!navigator.xr) {
-    // Desktop/non-Quest fallback: just show demo panel directly
-    showDesktopDemo();
-    return;
+  // Show controls immediately regardless of XR support
+  showControls();
+
+  // Start webcam for capture + hand tracking preview
+  await startWebcam();
+
+  // Try XR session — fail gracefully
+  if (navigator.xr) {
+    const supported = await navigator.xr.isSessionSupported("immersive-ar").catch(() => false);
+    if (supported) {
+      try {
+        await startXRSession();
+        return;
+      } catch(e) {
+        console.warn("XR session failed:", e.message);
+      }
+    }
   }
 
-  const supported = await navigator.xr.isSessionSupported("immersive-ar").catch(() => false);
-  if (!supported) {
-    showDesktopDemo();
-    return;
-  }
+  setStatus("Demo mode — 📸 to scan · 📁 to upload real image · SHELF/INVOICE to toggle");
+}
 
+function showControls() {
+  document.getElementById("enter-btn").style.display = "none";
+  document.getElementById("mode-badge").style.display = "block";
+  document.getElementById("scan-btn").style.display = "flex";
+  document.getElementById("scan-btn").style.alignItems = "center";
+  document.getElementById("scan-btn").style.justifyContent = "center";
+  document.getElementById("toggle-btn").style.display = "flex";
+  document.getElementById("toggle-btn").style.alignItems = "center";
+  document.getElementById("toggle-btn").style.justifyContent = "center";
+  document.getElementById("upload-btn").style.display = "flex";
+  document.getElementById("upload-btn").style.alignItems = "center";
+  document.getElementById("upload-btn").style.justifyContent = "center";
+
+  // Wire buttons
+  document.getElementById("scan-btn").onclick = triggerScan;
+  document.getElementById("upload-btn").onclick = () => document.getElementById("upload-input").click();
+  document.getElementById("upload-input").onchange = onFileSelected;
+}
+
+// ── WEBCAM ────────────────────────────────────────────────────────────────────
+async function startWebcam() {
   try {
-    xrSession = await navigator.xr.requestSession("immersive-ar", {
-      requiredFeatures: ["local-floor"],
-      optionalFeatures: ["hand-tracking", "camera-access", "dom-overlay"],
-      domOverlay: { root: document.body }
+    webcamStream = await navigator.mediaDevices.getUserMedia({
+      video: { width: 1280, height: 720, facingMode: "environment" }
     });
+    const preview = document.getElementById("webcam-preview");
+    preview.srcObject = webcamStream;
+    preview.style.display = "block";
+    setStatus("📷 Webcam ready — 📸 to capture and analyze");
   } catch(e) {
-    setStatus("AR failed: " + e.message + " — showing demo mode");
-    showDesktopDemo();
-    return;
+    console.warn("Webcam unavailable:", e.message);
+    setStatus("No webcam — use 📁 to upload an image");
   }
+}
+
+function captureWebcamFrame() {
+  if (!webcamStream) return null;
+  try {
+    const video = document.getElementById("webcam-preview");
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth || 1280;
+    canvas.height = video.videoHeight || 720;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(video, 0, 0);
+    return canvas.toDataURL("image/jpeg", 0.85).split(",")[1];
+  } catch(e) {
+    console.warn("Capture failed:", e);
+    return null;
+  }
+}
+
+// ── XR SESSION ────────────────────────────────────────────────────────────────
+async function startXRSession() {
+  xrSession = await navigator.xr.requestSession("immersive-ar", {
+    requiredFeatures: ["local-floor"],
+    optionalFeatures: ["hand-tracking", "camera-access", "dom-overlay"],
+    domOverlay: { root: document.body }
+  });
 
   const canvas = document.getElementById("canvas");
   gl = canvas.getContext("webgl2", { xrCompatible: true });
@@ -120,29 +196,11 @@ async function enterAR() {
 
   xrSession.addEventListener("end", () => {
     xrSession = null;
-    setStatus("Session ended.");
-    document.getElementById("scan-btn").style.display = "none";
-    document.getElementById("toggle-btn").style.display = "none";
+    setStatus("Session ended — refresh to restart");
   });
-
-  document.getElementById("enter-btn").style.display = "none";
-  document.getElementById("mode-badge").style.display = "block";
-  document.getElementById("scan-btn").style.display = "flex";
-  document.getElementById("toggle-btn").style.display = "flex";
-  document.getElementById("scan-btn").onclick = () => triggerScan();
 
   setStatus("👐 Pinch RIGHT to scan · Pinch LEFT to toggle mode");
   xrSession.requestAnimationFrame(onXRFrame);
-}
-
-// ── DESKTOP DEMO (no Quest needed — for browser testing) ──────────────────────
-function showDesktopDemo() {
-  document.getElementById("enter-btn").style.display = "none";
-  document.getElementById("scan-btn").style.display = "flex";
-  document.getElementById("toggle-btn").style.display = "flex";
-  document.getElementById("mode-badge").style.display = "block";
-  document.getElementById("scan-btn").onclick = () => triggerScan();
-  setStatus("Demo mode — tap 📸 to simulate a scan");
 }
 
 // ── XR FRAME LOOP ─────────────────────────────────────────────────────────────
@@ -153,7 +211,6 @@ function onXRFrame(time, frame) {
   const pose = frame.getViewerPose(xrRefSpace);
   if (!pose) return;
 
-  // Collect hand input sources
   for (const src of xrSession.inputSources) {
     if (!src.hand) continue;
     if (src.handedness === "right") handRight = src;
@@ -163,15 +220,12 @@ function onXRFrame(time, frame) {
   if (!scanning) {
     const rPinch = detectPinch(frame, handRight);
     const lPinch = detectPinch(frame, handLeft);
-
-    // Edge-trigger: only fire on pinch DOWN (not held)
     if (rPinch && !pinchWasDown.right) triggerScan();
-    if (lPinch && !pinchWasDown.left)  { toggleMode(); }
+    if (lPinch && !pinchWasDown.left)  toggleMode();
     pinchWasDown.right = rPinch;
     pinchWasDown.left  = lPinch;
   }
 
-  // Clear framebuffer (passthrough is composited by OS)
   const baseLayer = xrSession.renderState.baseLayer;
   gl.bindFramebuffer(gl.FRAMEBUFFER, baseLayer.framebuffer);
   gl.clearColor(0, 0, 0, 0);
@@ -179,16 +233,6 @@ function onXRFrame(time, frame) {
 }
 
 // ── PINCH DETECTION ───────────────────────────────────────────────────────────
-import { PinchDetector } from "@iwsdk/xr-input";
-
-const pinch = new PinchDetector(xrSession);
-pinch.on("pinchstart", ({ hand }) => {
-  if (hand === "right") triggerScan();
-  if (hand === "left") toggleMode();
-});
-
-
-
 function detectPinch(frame, src) {
   if (!src?.hand || !xrRefSpace) return false;
   try {
@@ -196,43 +240,82 @@ function detectPinch(frame, src) {
     const thm = frame.getJointPose(src.hand.get("thumb-tip"), xrRefSpace);
     if (!idx || !thm) return false;
     const p = idx.transform.position, q = thm.transform.position;
-    const d = Math.hypot(p.x-q.x, p.y-q.y, p.z-q.z);
-    return d < 0.025;
+    return Math.hypot(p.x-q.x, p.y-q.y, p.z-q.z) < 0.025;
   } catch { return false; }
+}
+
+// ── FILE UPLOAD ───────────────────────────────────────────────────────────────
+let pendingFileB64 = null;
+
+function onFileSelected() {
+  const f = document.getElementById("upload-input").files[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    pendingFileB64 = reader.result.split(",")[1];
+    setStatus("📁 " + f.name + " ready — tap 📸 to analyze");
+  };
+  reader.readAsDataURL(f);
 }
 
 // ── SCAN TRIGGER ──────────────────────────────────────────────────────────────
 async function triggerScan() {
   if (scanning) return;
-
-   const webcamFrame = captureWebcamFrame();
-  if (webcamFrame) {
-    await scanWithBase64(webcamFrame);       // real webcam → real SAM
-  } else {
-    await scanWithDemo();                    // fallback to demo data
-  }
-  
   scanning = true;
-  setStatus("📸 Scanning " + mode + "…");
-  document.getElementById("scan-btn").style.opacity = "0.4";
 
-  // Always use demo endpoint for now (real endpoint needs valid base64 image)
+  const btn = document.getElementById("scan-btn");
+  btn.style.opacity = "0.4";
+
+  // Priority: uploaded file > webcam frame > demo
+  if (pendingFileB64) {
+    setStatus("🔬 Analyzing uploaded image with SAM/Muse…");
+    await scanWithBase64(pendingFileB64);
+    pendingFileB64 = null;
+  } else {
+    const frame = captureWebcamFrame();
+    if (frame) {
+      setStatus("📸 Capturing webcam frame…");
+      await scanWithBase64(frame);
+    } else {
+      setStatus("📸 Running demo scan…");
+      await scanWithDemo();
+    }
+  }
+
+  btn.style.opacity = "1";
+  setTimeout(() => { scanning = false; }, 1500);
+}
+
+async function scanWithBase64(b64) {
+  const endpoint = mode === "shelf" ? "/api/vr/shelf-scan" : "/api/vr/invoice-scan";
+  try {
+    const res = await fetch(API_BASE + endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ image_b64: b64, mime_type: "image/jpeg" })
+    });
+    if (!res.ok) throw new Error("HTTP " + res.status + " — " + await res.text());
+    renderPanel(await res.json());
+    setStatus("✅ AI analysis complete · 📸 rescan · 📁 upload new");
+  } catch(e) {
+    setStatus("❌ " + e.message);
+    // Fallback to demo on error
+    await scanWithDemo();
+  }
+}
+
+async function scanWithDemo() {
   const endpoint = mode === "shelf"
     ? "/api/vr/shelf-scan/demo"
     : "/api/vr/invoice-scan/demo";
-
   try {
     const res = await fetch(API_BASE + endpoint, { method: "POST" });
     if (!res.ok) throw new Error("HTTP " + res.status);
-    const data = await res.json();
-    renderPanel(data);
-    setStatus("✅ Done · Pinch RIGHT to rescan · Pinch LEFT to toggle");
+    renderPanel(await res.json());
+    setStatus("✅ Demo scan · Upload a real image with 📁 for live AI");
   } catch(e) {
-    setStatus("❌ " + e.message + " — check API_BASE tunnel URL");
+    setStatus("❌ API unreachable: " + e.message + " — is uvicorn running on 8502?");
   }
-
-  document.getElementById("scan-btn").style.opacity = "1";
-  setTimeout(() => { scanning = false; }, 1500);
 }
 
 // ── MODE TOGGLE ───────────────────────────────────────────────────────────────
@@ -241,119 +324,123 @@ function toggleMode() {
   document.getElementById("mode-label").textContent = mode.toUpperCase();
   document.getElementById("toggle-btn").textContent = mode.toUpperCase();
   document.getElementById("ar-panel").style.display = "none";
-  setStatus("Mode: " + mode.toUpperCase() + " · Pinch RIGHT to scan");
+  pendingFileB64 = null;
+  setStatus("Mode: " + mode.toUpperCase() + " · 📸 to scan · 📁 to upload");
 }
 
 // ── PANEL RENDERER ────────────────────────────────────────────────────────────
 function renderPanel(data) {
   const panel = document.getElementById("ar-panel");
   panel.style.display = "block";
-  panel.innerHTML = "";
 
   if (data.type === "shelf") {
     panel.style.borderTop = "3px solid #0066ff";
-    let html = `<div style="font-size:17px;font-weight:700;color:#4499ff;margin-bottom:12px">🏭 Shelf Scan — Bay A-14</div>`;
+    let html = `<div style="font-size:17px;font-weight:700;color:#4499ff;margin-bottom:12px">🏭 Shelf Scan</div>`;
     if (data.action_required) {
       html += `<div style="background:#ff330022;border:1px solid #ff4444;border-radius:10px;padding:10px;margin-bottom:12px;color:#ff9999;font-size:13px">⚠️ Action required: low/empty stock detected</div>`;
     }
-    for (const z of data.zones) {
-      html += `
-        <div style="display:flex;align-items:center;padding:7px 0;border-bottom:1px solid #ffffff15">
-          <span style="width:11px;height:11px;border-radius:50%;background:${z.color};display:inline-block;margin-right:10px;flex-shrink:0"></span>
-          <span style="flex:1;font-size:14px">${z.sku}</span>
-          <span style="font-size:13px;color:${z.color};font-weight:600">${z.status === "empty" ? "EMPTY" : z.status === "low" ? "LOW: "+z.qty : z.qty+" units"}</span>
-        </div>`;
+    for (const z of (data.zones || [])) {
+      html += `<div style="display:flex;align-items:center;padding:7px 0;border-bottom:1px solid #ffffff15">
+        <span style="width:11px;height:11px;border-radius:50%;background:${z.color};display:inline-block;margin-right:10px;flex-shrink:0"></span>
+        <span style="flex:1;font-size:14px">${z.sku}</span>
+        <span style="font-size:13px;color:${z.color};font-weight:600">${z.status==="empty"?"EMPTY":z.status==="low"?"LOW: "+z.qty:z.qty+" units"}</span>
+      </div>`;
     }
-    html += `<div style="margin-top:10px;color:#555;font-size:11px">${data.summary}</div>`;
+    if (data.action_required) {
+      html += `<button onclick="triggerAgentRestock()" style="margin-top:14px;width:100%;padding:12px;background:#0066ff;border:none;border-radius:10px;color:#fff;font-size:14px;font-weight:bold;cursor:pointer">🤖 Restock with Muse Agent</button>`;
+    }
+    html += `<div style="margin-top:10px;color:#555;font-size:11px">${data.summary || ""}</div>`;
     panel.innerHTML = html;
 
   } else if (data.type === "invoice") {
     panel.style.borderTop = "3px solid #00cc88";
-    let items = (data.items||[]).map(i =>
+    const items = (data.items||[]).map(i =>
       `<div style="padding:5px 0;border-bottom:1px solid #ffffff11;font-size:13px;color:#ccc">
-        ${i.sku} &nbsp;·&nbsp; qty: ${i.qty} &nbsp;·&nbsp; $${i.cost}
+        ${i.sku || i.description || JSON.stringify(i)}
+        ${i.qty ? " · qty: "+i.qty : ""}
+        ${i.cost ? " · $"+i.cost : ""}
       </div>`
     ).join("");
     panel.innerHTML = `
       <div style="font-size:17px;font-weight:700;color:#00cc88;margin-bottom:12px">📄 Invoice Scan</div>
       <div style="font-size:14px;margin-bottom:4px"><b>Supplier:</b> ${data.supplier}</div>
-      <div style="font-size:13px;color:#888;margin-bottom:10px"><b>Dates:</b> ${data.dates.join(", ")}</div>
+      <div style="font-size:13px;color:#888;margin-bottom:10px"><b>Dates:</b> ${(data.dates||[]).join(", ")}</div>
       <div style="font-size:13px;font-weight:600;margin-bottom:6px">Line Items:</div>
       ${items}
       <div style="margin-top:10px;font-size:14px"><b>Total:</b> ${data.total}</div>
-      <div style="margin-top:10px;background:#00441122;border:1px solid #00cc88;border-radius:10px;padding:10px;font-size:13px;color:#88ffcc">
+      <div style="margin-top:12px;background:#00441122;border:1px solid #00cc88;border-radius:10px;padding:12px;font-size:13px;color:#88ffcc">
         <b>Draft Action:</b> ${data.draft_instruction}
-      </div>`;
+      </div>
+      <button onclick="approveAction('${data.draft_instruction?.substring(0,50)}')" style="margin-top:12px;width:100%;padding:12px;background:#00cc88;border:none;border-radius:10px;color:#000;font-size:14px;font-weight:bold;cursor:pointer">✅ Approve PO</button>`;
+
+  } else if (data.type === "agent") {
+    panel.style.borderTop = "3px solid #aa44ff";
+    const lines = (data.lines||[]).map(l =>
+      `<div style="padding:2px 0;font-family:monospace;font-size:12px;color:#ccaaff">${l}</div>`
+    ).join("");
+    panel.innerHTML = `
+      <div style="font-size:17px;font-weight:700;color:#aa44ff;margin-bottom:12px">🤖 Muse Agent</div>
+      ${lines}
+      ${data.done && data.draft_po ? renderDraftPO(data.draft_po) : '<div style="color:#888;font-size:12px;margin-top:8px">Negotiating…</div>'}`;
   }
 
   // Close button
   const close = document.createElement("div");
-  close.innerHTML = "✕ close";
-  close.style.cssText = "text-align:center;margin-top:14px;color:#555;font-size:12px;cursor:pointer;padding:4px";
+  close.textContent = "✕ close";
+  close.style.cssText = "text-align:center;margin-top:14px;color:#444;font-size:12px;cursor:pointer;padding:4px";
   close.onclick = () => { panel.style.display = "none"; };
   panel.appendChild(close);
+}
+
+function renderDraftPO(po) {
+  return `<div style="margin-top:12px;background:#22004422;border:1px solid #aa44ff;border-radius:10px;padding:12px;">
+    <div style="font-size:13px;color:#ddaaff;margin-bottom:8px"><b>Draft PO Ready</b></div>
+    <div style="font-size:13px;color:#ccc">${po.supplier} · ${po.sku} · qty ${po.qty} · $${po.unit_price}/unit</div>
+    <div style="font-size:14px;font-weight:bold;color:#ddaaff;margin-top:4px">Total: $${po.total}</div>
+    <button onclick="approveAction('PO approved')" style="margin-top:10px;width:100%;padding:10px;background:#aa44ff;border:none;border-radius:8px;color:#fff;font-size:14px;font-weight:bold;cursor:pointer">✅ Pinch to Approve</button>
+  </div>`;
+}
+
+// ── AGENT RESTOCK ─────────────────────────────────────────────────────────────
+async function triggerAgentRestock() {
+  setStatus("🤖 Muse agent negotiating…");
+  renderPanel({ type: "agent", lines: ["Starting negotiation…"], done: false });
+
+  // Poll agent status
+  let attempt = 0;
+  const poll = async () => {
+    try {
+      const res = await fetch(API_BASE + "/api/vr/agent-status/demo-thread");
+      const data = await res.json();
+      renderPanel({ type: "agent", ...data });
+      if (!data.done && attempt++ < 10) setTimeout(poll, 800);
+      else setStatus("✅ Negotiation complete · Approve PO above");
+    } catch(e) {
+      setStatus("❌ Agent error: " + e.message);
+    }
+  };
+  poll();
+}
+
+// ── APPROVE ACTION ────────────────────────────────────────────────────────────
+function approveAction(description) {
+  document.getElementById("ar-panel").innerHTML = `
+    <div style="text-align:center;padding:24px">
+      <div style="font-size:40px;margin-bottom:12px">✅</div>
+      <div style="font-size:18px;font-weight:bold;color:#00ff88">Approved!</div>
+      <div style="font-size:13px;color:#888;margin-top:8px">${description}</div>
+    </div>`;
+  setStatus("✅ Action approved · 📸 to continue walk");
+  setTimeout(() => {
+    document.getElementById("ar-panel").style.display = "none";
+    scanning = false;
+  }, 3000);
 }
 
 // ── UTILS ─────────────────────────────────────────────────────────────────────
 function setStatus(msg) {
   document.getElementById("status").textContent = msg;
-}
-
-// ── WEBCAM SETUP ─────────────────────────────────────────────────────────────
-let webcamStream = null;
-
-async function startWebcam() {
-  try {
-    webcamStream = await navigator.mediaDevices.getUserMedia({ 
-      video: { width: 1280, height: 720 } 
-    });
-    setStatus("📷 Webcam ready · Pinch RIGHT to capture and analyze");
-  } catch(e) {
-    setStatus("No webcam — using file upload instead");
-  }
-}
-
-function captureWebcamFrame() {
-  if (!webcamStream) return null;
-  const video = document.createElement("video");
-  video.srcObject = webcamStream;
-  video.play();
-  const canvas = document.createElement("canvas");
-  canvas.width = 1280; canvas.height = 720;
-  const ctx = canvas.getContext("2d");
-  ctx.drawImage(video, 0, 0);
-  return canvas.toDataURL("image/jpeg", 0.9).split(",")[1];
-}
-
-function renderAgentStreamPanel(lines) {
-  const panel = document.getElementById("ar-panel");
-  panel.style.display = "block";
-  panel.style.borderTop = "3px solid #aa44ff";
-  panel.innerHTML = `
-    <div style="font-size:17px;font-weight:700;color:#aa44ff;margin-bottom:12px">
-      🤖 Muse Agent — Live
-    </div>
-    <div id="stream-lines" style="font-family:monospace;font-size:12px;color:#ccaaff;line-height:1.6">
-      ${lines.map(l => `<div>${l}</div>`).join("")}
-    </div>`;
-}
-
-// Call this while polling /api/vr/agent-status
-async function pollAgentStatus(threadId) {
-  const res = await fetch(`/api/vr/agent-status/${threadId}`);
-  const data = await res.json();
-  renderAgentStreamPanel(data.lines);
-  if (!data.done) setTimeout(() => pollAgentStatus(threadId), 800);
-  else showApprovalPanel(data.draft_po);
-}
-
-</script>
-
-<script type="importmap">
-{
-  "imports": {
-    "@iwsdk/xr-input": "https://cdn.jsdelivr.net/npm/@iwsdk/xr-input@latest/dist/index.js"
-  }
+  console.log("[VR]", msg);
 }
 </script>
 </body>
