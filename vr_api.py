@@ -101,7 +101,10 @@ async def shelf_scan(payload: ImagePayload):
         raise HTTPException(status_code=400, detail="Invalid base64 image")
 
     try:
-        result = _get_shelf_analyzer()(image_bytes)
+        from warehouse_vision import analyze_shelf_image
+        result = analyze_shelf_image(image_bytes)
+    except ImportError as e:
+        raise HTTPException(status_code=503, detail=f"warehouse_vision not available: {e}. Set META_API_KEY in .env")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Shelf analysis failed: {e}")
 
@@ -122,7 +125,10 @@ async def invoice_scan(payload: ImagePayload):
         raise HTTPException(status_code=400, detail="Invalid base64 image")
 
     try:
-        result = _get_invoice_extractor()(image_bytes)
+        from document_vision import extract_document_data
+        result = extract_document_data(image_bytes)
+    except ImportError as e:
+        raise HTTPException(status_code=503, detail=f"document_vision not available: {e}. Set META_API_KEY in .env")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Invoice extraction failed: {e}")
 

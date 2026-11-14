@@ -250,6 +250,12 @@ let pendingFileB64 = null;
 function onFileSelected() {
   const f = document.getElementById("upload-input").files[0];
   if (!f) return;
+  // Reset mode to shelf for new uploads
+  if (mode !== "shelf") {
+    mode = "shelf";
+    document.getElementById("mode-label").textContent = "SHELF";
+    document.getElementById("toggle-btn").textContent = "SHELF";
+  }
   const reader = new FileReader();
   reader.onload = () => {
     pendingFileB64 = reader.result.split(",")[1];
@@ -298,9 +304,8 @@ async function scanWithBase64(b64) {
     renderPanel(await res.json());
     setStatus("✅ AI analysis complete · 📸 rescan · 📁 upload new");
   } catch(e) {
-    setStatus("❌ " + e.message);
-    // Fallback to demo on error
-    await scanWithDemo();
+    // Show error clearly, don't fall through to demo
+    setStatus("❌ Real API failed: " + e.message + " — tap 📸 without uploading for demo");
   }
 }
 
