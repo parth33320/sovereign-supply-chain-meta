@@ -28,6 +28,14 @@ from graph import get_graph_with_postgres, log_dpo
 from langchain_core.messages import HumanMessage, AIMessage
 from db import execute_query, execute_mutation, get_db_connection
 
+# Check dev mode via query param
+dev_mode = st.query_params.get("dev", "false").lower() == "true"
+
+# Then gate any complex panels:
+if dev_mode:
+    st.sidebar.expander("🔧 Agent Orchestration").write(...)
+    st.sidebar.expander("📊 Raw SAM Output").write(...)
+
 # Load environment variables
 load_dotenv()
 

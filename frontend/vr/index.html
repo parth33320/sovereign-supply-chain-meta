@@ -179,6 +179,16 @@ function onXRFrame(time, frame) {
 }
 
 // ── PINCH DETECTION ───────────────────────────────────────────────────────────
+import { PinchDetector } from "@iwsdk/xr-input";
+
+const pinch = new PinchDetector(xrSession);
+pinch.on("pinchstart", ({ hand }) => {
+  if (hand === "right") triggerScan();
+  if (hand === "left") toggleMode();
+});
+
+
+
 function detectPinch(frame, src) {
   if (!src?.hand || !xrRefSpace) return false;
   try {
@@ -194,6 +204,14 @@ function detectPinch(frame, src) {
 // ── SCAN TRIGGER ──────────────────────────────────────────────────────────────
 async function triggerScan() {
   if (scanning) return;
+
+   const webcamFrame = captureWebcamFrame();
+  if (webcamFrame) {
+    await scanWithBase64(webcamFrame);       // real webcam → real SAM
+  } else {
+    await scanWithDemo();                    // fallback to demo data
+  }
+  
   scanning = true;
   setStatus("📸 Scanning " + mode + "…");
   document.getElementById("scan-btn").style.opacity = "0.4";
@@ -279,6 +297,63 @@ function renderPanel(data) {
 // ── UTILS ─────────────────────────────────────────────────────────────────────
 function setStatus(msg) {
   document.getElementById("status").textContent = msg;
+}
+
+// ── WEBCAM SETUP ─────────────────────────────────────────────────────────────
+let webcamStream = null;
+
+async function startWebcam() {
+  try {
+    webcamStream = await navigator.mediaDevices.getUserMedia({ 
+      video: { width: 1280, height: 720 } 
+    });
+    setStatus("📷 Webcam ready · Pinch RIGHT to capture and analyze");
+  } catch(e) {
+    setStatus("No webcam — using file upload instead");
+  }
+}
+
+function captureWebcamFrame() {
+  if (!webcamStream) return null;
+  const video = document.createElement("video");
+  video.srcObject = webcamStream;
+  video.play();
+  const canvas = document.createElement("canvas");
+  canvas.width = 1280; canvas.height = 720;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(video, 0, 0);
+  return canvas.toDataURL("image/jpeg", 0.9).split(",")[1];
+}
+
+function renderAgentStreamPanel(lines) {
+  const panel = document.getElementById("ar-panel");
+  panel.style.display = "block";
+  panel.style.borderTop = "3px solid #aa44ff";
+  panel.innerHTML = `
+    <div style="font-size:17px;font-weight:700;color:#aa44ff;margin-bottom:12px">
+      🤖 Muse Agent — Live
+    </div>
+    <div id="stream-lines" style="font-family:monospace;font-size:12px;color:#ccaaff;line-height:1.6">
+      ${lines.map(l => `<div>${l}</div>`).join("")}
+    </div>`;
+}
+
+// Call this while polling /api/vr/agent-status
+async function pollAgentStatus(threadId) {
+  const res = await fetch(`/api/vr/agent-status/${threadId}`);
+  const data = await res.json();
+  renderAgentStreamPanel(data.lines);
+  if (!data.done) setTimeout(() => pollAgentStatus(threadId), 800);
+  else showApprovalPanel(data.draft_po);
+}
+
+</script>
+
+<script type="importmap">
+{
+  "imports": {
+    "@iwsdk/xr-input": "https://cdn.jsdelivr.net/npm/@iwsdk/xr-input@latest/dist/index.js"
+  }
 }
 </script>
 </body>
