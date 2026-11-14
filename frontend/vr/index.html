@@ -90,6 +90,17 @@ canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0
 <input type="file" id="upload-input" accept="image/*">
 <div id="ar-panel"></div>
 
+<div id="nav-bar">
+  <button class="nav-btn active" id="btn-shelf" onclick="showScene('shelf')">📦 Shelf</button>
+  <button class="nav-btn inactive" id="btn-invoice" onclick="showScene('invoice')">📄 Invoice</button>
+  <button class="nav-btn inactive" id="btn-voice" onclick="showVoiceGuide()">🎤 Guide</button>
+  <button id="mic-btn" onclick="startVoiceListening()" style="
+    padding:10px 16px;border-radius:24px;border:none;
+    background:#aa44ff;color:#fff;font-size:16px;
+    cursor:pointer;font-weight:700;
+    box-shadow:0 4px 16px rgba(170,68,255,0.4)">🎤</button>
+</div>
+
 <script>
 // ── CONFIG ────────────────────────────────────────────────────────────────────
 const API_BASE = "";   // same origin — served by vr_api.py on port 8502
@@ -446,6 +457,109 @@ function approveAction(description) {
 function setStatus(msg) {
   document.getElementById("status").textContent = msg;
   console.log("[VR]", msg);
+}
+
+// ── REAL VOICE ────────────────────────────────────────────────────────────────
+let recognition = null;
+
+function startVoiceListening() {
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    setStatus("🎤 Voice not supported — tap commands instead");
+    return;
+  }
+
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recognition = new SR();
+  recognition.continuous = false;
+  recognition.interimResults = false;
+  recognition.lang = "en-US";
+
+  recognition.onstart = () => {
+    setStatus("🎤 Listening… say a command");
+    document.getElementById("mic-btn").style.background = "#ff4444";
+    document.getElementById("mic-btn").textContent = "🔴";
+  };
+
+  recognition.onresult = (e) => {
+    const transcript = e.results[0][0].transcript.toLowerCase().trim();
+    setStatus("🎤 Heard: \"" + transcript + "\"");
+    handleVoiceCommand(transcript);
+  };
+
+  recognition.onerror = (e) => {
+    setStatus("🎤 Error: " + e.error + " — try again");
+    resetMicBtn();
+  };
+
+  recognition.onend = () => {
+    resetMicBtn();
+  };
+
+  recognition.start();
+}
+
+function resetMicBtn() {
+  const btn = document.getElementById("mic-btn");
+  if (btn) { btn.style.background = "#aa44ff"; btn.textContent = "🎤"; }
+}
+
+function handleVoiceCommand(transcript) {
+  if (transcript.includes("restock") || transcript.includes("order")) {
+    showScene("shelf");
+    setTimeout(triggerAgentRestock, 300);
+  } else if (transcript.includes("approve")) {
+    approveAction("Voice approved — PO executed");
+  } else if (transcript.includes("reject")) {
+    rejectAction();
+  } else if (transcript.includes("invoice")) {
+    showScene("invoice");
+    setTimeout(onInvoicePinch, 300);
+  } else if (transcript.includes("shelf") || transcript.includes("stock")) {
+    showScene("shelf");
+    setTimeout(onShelfPinch, 300);
+  } else if (transcript.includes("disruption") || transcript.includes("radar")) {
+    showDisruptionPanel();
+  } else {
+    setStatus("🎤 \"" + transcript + "\" — not recognized, try: restock / approve / reject / invoice");
+  }
+}
+
+// Voice helper stubs (referenced by handleVoiceCommand)
+function showScene(scene) {
+  mode = scene;
+  document.getElementById("mode-label").textContent = scene.toUpperCase();
+  document.getElementById("toggle-btn").textContent = scene.toUpperCase();
+  document.getElementById("ar-panel").style.display = "none";
+  pendingFileB64 = null;
+  setStatus("Scene: " + scene.toUpperCase() + " · 📸 to scan");
+}
+
+function showVoiceGuide() {
+  setStatus("🎤 Voice commands: restock, approve, reject, invoice, shelf, disruption");
+}
+
+function onInvoicePinch() {
+  setStatus("📄 Invoice scene ready");
+}
+
+function onShelfPinch() {
+  setStatus("📦 Shelf scene ready");
+}
+
+function showDisruptionPanel() {
+  setStatus("🚨 Disruption radar panel");
+}
+
+function rejectAction() {
+  document.getElementById("ar-panel").innerHTML = `
+    <div style="text-align:center;padding:24px">
+      <div style="font-size:40px;margin-bottom:12px">❌</div>
+      <div style="font-size:18px;font-weight:bold;color:#ff4444">Rejected!</div>
+    </div>`;
+  setStatus("❌ Action rejected");
+  setTimeout(() => {
+    document.getElementById("ar-panel").style.display = "none";
+  }, 3000);
 }
 </script>
 </body>
