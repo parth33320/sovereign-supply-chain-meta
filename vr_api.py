@@ -11,6 +11,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from db import get_db_connection, execute_query, execute_mutation
+
 app = FastAPI(title="Supply Chain VR API")
 
 app.add_middleware(
@@ -88,6 +90,82 @@ async def invoice_scan_demo():
         "total": "$4,100.00",
         "draft_instruction": "Approve PO for 500x Widget-A from Apex Logistics at $8.20/unit. Delivery in 3 days."
     }
+
+
+@app.get("/api/vr/inventory/demo")
+async def inventory_demo():
+    """Return live inventory (Tenant_A) for the AR Walk shelf UI refresh."""
+    rows = execute_query(
+        "SELECT item_name AS sku, quantity AS qty, tenant_id FROM inventory WHERE tenant_id = ?",
+        ("Tenant_A",),
+    )
+    return {"items": rows}
+
+
+class InvoicePayPayload(BaseModel):
+    po: dict
+    invoice: dict
+
+
+@app.post("/api/vr/invoice-pay/demo")
+async def invoice_pay_demo(payload: InvoicePayPayload):
+    """
+    Cross-check invoice against the approved PO; on match release payment and
+    increment Widget-A stock in mock_sap.db. On mismatch, return a dispute draft
+    without touching stock.
+    """
+    po = payload.po or {}
+    inv = payload.invoice or {}
+    inv_items = inv.get("items") or [{}]
+    inv_unit = float(inv_items[0].get("cost", 0) or 0)
+    po_unit = float(po.get("unit_price", 0) or 0)
+    delta = inv_unit - po_unit
+    match = abs(delta) < 0.001
+    confidence = 1.0 if match else 0.0
+
+    if not match:
+        return {
+            "status": "discrepancy",
+            "match": False,
+            "confidence": confidence,
+            "delta": round(delta, 2),
+            "disputeDraft": (
+                f"Invoice shows ${inv_unit:.2f}/unit; PO locked ${po_unit:.2f}/unit "
+                f"— requesting credit memo for the difference"
+            ),
+        }
+
+    # Release payment: increment Widget-A stock by invoiced qty
+    inv_qty = int((inv_items[0].get("qty") or inv.get("qty") or po.get("qty") or 0) or 0)
+    execute_mutation(
+        "UPDATE inventory SET quantity = quantity + ? WHERE tenant_id = ? AND item_name = ?",
+        (inv_qty, "Tenant_A", "Widget-A"),
+    )
+    rows = execute_query(
+        "SELECT quantity AS qty FROM inventory WHERE tenant_id = ? AND item_name = ?",
+        ("Tenant_A", "Widget-A"),
+    )
+    new_qty = rows[0]["qty"] if rows else (po.get("qty", 0) + inv_qty)
+
+    return {
+        "status": "paid",
+        "match": True,
+        "confidence": confidence,
+        "delta": None,
+        "disputeDraft": None,
+        "newQty": new_qty,
+    }
+
+
+@app.post("/api/vr/reset-demo")
+async def reset_demo():
+    """Restore Widget-A to its original seeded qty (50) for Tenant_A."""
+    execute_mutation(
+        "UPDATE inventory SET quantity = ? WHERE tenant_id = ? AND item_name = ?",
+        (50, "Tenant_A", "Widget-A"),
+    )
+    return {"status": "reset", "item": "Widget-A", "qty": 50, "tenant_id": "Tenant_A"}
+
 
 @app.post("/api/vr/shelf-scan")
 async def shelf_scan(payload: ImagePayload):
