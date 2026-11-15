@@ -23,6 +23,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+AGENT_THREADS_DDL = """
+CREATE TABLE IF NOT EXISTS agent_threads (
+    thread_id TEXT PRIMARY KEY,
+    transcript TEXT,
+    draft_po TEXT,
+    status TEXT DEFAULT 'running',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+"""
+
+@app.on_event("startup")
+async def ensure_agent_threads_table():
+    """Ensure the agent_threads table exists on existing databases."""
+    execute_mutation(AGENT_THREADS_DDL)
+
 class ImagePayload(BaseModel):
     image_b64: str
     mime_type: str = "image/jpeg"
