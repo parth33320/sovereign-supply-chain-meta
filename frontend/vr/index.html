@@ -147,13 +147,13 @@
       line-height: 1.6;
     }
 
-    /* Reset Demo button (top-right corner) */
+    /* Reset Demo button (top-right corner, always visible) */
     #reset-btn {
       position: fixed;
       top: 16px;
       right: 16px;
       z-index: 550;
-      display: none;
+      display: block;
       padding: 8px 16px;
       background: #21262d;
       border: 1px solid #30363d;
@@ -1189,8 +1189,6 @@
 
     // ── COMPLETION TOAST ──────────────────────────────────────────────────────────
     function showCompletionToast(newQty) {
-      demoComplete = true;
-      document.getElementById("reset-btn").style.display = "block";
       const toast = document.getElementById("completion-toast");
       toast.textContent = `✅ Demo complete — Widget-A restocked. ${newQty} units now in stock.`;
       toast.style.display = "block";
@@ -1219,7 +1217,6 @@
       // Reset demo state
       approvedPO = null;
       invoiceLocked = true;
-      demoComplete = false;
       invoiceState = null;
       disputeDraft = null;
       lastInvoice = null;
@@ -1227,7 +1224,6 @@
       const invBtn = document.getElementById("btn-invoice");
       invBtn.className = "nav-btn inactive locked";
       invBtn.title = "Invoice locked";
-      document.getElementById("reset-btn").style.display = "none";
       document.getElementById("completion-toast").style.display = "none";
       document.getElementById("ar-panel").style.display = "none";
       showScene("shelf");
