@@ -589,21 +589,23 @@
       color: #fff;
     }
 
-    /* ── AR RESULT PANEL — slides up from bottom, clears nav ── */
+    /* ── AR RESULT PANEL — floating card above nav ── */
     #ar-panel {
       position: fixed;
-      bottom: 56px;
-      left: 0;
-      right: 0;
-      background: rgba(0, 8, 24, 0.97);
-      border-radius: 20px 20px 0 0;
-      border-top: 3px solid #0066ff;
-      padding: 18px 18px 24px;
-      max-height: 58vh;
+      bottom: 120px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 420px;
+      max-width: 92vw;
+      max-height: 50vh;
       overflow-y: auto;
+      background: rgba(0, 8, 24, 0.95);
+      border-radius: 16px;
+      border: 2px solid #aa44ff;
+      padding: 16px;
       z-index: 300;
       display: none;
-      box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.8);
+      box-shadow: 0 -4px 32px rgba(170, 68, 255, 0.3);
     }
 
     canvas {
@@ -643,9 +645,9 @@
           <div class="bin-bar-bg">
             <div class="bin-bar-fill empty" id="fill-a"></div>
           </div>
-          <div class="bin-label">WGT-A</div>
+          <div class="bin-label">Widget-A</div>
           <div class="bin-qty empty" id="qty-a">0 u</div>
-          <div class="bin-pinch-hint" id="hint-a">👌 pinch</div>
+          <div class="bin-pinch-hint" id="hint-a">👌 pinch to restock PO</div>
         </div>
         <!-- Widget-B: LOW -->
         <div class="bin" title="Widget-B">
@@ -653,9 +655,8 @@
           <div class="bin-bar-bg">
             <div class="bin-bar-fill low"></div>
           </div>
-          <div class="bin-label">WGT-B</div>
+          <div class="bin-label">Widget-B</div>
           <div class="bin-qty low">3 u</div>
-          <div class="bin-pinch-hint">👌 pinch</div>
         </div>
         <!-- Widget-C: MEDIUM -->
         <div class="bin" title="Widget-C">
@@ -663,7 +664,7 @@
           <div class="bin-bar-bg">
             <div class="bin-bar-fill medium"></div>
           </div>
-          <div class="bin-label">WGT-C</div>
+          <div class="bin-label">Widget-C</div>
           <div class="bin-qty medium">18 u</div>
         </div>
         <!-- Widget-D: FULL -->
@@ -672,7 +673,7 @@
           <div class="bin-bar-bg">
             <div class="bin-bar-fill full"></div>
           </div>
-          <div class="bin-label">WGT-D</div>
+          <div class="bin-label">Widget-D</div>
           <div class="bin-qty full">24 u</div>
         </div>
       </div>
@@ -683,7 +684,7 @@
           <div class="bin-bar-bg">
             <div class="bin-bar-fill full"></div>
           </div>
-          <div class="bin-label">WGT-E</div>
+          <div class="bin-label">Widget-E</div>
           <div class="bin-qty full">30 u</div>
         </div>
         <div class="bin">
@@ -691,7 +692,7 @@
           <div class="bin-bar-bg">
             <div class="bin-bar-fill medium"></div>
           </div>
-          <div class="bin-label">WGT-F</div>
+          <div class="bin-label">Widget-F</div>
           <div class="bin-qty medium">12 u</div>
         </div>
         <div class="bin">
@@ -699,7 +700,7 @@
           <div class="bin-bar-bg">
             <div class="bin-bar-fill full"></div>
           </div>
-          <div class="bin-label">WGT-G</div>
+          <div class="bin-label">Widget-G</div>
           <div class="bin-qty full">28 u</div>
         </div>
         <div class="bin">
@@ -707,7 +708,7 @@
           <div class="bin-bar-bg">
             <div class="bin-bar-fill medium"></div>
           </div>
-          <div class="bin-label">WGT-H</div>
+          <div class="bin-label">Widget-H</div>
           <div class="bin-qty medium">9 u</div>
         </div>
       </div>
@@ -740,7 +741,7 @@
         <span class="inv-total-val">$4,100.00</span>
       </div>
       <div class="inv-pinch" onclick="onInvoicePinch()">
-        <span>👌 Pinch to extract &amp; review PO</span>
+        <span>👌 Pinch for SAM to validate invoice with the PO</span>
       </div>
     </div>
   </div>
@@ -750,14 +751,13 @@
 
   <!-- Nav bar — Shelf | Invoice (Invoice locked until PO approved) -->
   <div id="nav-bar">
-    <button class="nav-btn active" id="btn-shelf" onclick="showScene('shelf')">📦 Shelf</button>
     <button class="nav-btn inactive locked" id="btn-invoice" onclick="showScene('invoice')" title="Invoice locked">
       📄 Invoice
     </button>
   </div>
 
   <!-- Invoice locked tooltip (shows on hover/focus of greyed tab) -->
-  <div id="invoice-tooltip">Complete voice or pinch restock to generate a supplier invoice</div>
+  <div id="invoice-tooltip">Supplier will send an invoice after you create a PO to restock Widget-A</div>
 
   <!-- Mic button: always floating, never in nav -->
   <button id="mic-btn" onclick="startVoiceListening()">🎤</button>
@@ -825,11 +825,9 @@
       document.getElementById("ar-panel").style.display = "none";
       const invBtn = document.getElementById("btn-invoice");
       if (scene === "shelf") {
-        document.getElementById("btn-shelf").className = "nav-btn active";
         invBtn.className = invoiceLocked ? "nav-btn inactive locked" : "nav-btn inactive";
         setStatus("👌 Tap Widget-A · 🎤 say 'restock Widget-A'");
       } else if (scene === "invoice") {
-        document.getElementById("btn-shelf").className = "nav-btn inactive";
         invBtn.className = "nav-btn active";
         setStatus("👌 Tap invoice to extract · verify PO");
       }
@@ -840,7 +838,12 @@
       const btn = document.getElementById("mic-btn");
       const tip = document.getElementById("mic-tooltip");
       if (!btn || !tip) return;
-      const show = () => { tip.style.display = "block"; };
+      const show = () => {
+        const rect = btn.getBoundingClientRect();
+        tip.style.display = "block";
+        tip.style.left = Math.max(8, rect.left + rect.width / 2 - 130) + "px";
+        tip.style.top = (rect.top - tip.offsetHeight - 8) + "px";
+      };
       const hide = () => { tip.style.display = "none"; };
       btn.addEventListener("mouseenter", show);
       btn.addEventListener("mouseleave", hide);
@@ -1318,7 +1321,8 @@
 
     function handleVoiceCommand(t) {
       if (t.includes("restock") || t.includes("order")) {
-        showScene("shelf"); setTimeout(triggerAgentRestock, 300);
+        if (mode !== "shelf") showScene("shelf");
+        setTimeout(triggerAgentRestock, 400);
       } else if (t.includes("approve")) {
         approveAgentPO();
       } else if (t.includes("reject")) {
