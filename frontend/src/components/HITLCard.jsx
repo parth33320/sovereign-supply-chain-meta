@@ -4,23 +4,23 @@ export default function HITLCard({ po, threadId, onApprove, onReject }) {
   if (!po) return null
 
   const poId = po.po_id || po.id || "PO-948201"
-  const supplier = po.supplier || "FastShip Supply"
+  const supplier = po.supplier || "Apex Logistics"
   const sku = po.sku || "Widget-A"
   const qty = po.quantity != null ? Number(po.quantity).toLocaleString() : "500"
-  const price = po.unit_price != null ? `$${Number(po.unit_price).toFixed(2)}` : "$8.10"
-  const total = po.total_cost != null ? `$${Number(po.total_cost).toLocaleString()}` : "$4,050.00"
+  const price = po.unit_price != null ? `$${Number(po.unit_price).toFixed(2)}` : "$8.20"
+  const total = po.total_cost != null ? `$${Number(po.total_cost).toLocaleString()}` : "$4,100.00"
   const leadTime = po.lead_time != null ? `${po.lead_time} days` : "3 days"
   const terms = po.terms || "NET-15 terms"
   const savings = po.savings != null ? `$${po.savings}` : "$200"
 
   const quotes = po.quotes || [
-    { supplier: "FastShip Supply", price_per_unit: 8.10, lead_time_days: 3, minimum_order_qty: 100, notes: "Priority lane restock" },
-    { supplier: "Apex Logistics", price_per_unit: 8.50, lead_time_days: 4, minimum_order_qty: 200, notes: "Standard express freight" },
-    { supplier: "Global Parts Co", price_per_unit: 8.75, lead_time_days: 6, minimum_order_qty: 500, notes: "Bulk discount applied" }
+    { supplier: "Apex Logistics", price_per_unit: 8.20, lead_time_days: 3, minimum_order_qty: 100, notes: "Priority lane restock" },
+    { supplier: "Global Parts Co", price_per_unit: 8.75, lead_time_days: 6, minimum_order_qty: 500, notes: "Bulk discount applied" },
+    { supplier: "FastShip Supply", price_per_unit: 9.10, lead_time_days: 2, minimum_order_qty: 200, notes: "Standard express freight" }
   ]
   const rec = po.recommendation || {
-    selected_supplier: supplier,
-    reasoning: "Selected based on lowest unit cost ($8.10) and lowest lead time (3 days)."
+    selected_supplier: "Apex Logistics",
+    reasoning: "Selected based on lowest unit cost ($8.20) and acceptable lead time (3 days)."
   }
   const selectedSupplierName = rec.selected_supplier || supplier
 

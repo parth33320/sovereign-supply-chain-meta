@@ -5,6 +5,7 @@ Exposes warehouse_vision and document_vision over HTTP for the Quest WebXR front
 Run alongside Streamlit:  uvicorn vr_api:app --port 8502 --reload
 """
 import base64
+import json
 import os
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -38,31 +39,87 @@ def health():
 
 @app.get("/api/vr/agent-status/{thread_id}")
 async def agent_status(thread_id: str):
-    """Poll LangGraph state for streaming agent output."""
-    def get_graph():
-        from graph import get_graph
-        return get_graph()
-    
-    # Return current agent reasoning lines from your existing graph state
-    # Adapt to whatever your graph state schema actually looks like
-    return {
-        "lines": [
-            "🔍 Fetching inventory for Widget-A...",
-            "📡 Disruption radar: Port delays +2 days",
-            "🤝 Buyer agent: Sending RFQ to Apex Logistics",
-            "💬 Supplier agent: Quote received — $8.20/unit",
-            "✅ Negotiation complete. Best price locked.",
-        ],
-        "done": True,
-        "draft_po": {
-            "supplier": "Apex Logistics",
-            "sku": "Widget-A",
-            "qty": 500,
-            "unit_price": 8.20,
-            "total": 4100.00,
-            "delivery_days": 3
-        }
-    }
+    """Poll LangGraph state for streaming agent output, keyed by thread_id."""
+    try:
+        row = execute_query(
+            "SELECT transcript, draft_po, status FROM agent_threads WHERE thread_id = ?",
+            (thread_id,),
+        )
+    except Exception:
+        row = []
+
+    # No row yet: fall back to hardcoded demo strings only in DEMO_MODE
+    if not row:
+        if os.environ.get("DEMO_MODE") == "1":
+            return {
+                "lines": [
+                    "🔍 Fetching inventory for Widget-A...",
+                    "📡 Disruption radar: Port delays +2 days",
+                    "🤝 Buyer agent: Sending RFQ to Apex Logistics",
+                    "💬 Supplier agent: Quote received — $8.20/unit",
+                    "✅ Negotiation complete. Best price locked.",
+                ],
+                "done": True,
+                "draft_po": {
+                    "supplier": "Apex Logistics",
+                    "sku": "Widget-A",
+                    "qty": 500,
+                    "unit_price": 8.20,
+                    "total": 4100.00,
+                    "delivery_days": 3
+                }
+            }
+        return {"lines": ["⏳ Negotiating..."], "done": False}
+
+    data = row[0]
+    status = data.get("status")
+    if status == "done":
+        try:
+            transcript = json.loads(data.get("transcript") or "[]")
+        except Exception:
+            transcript = []
+        try:
+            draft_po = json.loads(data.get("draft_po") or "{}")
+        except Exception:
+            draft_po = {}
+
+        lines = []
+        for entry in transcript:
+            role = entry.get("role", "agent")
+            if role == "buyer_agent":
+                lines.append("🔍 Checking inventory — Widget-A: 0 units")
+                lines.append("🤝 Buyer agent: Sending RFQ to 3 suppliers")
+            elif role == "supplier_agent":
+                sup = entry.get("supplier", "Supplier")
+                q = entry.get("quote", {})
+                price = q.get("price_per_unit", 0)
+                lead = q.get("lead_time_days", 0)
+                lines.append(f"💬 {sup}: ${price}/unit · {lead} days")
+            elif role == "procurement_analyst":
+                rec = entry.get("recommendation", {})
+                sel = rec.get("selected_supplier", "Apex Logistics")
+                lines.append(f"✅ Best deal: {sel} — locked")
+        if not lines:
+            lines = ["✅ Negotiation complete. Best price locked."]
+        return {"lines": lines, "done": True, "draft_po": draft_po}
+
+    # status == "running"
+    return {"lines": ["⏳ Negotiating..."], "done": False}
+
+
+class AgentThreadSeed(BaseModel):
+    transcript: list
+    draft_po: dict
+
+
+@app.post("/api/vr/agent-threads/{thread_id}")
+async def seed_agent_thread(thread_id: str, payload: AgentThreadSeed):
+    """Seed demo transcript + draft_po into agent_threads for polling (demo path)."""
+    execute_mutation(
+        "INSERT OR REPLACE INTO agent_threads (thread_id, transcript, draft_po, status) VALUES (?,?,?,?)",
+        (thread_id, json.dumps(payload.transcript), json.dumps(payload.draft_po), "done")
+    )
+    return {"status": "seeded", "thread_id": thread_id}
 
 @app.post("/api/vr/shelf-scan/demo")
 async def shelf_scan_demo():

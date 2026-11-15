@@ -1039,28 +1039,14 @@
 
     function flagDiscrepancy() {
       invoiceState = "pending";
-      disputeDraft = "Invoice shows $8.50/unit; PO locked $8.20/unit — requesting credit memo for $150 difference";
       const panel = document.getElementById("ar-panel");
       panel.style.borderTopColor = "#ffaa44";
       panel.innerHTML = `
-    <div style="text-align:center;padding:24px 20px">
+    <div style="text-align:center;padding:28px 20px">
       <div style="font-size:48px;margin-bottom:10px">⚠️</div>
-      <div style="font-size:18px;font-weight:800;color:#ffaa44;margin-bottom:8px">Discrepancy Flagged</div>
-      <div style="font-size:13px;color:#666;margin-bottom:10px">Amounts do not match the approved PO.</div>
-      <div class="dispute-card">
-        <span class="dismissible" onclick="this.parentElement.style.display='none'">✕</span>
-        <div style="font-weight:800;color:#1a1a1a;margin-bottom:4px">Supplier dispute draft (Muse):</div>
-        <div style="font-size:12px;color:#1a1a1a;white-space:pre-wrap">${disputeDraft}</div>
-      </div>
-      <div class="pending-response">Pending supplier response</div>
-      <div style="font-size:11px;color:#8b949e;margin-top:8px">In production, Muse would monitor for the supplier’s credit memo.</div>
-      <button onclick="showScene('invoice')" style="
-        margin-top:14px;padding:10px 20px;background:#21262d;border:1px solid #30363d;
-        border-radius:8px;color:#58a6ff;font-size:12px;cursor:pointer">
-        Re-open Invoice
-      </button>
+      <div style="font-size:18px;font-weight:800;color:#ffaa44;margin-bottom:8px">Pending Supplier Response for Discrepancy</div>
     </div>`;
-      setStatus("⚠️ Discrepancy flagged · pending supplier response");
+      setStatus("Pending Supplier Response for Discrepancy");
     }
 
     // ── AGENT RESTOCK (from shelf) ────────────────────────────────────────────────
@@ -1069,15 +1055,27 @@
       const panel = document.getElementById("ar-panel");
       panel.style.borderTopColor = "#aa44ff";
 
+      const threadId = "vr-" + Date.now();
+
       const steps = [
         "🔍 Checking inventory — Widget-A: 0 units",
         "🤝 Buyer agent: Sending RFQ to 3 suppliers",
         "💬 Apex Logistics: $8.20/unit · 3 days",
-        "💬 MegaSupply Co: $8.95/unit · 5 days",
-        "💬 FastParts Inc: $9.10/unit · 2 days",
+        "💬 Global Parts Co: $8.75/unit · 6 days",
+        "💬 FastShip Supply: $9.10/unit · 2 days",
         "🧮 Optimizing: price vs delivery vs risk",
         "✅ Best deal: Apex Logistics $8.20 · 3 days",
       ];
+
+      const draftPo = {
+        supplier: "Apex Logistics",
+        sku: "Widget-A",
+        qty: 500,
+        unit_price: 8.20,
+        total: 4100,
+        lead_time: 3,
+        delivery_days: 3
+      };
 
       panel.innerHTML = `
     <div style="font-size:16px;font-weight:800;color:#aa44ff;margin-bottom:4px">🤖 Muse A2A Agents</div>
@@ -1089,22 +1087,65 @@
       setStatus("🤖 A2A agents negotiating…");
 
       const linesEl = document.getElementById("agent-lines");
-      for (const s of steps) {
-        await sleep(550);
-        const d = document.createElement("div");
-        d.textContent = s; d.style.cssText = "opacity:0;transition:opacity 0.3s";
-        linesEl.appendChild(d);
-        await sleep(50); d.style.opacity = "1";
+
+      // Seed the backend with demo transcript + draft_po so agent-status polling works
+      try {
+        await fetch("/api/vr/agent-threads/" + threadId, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ transcript: steps, draft_po: draftPo })
+        });
+      } catch (e) {
+        // backend unavailable — fall back to local rendering below
       }
 
-      await sleep(400);
-      document.getElementById("agent-po").innerHTML = `
+      // Render lines incrementally (local), then poll agent-status until done
+      let lineIndex = 0;
+      async function renderNextLine() {
+        if (lineIndex < steps.length) {
+          const d = document.createElement("div");
+          d.textContent = steps[lineIndex];
+          d.style.cssText = "opacity:0;transition:opacity 0.3s";
+          linesEl.appendChild(d);
+          await sleep(50); d.style.opacity = "1";
+          lineIndex++;
+          setTimeout(renderNextLine, 500);
+        }
+      }
+      renderNextLine();
+
+      // Poll /api/vr/agent-status/{threadId} until done, then populate PO card from draft_po
+      let polled = false;
+      async function pollStatus() {
+        try {
+          const res = await fetch("/api/vr/agent-status/" + threadId);
+          const data = await res.json();
+          if (data.done && !polled) {
+            polled = true;
+            const po = data.draft_po || draftPo;
+            renderPoCard(po);
+            setStatus("Draft PO ready · Approve or Reject");
+          } else if (!data.done && !polled) {
+            setTimeout(pollStatus, 800);
+          }
+        } catch (e) {
+          if (!polled && lineIndex >= steps.length) {
+            polled = true;
+            renderPoCard(draftPo);
+            setStatus("Draft PO ready · Approve or Reject");
+          }
+        }
+      }
+      setTimeout(pollStatus, 200);
+
+      async function renderPoCard(po) {
+        document.getElementById("agent-po").innerHTML = `
     <div style="margin-top:14px;background:#22004433;border:2px solid #aa44ff;
       border-radius:12px;padding:14px;">
       <div style="font-size:12px;color:#cc88ff;font-weight:700;margin-bottom:8px">Draft PO Ready</div>
-      <div style="font-size:13px;color:#ccc;margin-bottom:4px">Apex Logistics · Widget-A · 500 units</div>
-      <div style="font-size:13px;color:#ccc;margin-bottom:10px">$8.20/unit · 3 day delivery</div>
-      <div style="font-size:16px;font-weight:900;color:#aa44ff;margin-bottom:12px">Total: $4,100</div>
+      <div style="font-size:13px;color:#ccc;margin-bottom:4px">${po.supplier} · ${po.sku} · ${po.qty} units</div>
+      <div style="font-size:13px;color:#ccc;margin-bottom:10px">$${po.unit_price}/unit · ${po.lead_time} day delivery</div>
+      <div style="font-size:16px;font-weight:900;color:#aa44ff;margin-bottom:12px">Total: $${po.total}</div>
       <div style="display:flex;gap:8px">
         <button onclick="approveAgentPO()" style="
           flex:1;padding:12px;background:linear-gradient(135deg,#aa44ff,#8822cc);
@@ -1120,7 +1161,7 @@
         </button>
       </div>
     </div>`;
-      setStatus("Draft PO ready · Approve or Reject");
+      }
     }
 
     function approveAgentPO() {

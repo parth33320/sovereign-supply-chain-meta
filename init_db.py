@@ -122,6 +122,16 @@ def init_sqlite():
         )
     ''')
 
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS agent_threads (
+            thread_id TEXT PRIMARY KEY,
+            transcript TEXT,
+            draft_po TEXT,
+            status TEXT DEFAULT 'running',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
     cursor.execute('DELETE FROM inventory')
     cursor.executemany('''
         INSERT INTO inventory (tenant_id, item_name, quantity, transit_time, spot_rate, supplier_id)
@@ -184,6 +194,16 @@ def init_postgres(db_uri: str):
                 prompt TEXT,
                 chosen TEXT,
                 rejected TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS agent_threads (
+                thread_id TEXT PRIMARY KEY,
+                transcript TEXT,
+                draft_po TEXT,
+                status TEXT DEFAULT 'running',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')

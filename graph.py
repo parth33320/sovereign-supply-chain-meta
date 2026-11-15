@@ -253,13 +253,13 @@ def a2a_negotiate_sync(state: AgentState) -> Dict:
     if demo:
         rfq_str = f"RFQ for {len(stockouts)} stockout items (max lead time 5 days)."
         quotes = [
-            {"supplier": "Apex Logistics", "price_per_unit": 8.50, "lead_time_days": 4, "minimum_order_qty": 200, "notes": "Standard express freight"},
+            {"supplier": "Apex Logistics", "price_per_unit": 8.20, "lead_time_days": 3, "minimum_order_qty": 100, "notes": "Priority lane restock"},
             {"supplier": "Global Parts Co", "price_per_unit": 8.75, "lead_time_days": 6, "minimum_order_qty": 500, "notes": "Bulk discount applied"},
-            {"supplier": "FastShip Supply", "price_per_unit": 8.10, "lead_time_days": 3, "minimum_order_qty": 100, "notes": "Priority lane restock"}
+            {"supplier": "FastShip Supply", "price_per_unit": 9.10, "lead_time_days": 2, "minimum_order_qty": 200, "notes": "Standard express freight"}
         ]
         recommendation = {
-            "selected_supplier": "FastShip Supply",
-            "reasoning": "FastShip Supply offers the lowest unit cost ($8.10) and lowest lead time (3 days), comfortably meeting the 5-day constraint."
+            "selected_supplier": "Apex Logistics",
+            "reasoning": "Apex Logistics offers the lowest unit cost ($8.20) at 3 days lead time, meeting the 5-day constraint."
         }
     else:
         llm = get_llm()
@@ -384,6 +384,14 @@ def draft_po(state: AgentState) -> Dict:
     drafted_plan = f"Plan: Restock via {po['po_id']} ({po.get('quantity', 500)} units from {po['supplier']})"
     req_id = state.get("request_id") or state.get("thread_id") or "req-default"
     log_task(req_id, "DRAFTED", json.dumps({"plan": drafted_plan, "po": po}))
+
+    # Persist transcript + draft_po for agent_status polling keyed by thread_id
+    thread_id = state.get("thread_id") or state.get("request_id") or "req-default"
+    execute_mutation(
+        "INSERT OR REPLACE INTO agent_threads (thread_id, transcript, draft_po, status) VALUES (?,?,?,?)",
+        (thread_id, json.dumps(state.get("a2a_transcript", [])), json.dumps(po), "done")
+    )
+
     return {"pending_po": po, "drafted_plan": drafted_plan, "messages": messages, "status": "drafted"}
 
 # Router for Intent
