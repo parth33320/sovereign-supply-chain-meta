@@ -1118,7 +1118,6 @@
       }
       renderNextLine();
 
-      // Poll /api/vr/agent-status/{threadId} until done, then populate PO card from draft_po
       let polled = false;
       async function pollStatus() {
         try {
@@ -1126,21 +1125,24 @@
           const data = await res.json();
           if (data.done && !polled) {
             polled = true;
-            const po = data.draft_po || draftPo;
-            renderPoCard(po);
+            renderPoCard(data.draft_po || draftPo);
             setStatus("Draft PO ready · Approve or Reject");
-          } else if (!data.done && !polled) {
-            setTimeout(pollStatus, 800);
+            return;
           }
-        } catch (e) {
-          if (!polled && lineIndex >= steps.length) {
-            polled = true;
-            renderPoCard(draftPo);
-            setStatus("Draft PO ready · Approve or Reject");
-          }
+        } catch (e) { /* backend down, fall through */ }
+
+        // If lines are done rendering and still no PO card, show it anyway
+        if (!polled && lineIndex >= steps.length) {
+          polled = true;
+          renderPoCard(draftPo);
+          setStatus("Draft PO ready · Approve or Reject");
+          return;
         }
+        if (!polled) setTimeout(pollStatus, 600);
       }
-      setTimeout(pollStatus, 200);
+
+      // Wait for lines to finish (steps.length * 500ms) then poll
+      setTimeout(pollStatus, steps.length * 500 + 300);
 
       async function renderPoCard(po) {
         document.getElementById("agent-po").innerHTML = `
