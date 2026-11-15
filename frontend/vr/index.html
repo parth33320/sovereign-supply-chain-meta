@@ -1,858 +1,1156 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>Supply Chain AR Walk</title>
-<style>
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { background: #000; font-family: -apple-system, sans-serif; color: #fff; overflow: hidden; }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Supply Chain AR Walk</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
 
-#enter-screen {
-  position: fixed; inset: 0; display: flex; flex-direction: column;
-  align-items: center; justify-content: center; z-index: 500;
-  background: radial-gradient(ellipse at center, #001133 0%, #000 100%);
-}
-#enter-btn {
-  padding: 22px 56px; font-size: 24px; font-weight: 800;
-  background: linear-gradient(135deg, #0066ff, #0044cc);
-  color: #fff; border: none; border-radius: 20px; cursor: pointer;
-  box-shadow: 0 8px 32px rgba(0,102,255,0.4);
-  letter-spacing: 0.5px;
-}
-#enter-subtitle {
-  margin-top: 16px; font-size: 14px; color: #446;
-  text-align: center; max-width: 280px; line-height: 1.6;
-}
+    body {
+      background: #000;
+      font-family: -apple-system, sans-serif;
+      color: #fff;
+      overflow: hidden;
+    }
 
-#status {
-  position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
-  font-size: 13px; color: #aaa; z-index: 400; text-align: center;
-  background: rgba(0,0,0,0.6); padding: 6px 16px; border-radius: 20px;
-  pointer-events: none; white-space: nowrap;
-}
+    /* ── ENTER SCREEN ── */
+    #enter-screen {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 500;
+      background: radial-gradient(ellipse at center, #001133 0%, #000 100%);
+    }
 
-/* ── AR SHELF SCENE ── */
-#ar-scene {
-  position: fixed; inset: 0; display: none; z-index: 10;
-}
+    #enter-btn {
+      padding: 22px 56px;
+      font-size: 24px;
+      font-weight: 800;
+      background: linear-gradient(135deg, #0066ff, #0044cc);
+      color: #fff;
+      border: none;
+      border-radius: 20px;
+      cursor: pointer;
+      box-shadow: 0 8px 32px rgba(0, 102, 255, 0.4);
+    }
 
-#shelf-container {
-  position: fixed; bottom: 0; left: 0; right: 0;
-  height: 72vh; display: flex; flex-direction: column;
-  align-items: center; justify-content: flex-end;
-  padding-bottom: 20px;
-}
+    #enter-subtitle {
+      margin-top: 14px;
+      font-size: 13px;
+      color: #334;
+      text-align: center;
+    }
 
-/* The shelf unit */
-.shelf-unit {
-  width: 94vw; max-width: 520px;
-  background: linear-gradient(180deg, #1a1008 0%, #100a04 100%);
-  border: 2px solid #5a3a1a;
-  border-radius: 12px;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,200,100,0.1);
-  overflow: hidden;
-}
+    /* ── STATUS BAR ── */
+    #status {
+      position: fixed;
+      top: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 12px;
+      color: #888;
+      z-index: 400;
+      text-align: center;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 5px 14px;
+      border-radius: 16px;
+      pointer-events: none;
+      white-space: nowrap;
+      display: none;
+      max-width: 90vw;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
 
-.shelf-header {
-  background: linear-gradient(90deg, #2a1a08, #1a1008);
-  padding: 10px 16px;
-  border-bottom: 1px solid #5a3a1a;
-  display: flex; align-items: center; justify-content: space-between;
-}
-.shelf-header-title {
-  font-size: 13px; font-weight: 700; color: #cc8844; letter-spacing: 1px;
-}
-.shelf-header-sub {
-  font-size: 11px; color: #664422;
-}
+    /* ── NAV BAR — slim, bottom, no overlap ── */
+    #nav-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      display: none;
+      z-index: 400;
+      background: linear-gradient(0deg, rgba(0, 0, 0, 0.95) 0%, rgba(0, 0, 0, 0.0) 100%);
+      padding: 12px 16px 20px;
+      flex-direction: row;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
 
-.shelf-row {
-  display: flex;
-  border-bottom: 3px solid #3a2010;
-  background: linear-gradient(180deg, #1e1208 0%, #161008 100%);
-  position: relative;
-}
-.shelf-row::after {
-  content: '';
-  position: absolute; bottom: -3px; left: 0; right: 0; height: 3px;
-  background: linear-gradient(90deg, #5a3a1a, #8a5a2a, #5a3a1a);
-}
-.shelf-row:last-child { border-bottom: none; }
+    .nav-btn {
+      padding: 8px 18px;
+      border-radius: 20px;
+      border: none;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }
 
-/* Individual bin slot */
-.bin {
-  flex: 1; padding: 8px 4px; display: flex; flex-direction: column;
-  align-items: center; border-right: 1px solid #2a1808;
-  position: relative; min-height: 90px; cursor: pointer;
-  transition: background 0.2s;
-}
-.bin:last-child { border-right: none; }
-.bin:hover { background: rgba(255,255,255,0.03); }
-.bin:active { background: rgba(255,255,255,0.06); }
+    .nav-btn.active {
+      background: #0066ff;
+      color: #fff;
+    }
 
-/* Stock bar visual */
-.bin-bar-container {
-  width: 28px; flex: 1; display: flex; flex-direction: column;
-  justify-content: flex-end; margin-bottom: 4px;
-}
-.bin-bar-bg {
-  width: 100%; border-radius: 3px 3px 0 0;
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.08);
-  flex: 1; display: flex; flex-direction: column; justify-content: flex-end;
-  overflow: hidden;
-}
-.bin-bar-fill {
-  width: 100%; border-radius: 2px 2px 0 0;
-  transition: height 0.6s ease;
-}
-.bin-bar-fill.full   { background: linear-gradient(180deg, #00ff88, #00cc66); height: 85%; }
-.bin-bar-fill.medium { background: linear-gradient(180deg, #44aaff, #2288dd); height: 55%; }
-.bin-bar-fill.low    { background: linear-gradient(180deg, #ffaa00, #cc8800); height: 15%; }
-.bin-bar-fill.empty  { background: linear-gradient(180deg, #ff4444, #cc2222); height: 4%; }
+    .nav-btn.inactive {
+      background: rgba(255, 255, 255, 0.07);
+      color: #555;
+      border: 1px solid #222;
+    }
 
-.bin-label {
-  font-size: 10px; font-weight: 700; color: #886644;
-  letter-spacing: 0.5px; text-align: center; margin-top: 2px;
-}
-.bin-qty {
-  font-size: 11px; font-weight: 800; text-align: center;
-}
-.bin-qty.full   { color: #00cc66; }
-.bin-qty.medium { color: #2288dd; }
-.bin-qty.low    { color: #ffaa00; }
-.bin-qty.empty  { color: #ff4444; }
+    /* Mic button — fixed floating, never hidden */
+    #mic-btn {
+      position: fixed;
+      bottom: 24px;
+      right: 16px;
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: #aa44ff;
+      border: none;
+      color: #fff;
+      font-size: 20px;
+      cursor: pointer;
+      z-index: 500;
+      box-shadow: 0 4px 16px rgba(170, 68, 255, 0.5);
+      display: none;
+    }
 
-/* ── ALERT BADGE on Widget-A ── */
-.alert-badge {
-  position: absolute; top: -28px; left: 50%; transform: translateX(-50%);
-  background: #ff3333; color: #fff;
-  font-size: 10px; font-weight: 800;
-  padding: 3px 8px; border-radius: 6px;
-  white-space: nowrap; letter-spacing: 0.3px;
-  animation: pulse-badge 1.2s ease-in-out infinite;
-  box-shadow: 0 2px 8px rgba(255,0,0,0.5);
-  z-index: 10;
-}
-.alert-badge::after {
-  content: '';
-  position: absolute; bottom: -5px; left: 50%; transform: translateX(-50%);
-  border: 5px solid transparent; border-top-color: #ff3333;
-}
-@keyframes pulse-badge {
-  0%, 100% { opacity: 1; transform: translateX(-50%) scale(1); }
-  50%       { opacity: 0.85; transform: translateX(-50%) scale(1.05); }
-}
+    #mic-btn.listening {
+      background: #ff3333;
+      animation: mic-pulse 0.8s ease-in-out infinite;
+    }
 
-/* ── PINCH PROMPT ── */
-.pinch-prompt {
-  position: absolute; bottom: -44px; left: 50%; transform: translateX(-50%);
-  background: rgba(0,102,255,0.9); color: #fff;
-  font-size: 11px; font-weight: 700;
-  padding: 5px 12px; border-radius: 20px;
-  white-space: nowrap; animation: float 2s ease-in-out infinite;
-  box-shadow: 0 4px 16px rgba(0,102,255,0.5);
-  cursor: pointer; z-index: 10;
-}
-@keyframes float {
-  0%, 100% { transform: translateX(-50%) translateY(0); }
-  50%       { transform: translateX(-50%) translateY(-4px); }
-}
+    @keyframes mic-pulse {
 
-/* ── INVOICE SCENE ── */
-#invoice-scene {
-  position: fixed; inset: 0; display: none; z-index: 10;
-  align-items: center; justify-content: center;
-}
+      0%,
+      100% {
+        box-shadow: 0 0 0 0 rgba(255, 50, 50, 0.4)
+      }
 
-.invoice-paper {
-  width: 90vw; max-width: 400px;
-  background: linear-gradient(180deg, #f8f6f0 0%, #f0ece0 100%);
-  border-radius: 8px; overflow: hidden;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.1);
-  color: #1a1a1a;
-  transform: perspective(800px) rotateX(2deg);
-}
-.invoice-top-bar {
-  background: linear-gradient(90deg, #1a3a6a, #0d2444);
-  padding: 14px 20px; color: #fff;
-  display: flex; justify-content: space-between; align-items: center;
-}
-.invoice-company { font-size: 16px; font-weight: 800; letter-spacing: 0.5px; }
-.invoice-number  { font-size: 11px; color: #8ab; }
-.invoice-body    { padding: 16px 20px; }
-.invoice-row {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 5px 0; border-bottom: 1px solid #e8e4d8; font-size: 12px;
-}
-.invoice-row:last-child { border-bottom: none; }
-.invoice-row .label { color: #666; }
-.invoice-row .value { font-weight: 700; color: #1a1a1a; }
-.invoice-items-header {
-  background: #1a3a6a; color: #fff;
-  padding: 8px 20px; font-size: 11px; font-weight: 700;
-  letter-spacing: 1px; display: flex; justify-content: space-between;
-}
-.invoice-line {
-  display: flex; padding: 10px 20px;
-  border-bottom: 1px solid #e8e4d8; font-size: 12px;
-  align-items: center;
-}
-.invoice-line .sku   { flex: 2; font-weight: 700; color: #1a1a1a; }
-.invoice-line .qty   { flex: 1; text-align: center; color: #446; }
-.invoice-line .price { flex: 1; text-align: center; color: #446; }
-.invoice-line .total { flex: 1; text-align: right; font-weight: 700; color: #1a3a6a; }
-.invoice-total-row {
-  background: #f0ece0; padding: 12px 20px;
-  display: flex; justify-content: space-between; align-items: center;
-}
-.invoice-total-label { font-size: 13px; font-weight: 700; color: #446; }
-.invoice-total-value { font-size: 18px; font-weight: 900; color: #1a3a6a; }
+      50% {
+        box-shadow: 0 0 0 12px rgba(255, 50, 50, 0)
+      }
+    }
 
-.invoice-pinch-prompt {
-  text-align: center; padding: 12px;
-  background: linear-gradient(90deg, #0d2444, #1a3a6a);
-  cursor: pointer;
-  animation: invoice-glow 2s ease-in-out infinite;
-}
-@keyframes invoice-glow {
-  0%,100% { box-shadow: inset 0 0 0 rgba(0,102,255,0); }
-  50%      { box-shadow: inset 0 0 20px rgba(0,102,255,0.3); }
-}
-.invoice-pinch-prompt span {
-  font-size: 13px; font-weight: 700; color: #fff;
-  letter-spacing: 0.5px;
-}
+    /* ── SHELF SCENE ── */
+    #ar-scene {
+      position: fixed;
+      inset: 0;
+      display: none;
+      z-index: 10;
+      align-items: flex-end;
+      justify-content: center;
+      padding-bottom: 64px;
+      /* clear nav bar */
+    }
 
-/* ── AR RESULT PANEL ── */
-#ar-panel {
-  position: fixed; bottom: 0; left: 0; right: 0;
-  background: rgba(0,8,24,0.97);
-  border-radius: 24px 24px 0 0;
-  border-top: 3px solid #0066ff;
-  padding: 20px; max-height: 65vh; overflow-y: auto;
-  z-index: 300; display: none;
-  box-shadow: 0 -8px 40px rgba(0,0,0,0.8);
-}
+    .shelf-unit {
+      width: 94vw;
+      max-width: 520px;
+      background: linear-gradient(180deg, #1a1008 0%, #100a04 100%);
+      border: 2px solid #5a3a1a;
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+      overflow: visible;
+      /* allow alert triangles to overflow */
+    }
 
-/* ── NAV BUTTONS ── */
-#nav-bar {
-  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
-  display: none; gap: 12px; z-index: 400; align-items: center;
-}
-.nav-btn {
-  padding: 10px 20px; border-radius: 24px; border: none;
-  font-size: 13px; font-weight: 700; cursor: pointer;
-  transition: all 0.2s;
-}
-.nav-btn.active {
-  background: #0066ff; color: #fff;
-  box-shadow: 0 4px 16px rgba(0,102,255,0.4);
-}
-.nav-btn.inactive {
-  background: rgba(255,255,255,0.08); color: #666;
-  border: 1px solid #222;
-}
+    .shelf-header {
+      background: linear-gradient(90deg, #2a1a08, #1a1008);
+      padding: 10px 16px;
+      border-bottom: 1px solid #5a3a1a;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
 
-canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; }
-</style>
+    .shelf-header-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #cc8844;
+      letter-spacing: 1px;
+    }
+
+    .shelf-header-sub {
+      font-size: 11px;
+      color: #664422;
+    }
+
+    .shelf-row {
+      display: flex;
+      padding: 10px 8px 14px;
+      border-bottom: 3px solid #3a2010;
+      background: linear-gradient(180deg, #1e1208, #161008);
+    }
+
+    .shelf-row:last-child {
+      border-bottom: none;
+    }
+
+    .shelf-row.dim {
+      opacity: 0.35;
+    }
+
+    .bin {
+      flex: 1;
+      padding: 4px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      border-right: 1px solid #2a1808;
+      position: relative;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .bin:last-child {
+      border-right: none;
+    }
+
+    .bin:active {
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    /* Stock bar */
+    .bin-bar-bg {
+      width: 26px;
+      height: 60px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 3px;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      overflow: hidden;
+      margin-bottom: 4px;
+    }
+
+    .bin-bar-fill {
+      width: 100%;
+      border-radius: 2px 2px 0 0;
+      transition: height 0.6s ease;
+    }
+
+    .bin-bar-fill.full {
+      background: linear-gradient(180deg, #00ff88, #00cc66);
+      height: 85%;
+    }
+
+    .bin-bar-fill.medium {
+      background: linear-gradient(180deg, #44aaff, #2288dd);
+      height: 55%;
+    }
+
+    .bin-bar-fill.low {
+      background: linear-gradient(180deg, #ffaa00, #cc8800);
+      height: 15%;
+    }
+
+    .bin-bar-fill.empty {
+      background: linear-gradient(180deg, #ff4444, #cc2222);
+      height: 4%;
+    }
+
+    .bin-bar-fill.inbound {
+      background: linear-gradient(180deg, #aa44ff, #8822cc);
+      height: 30%;
+    }
+
+    .bin-label {
+      font-size: 9px;
+      font-weight: 700;
+      color: #886644;
+      letter-spacing: 0.5px;
+    }
+
+    .bin-qty {
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .bin-qty.full {
+      color: #00cc66;
+    }
+
+    .bin-qty.medium {
+      color: #2288dd;
+    }
+
+    .bin-qty.low {
+      color: #ffaa00;
+    }
+
+    .bin-qty.empty {
+      color: #ff4444;
+    }
+
+    .bin-qty.inbound {
+      color: #aa44ff;
+      font-size: 9px;
+    }
+
+    /* Alert triangle — sits inline above the bin bar, no floating */
+    .bin-alert {
+      width: 20px;
+      height: 20px;
+      margin-bottom: 2px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      animation: triangle-pulse 1.2s ease-in-out infinite;
+    }
+
+    @keyframes triangle-pulse {
+
+      0%,
+      100% {
+        opacity: 1
+      }
+
+      50% {
+        opacity: 0.5
+      }
+    }
+
+    /* Pinch hint — tiny text under qty, only on alerted bin */
+    .bin-pinch-hint {
+      font-size: 8px;
+      color: #0066ff;
+      margin-top: 2px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      text-align: center;
+    }
+
+    /* ── INVOICE SCENE ── */
+    #invoice-scene {
+      position: fixed;
+      inset: 0;
+      display: none;
+      z-index: 10;
+      align-items: center;
+      justify-content: center;
+      padding: 16px 16px 72px;
+      /* clear nav */
+    }
+
+    .invoice-paper {
+      width: 100%;
+      max-width: 400px;
+      background: linear-gradient(180deg, #f8f6f0, #f0ece0);
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+      color: #1a1a1a;
+    }
+
+    .inv-top {
+      background: linear-gradient(90deg, #1a3a6a, #0d2444);
+      padding: 14px 20px;
+      color: #fff;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .inv-company {
+      font-size: 16px;
+      font-weight: 800;
+    }
+
+    .inv-num {
+      font-size: 11px;
+      color: #8ab;
+    }
+
+    .inv-meta {
+      font-size: 11px;
+      color: #8ab;
+      text-align: right;
+    }
+
+    .inv-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 6px 20px;
+      font-size: 12px;
+      border-bottom: 1px solid #e8e4d8;
+    }
+
+    .inv-row .lbl {
+      color: #666;
+    }
+
+    .inv-row .val {
+      font-weight: 700;
+    }
+
+    .inv-items-hdr {
+      background: #1a3a6a;
+      color: #fff;
+      padding: 7px 20px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .inv-line {
+      display: flex;
+      padding: 10px 20px;
+      border-bottom: 1px solid #e8e4d8;
+      font-size: 12px;
+      align-items: center;
+    }
+
+    .inv-line.alert {
+      background: #fff8f0;
+      border-left: 3px solid #ff6600;
+    }
+
+    .inv-line .sku {
+      flex: 2;
+      font-weight: 700;
+    }
+
+    .inv-line .qty {
+      flex: 1;
+      text-align: center;
+      color: #446;
+    }
+
+    .inv-line .price {
+      flex: 1;
+      text-align: center;
+      color: #446;
+    }
+
+    .inv-line .total {
+      flex: 1;
+      text-align: right;
+      font-weight: 700;
+      color: #1a3a6a;
+    }
+
+    .inv-total {
+      background: #f0ece0;
+      padding: 12px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .inv-total-lbl {
+      font-size: 13px;
+      font-weight: 700;
+      color: #446;
+    }
+
+    .inv-total-val {
+      font-size: 18px;
+      font-weight: 900;
+      color: #1a3a6a;
+    }
+
+    .inv-pinch {
+      text-align: center;
+      padding: 14px;
+      background: linear-gradient(90deg, #0d2444, #1a3a6a);
+      cursor: pointer;
+    }
+
+    .inv-pinch span {
+      font-size: 14px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    /* ── AR RESULT PANEL — slides up from bottom, clears nav ── */
+    #ar-panel {
+      position: fixed;
+      bottom: 56px;
+      left: 0;
+      right: 0;
+      background: rgba(0, 8, 24, 0.97);
+      border-radius: 20px 20px 0 0;
+      border-top: 3px solid #0066ff;
+      padding: 18px 18px 24px;
+      max-height: 58vh;
+      overflow-y: auto;
+      z-index: 300;
+      display: none;
+      box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.8);
+    }
+
+    canvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 0;
+    }
+  </style>
 </head>
+
 <body>
+  <canvas id="canvas"></canvas>
 
-<canvas id="canvas"></canvas>
-
-<!-- Enter screen -->
-<div id="enter-screen">
-  <button id="enter-btn" onclick="enterAR()">🏭 Enter AR Walk</button>
-  <div id="enter-subtitle">
-    Supply Chain AR · Hands-first · Meta Quest
+  <!-- Enter screen -->
+  <div id="enter-screen">
+    <button id="enter-btn" onclick="enterAR()">🏭 Enter AR Walk</button>
+    <div id="enter-subtitle">Supply Chain AR · Hands-first · Meta Quest · IWSDK/WebXR</div>
   </div>
-</div>
 
-<div id="status" style="display:none"></div>
+  <div id="status"></div>
 
-<!-- Shelf AR scene -->
-<div id="ar-scene">
-  <div id="shelf-container">
-
-    <!-- Alert floats above Widget-A bin -->
-    <div style="width:94vw;max-width:520px;position:relative;margin-bottom:36px">
-      <div class="alert-badge" style="left:12.5%">⚠ STOCKOUT</div>
-      <div class="pinch-prompt" style="left:12.5%" onclick="onShelfPinch()">
-        👌 Pinch to restock
-      </div>
-    </div>
-
+  <!-- Shelf AR scene -->
+  <div id="ar-scene" style="display:flex">
     <div class="shelf-unit">
       <div class="shelf-header">
         <div class="shelf-header-title">BAY A-14 · AISLE 3</div>
         <div class="shelf-header-sub">Last scan: 3:20 AM</div>
       </div>
-
-      <!-- Row 1 -->
-      <div class="shelf-row" style="padding:12px 8px 16px">
-        <!-- Widget-A: EMPTY -->
-        <div class="bin" onclick="onShelfPinch()" title="Widget-A">
-          <div class="bin-bar-container">
-            <div class="bin-bar-bg">
-              <div class="bin-bar-fill empty"></div>
-            </div>
+      <!-- Row 1: main inventory -->
+      <div class="shelf-row">
+        <!-- Widget-A: EMPTY with inline alert -->
+        <div class="bin" id="bin-a" onclick="onShelfPinch()" title="Widget-A — tap to scan">
+          <div class="bin-alert" id="alert-a">⚠️</div>
+          <div class="bin-bar-bg">
+            <div class="bin-bar-fill empty" id="fill-a"></div>
           </div>
           <div class="bin-label">WGT-A</div>
-          <div class="bin-qty empty">0 u</div>
+          <div class="bin-qty empty" id="qty-a">0 u</div>
+          <div class="bin-pinch-hint" id="hint-a">👌 pinch</div>
         </div>
         <!-- Widget-B: LOW -->
         <div class="bin" title="Widget-B">
-          <div class="bin-bar-container">
-            <div class="bin-bar-bg">
-              <div class="bin-bar-fill low"></div>
-            </div>
+          <div class="bin-alert">⚠️</div>
+          <div class="bin-bar-bg">
+            <div class="bin-bar-fill low"></div>
           </div>
           <div class="bin-label">WGT-B</div>
           <div class="bin-qty low">3 u</div>
+          <div class="bin-pinch-hint">👌 pinch</div>
         </div>
         <!-- Widget-C: MEDIUM -->
         <div class="bin" title="Widget-C">
-          <div class="bin-bar-container">
-            <div class="bin-bar-bg">
-              <div class="bin-bar-fill medium"></div>
-            </div>
+          <div style="height:20px"></div>
+          <div class="bin-bar-bg">
+            <div class="bin-bar-fill medium"></div>
           </div>
           <div class="bin-label">WGT-C</div>
           <div class="bin-qty medium">18 u</div>
         </div>
         <!-- Widget-D: FULL -->
         <div class="bin" title="Widget-D">
-          <div class="bin-bar-container">
-            <div class="bin-bar-bg">
-              <div class="bin-bar-fill full"></div>
-            </div>
+          <div style="height:20px"></div>
+          <div class="bin-bar-bg">
+            <div class="bin-bar-fill full"></div>
           </div>
           <div class="bin-label">WGT-D</div>
           <div class="bin-qty full">24 u</div>
         </div>
       </div>
-
-      <!-- Row 2 — decorative background stock -->
-      <div class="shelf-row" style="padding:8px 8px 10px;opacity:0.4">
-        <div class="bin"><div class="bin-bar-container"><div class="bin-bar-bg"><div class="bin-bar-fill full"></div></div></div><div class="bin-label">WGT-E</div><div class="bin-qty full">30 u</div></div>
-        <div class="bin"><div class="bin-bar-container"><div class="bin-bar-bg"><div class="bin-bar-fill medium"></div></div></div><div class="bin-label">WGT-F</div><div class="bin-qty medium">12 u</div></div>
-        <div class="bin"><div class="bin-bar-container"><div class="bin-bar-bg"><div class="bin-bar-fill full"></div></div></div><div class="bin-label">WGT-G</div><div class="bin-qty full">28 u</div></div>
-        <div class="bin"><div class="bin-bar-container"><div class="bin-bar-bg"><div class="bin-bar-fill medium"></div></div></div><div class="bin-label">WGT-H</div><div class="bin-qty medium">9 u</div></div>
+      <!-- Row 2: background stock, dimmed -->
+      <div class="shelf-row dim">
+        <div class="bin">
+          <div style="height:20px"></div>
+          <div class="bin-bar-bg">
+            <div class="bin-bar-fill full"></div>
+          </div>
+          <div class="bin-label">WGT-E</div>
+          <div class="bin-qty full">30 u</div>
+        </div>
+        <div class="bin">
+          <div style="height:20px"></div>
+          <div class="bin-bar-bg">
+            <div class="bin-bar-fill medium"></div>
+          </div>
+          <div class="bin-label">WGT-F</div>
+          <div class="bin-qty medium">12 u</div>
+        </div>
+        <div class="bin">
+          <div style="height:20px"></div>
+          <div class="bin-bar-bg">
+            <div class="bin-bar-fill full"></div>
+          </div>
+          <div class="bin-label">WGT-G</div>
+          <div class="bin-qty full">28 u</div>
+        </div>
+        <div class="bin">
+          <div style="height:20px"></div>
+          <div class="bin-bar-bg">
+            <div class="bin-bar-fill medium"></div>
+          </div>
+          <div class="bin-label">WGT-H</div>
+          <div class="bin-qty medium">9 u</div>
+        </div>
       </div>
-
-    </div><!-- /shelf-unit -->
-  </div><!-- /shelf-container -->
-</div><!-- /ar-scene -->
-
-<!-- Invoice AR scene -->
-<div id="invoice-scene" style="display:none;position:fixed;inset:0;z-index:10;align-items:center;justify-content:center;padding:20px">
-  <div class="invoice-paper">
-    <div class="invoice-top-bar">
-      <div>
-        <div class="invoice-company">APEX LOGISTICS</div>
-        <div class="invoice-number">INV-2026-847 · Nov 14, 2026</div>
-      </div>
-      <div style="font-size:11px;color:#8ab;text-align:right">
-        NET 30<br>PENDING
-      </div>
-    </div>
-
-    <div class="invoice-body">
-      <div class="invoice-row">
-        <span class="label">Bill To</span>
-        <span class="value">Sovereign Supply Co.</span>
-      </div>
-      <div class="invoice-row">
-        <span class="label">Ship Via</span>
-        <span class="value">FedEx Ground · 3 days</span>
-      </div>
-      <div class="invoice-row">
-        <span class="label">PO Reference</span>
-        <span class="value">Pending approval</span>
-      </div>
-    </div>
-
-    <div class="invoice-items-header">
-      <span>ITEM</span><span>QTY</span><span>UNIT</span><span>TOTAL</span>
-    </div>
-
-    <div class="invoice-line" style="background:#fff8f0;border-left:3px solid #ff6600">
-      <span class="sku">Widget-A ⚠</span>
-      <span class="qty">500</span>
-      <span class="price">$8.20</span>
-      <span class="total">$4,100.00</span>
-    </div>
-
-    <div class="invoice-total-row">
-      <span class="invoice-total-label">TOTAL DUE</span>
-      <span class="invoice-total-value">$4,100.00</span>
-    </div>
-
-    <div class="invoice-pinch-prompt" onclick="onInvoicePinch()">
-      <span>👌 Pinch to extract &amp; approve PO</span>
     </div>
   </div>
-</div>
 
-<!-- AR result panel -->
-<div id="ar-panel"></div>
+  <!-- Invoice AR scene -->
+  <div id="invoice-scene">
+    <div class="invoice-paper">
+      <div class="inv-top">
+        <div>
+          <div class="inv-company">APEX LOGISTICS</div>
+          <div class="inv-num">INV-2026-847 · Nov 14, 2026</div>
+        </div>
+        <div class="inv-meta">NET 30<br>PENDING</div>
+      </div>
+      <div class="inv-row"><span class="lbl">Bill To</span><span class="val">Sovereign Supply Co.</span></div>
+      <div class="inv-row"><span class="lbl">Ship Via</span><span class="val">FedEx Ground · 3 days</span></div>
+      <div class="inv-row" style="border:none"><span class="lbl">PO Reference</span><span class="val">Pending
+          approval</span></div>
+      <div class="inv-items-hdr"><span>ITEM</span><span>QTY</span><span>UNIT</span><span>TOTAL</span></div>
+      <div class="inv-line alert">
+        <span class="sku">Widget-A ⚠</span>
+        <span class="qty">500</span>
+        <span class="price">$8.20</span>
+        <span class="total">$4,100.00</span>
+      </div>
+      <div class="inv-total">
+        <span class="inv-total-lbl">TOTAL DUE</span>
+        <span class="inv-total-val">$4,100.00</span>
+      </div>
+      <div class="inv-pinch" onclick="onInvoicePinch()">
+        <span>👌 Pinch to extract &amp; review PO</span>
+      </div>
+    </div>
+  </div>
 
-<!-- Nav bar -->
-<div id="nav-bar">
-  <button class="nav-btn active" id="btn-shelf" onclick="showScene('shelf')">📦 Shelf</button>
-  <button class="nav-btn inactive" id="btn-invoice" onclick="showScene('invoice')">📄 Invoice</button>
-  <button class="nav-btn inactive" id="btn-voice" onclick="showVoiceGuide()">🎤 Voice</button>
-</div>
+  <!-- AR result panel -->
+  <div id="ar-panel"></div>
 
-<script>
-const API_BASE = "";
-let mode = "shelf";
-let scanning = false;
-let xrSession = null;
-let xrRefSpace = null;
-let gl = null;
-let handRight = null;
-let handLeft  = null;
-let pinchWasDown = { left: false, right: false };
+  <!-- Nav bar -->
+  <div id="nav-bar">
+    <button class="nav-btn active" id="btn-shelf" onclick="showScene('shelf')">📦 Shelf</button>
+    <button class="nav-btn inactive" id="btn-invoice" onclick="showScene('invoice')">📄 Invoice</button>
+    <button class="nav-btn inactive" id="btn-voice" onclick="showVoiceGuide()">🎤 Guide</button>
+  </div>
 
-// ── ENTRY ─────────────────────────────────────────────────────────────────────
-async function enterAR() {
-  document.getElementById("enter-screen").style.display = "none";
-  document.getElementById("status").style.display = "block";
-  document.getElementById("nav-bar").style.display = "flex";
-  showScene("shelf");
-  setStatus("👌 Pinch Widget-A to begin · or tap it");
+  <!-- Mic button: always floating, never in nav -->
+  <button id="mic-btn" onclick="startVoiceListening()">🎤</button>
 
-  // Try XR session
-  if (navigator.xr) {
-    const ok = await navigator.xr.isSessionSupported("immersive-ar").catch(() => false);
-    if (ok) {
-      try { await startXRSession(); return; } catch(e) {}
+  <script>
+    const API_BASE = "";
+    let mode = "shelf";
+    let scanning = false;
+    let restockTriggered = false; // tracks if shelf restock was initiated
+    let xrSession = null, xrRefSpace = null, gl = null;
+    let handRight = null, handLeft = null;
+    let pinchWasDown = { left: false, right: false };
+    let recognition = null;
+
+    // ── ENTRY ─────────────────────────────────────────────────────────────────────
+    async function enterAR() {
+      document.getElementById("enter-screen").style.display = "none";
+      document.getElementById("status").style.display = "block";
+      document.getElementById("nav-bar").style.display = "flex";
+      document.getElementById("mic-btn").style.display = "flex";
+      document.getElementById("mic-btn").style.alignItems = "center";
+      document.getElementById("mic-btn").style.justifyContent = "center";
+      showScene("shelf");
+
+      if (navigator.xr) {
+        const ok = await navigator.xr.isSessionSupported("immersive-ar").catch(() => false);
+        if (ok) { try { await startXRSession(); return; } catch (e) { } }
+      }
+      setStatus("👌 Tap Widget-A to scan · 🎤 for voice commands");
     }
-  }
-}
 
-// ── SCENE SWITCHER ────────────────────────────────────────────────────────────
-function showScene(scene) {
-  mode = scene;
-  document.getElementById("ar-scene").style.display    = scene === "shelf"   ? "block" : "none";
-  document.getElementById("invoice-scene").style.display = scene === "invoice" ? "flex"  : "none";
-  document.getElementById("ar-panel").style.display = "none";
-  document.getElementById("btn-shelf").className   = "nav-btn " + (scene === "shelf"   ? "active" : "inactive");
-  document.getElementById("btn-invoice").className = "nav-btn " + (scene === "invoice" ? "active" : "inactive");
-  document.getElementById("btn-voice").className   = "nav-btn inactive";
-  if (scene === "shelf")   setStatus("👌 Pinch Widget-A to run A2A restock");
-  if (scene === "invoice") setStatus("👌 Pinch invoice to extract & approve PO");
-}
+    // ── SCENE SWITCHER ────────────────────────────────────────────────────────────
+    function showScene(scene) {
+      mode = scene;
+      document.getElementById("ar-scene").style.display = scene === "shelf" ? "flex" : "none";
+      document.getElementById("invoice-scene").style.display = scene === "invoice" ? "flex" : "none";
+      document.getElementById("ar-panel").style.display = "none";
+      document.getElementById("btn-shelf").className = "nav-btn " + (scene === "shelf" ? "active" : "inactive");
+      document.getElementById("btn-invoice").className = "nav-btn " + (scene === "invoice" ? "active" : "inactive");
+      document.getElementById("btn-voice").className = "nav-btn inactive";
+      if (scene === "shelf") setStatus("👌 Tap Widget-A · 🎤 say 'restock Widget-A'");
+      if (scene === "invoice") setStatus("👌 Tap invoice to extract · review PO");
+    }
 
-// ── SHELF PINCH ───────────────────────────────────────────────────────────────
-async function onShelfPinch() {
-  if (scanning) return;
-  scanning = true;
-  setStatus("🔬 SAM 3.1 analyzing bay A-14…");
-  await sleep(600);
+    // ── SHELF PINCH ───────────────────────────────────────────────────────────────
+    async function onShelfPinch() {
+      if (scanning) return;
+      scanning = true;
+      setStatus("🔬 SAM 3.1 analyzing bay A-14…");
+      await sleep(500);
 
-  try {
-    const res = await fetch(API_BASE + "/api/vr/shelf-scan/demo", { method: "POST" });
-    const data = await res.json();
-    renderShelfResult(data);
-    setStatus("⚠️ Widget-A empty · tap Restock to run A2A agents");
-  } catch(e) {
-    renderShelfResult(FALLBACK_SHELF);
-    setStatus("⚠️ Widget-A empty · tap Restock");
-  }
-  scanning = false;
-}
+      try {
+        const res = await fetch("/api/vr/shelf-scan/demo", { method: "POST" });
+        renderShelfResult(await res.json());
+      } catch (e) {
+        renderShelfResult(FALLBACK_SHELF);
+      }
+      scanning = false;
+      setStatus("⚠️ Widget-A empty · tap Restock to run A2A agents");
+    }
 
-// ── INVOICE PINCH ─────────────────────────────────────────────────────────────
-async function onInvoicePinch() {
-  if (scanning) return;
-  scanning = true;
-  setStatus("🔬 Muse Image extracting invoice fields…");
-  await sleep(800);
+    // ── INVOICE PINCH ─────────────────────────────────────────────────────────────
+    async function onInvoicePinch() {
+      if (scanning) return;
+      scanning = true;
+      setStatus("🔬 Muse Image extracting invoice fields…");
+      await sleep(700);
 
-  try {
-    const res = await fetch(API_BASE + "/api/vr/invoice-scan/demo", { method: "POST" });
-    const data = await res.json();
-    renderInvoiceResult(data);
-    setStatus("📄 Invoice extracted · approve or reject");
-  } catch(e) {
-    renderInvoiceResult(FALLBACK_INVOICE);
-    setStatus("📄 Invoice extracted · approve or reject");
-  }
-  scanning = false;
-}
+      try {
+        const res = await fetch("/api/vr/invoice-scan/demo", { method: "POST" });
+        renderInvoiceResult(await res.json());
+      } catch (e) {
+        renderInvoiceResult(FALLBACK_INVOICE);
+      }
+      scanning = false;
+      setStatus("📄 Invoice extracted · approve or reject");
+    }
 
-// ── RENDER SHELF RESULT ───────────────────────────────────────────────────────
-function renderShelfResult(data) {
-  const panel = document.getElementById("ar-panel");
-  panel.style.display = "block";
-  panel.style.borderTopColor = "#0066ff";
+    // ── RENDER SHELF RESULT ───────────────────────────────────────────────────────
+    function renderShelfResult(data) {
+      const panel = document.getElementById("ar-panel");
+      panel.style.display = "block";
+      panel.style.borderTopColor = "#0066ff";
 
-  let zones = "";
-  for (const z of (data.zones || [])) {
-    zones += `<div style="display:flex;align-items:center;padding:7px 0;border-bottom:1px solid #ffffff10">
-      <span style="width:10px;height:10px;border-radius:50%;background:${z.color};display:inline-block;margin-right:10px;flex-shrink:0"></span>
+      let zones = (data.zones || []).map(z => `
+    <div style="display:flex;align-items:center;padding:7px 0;border-bottom:1px solid #ffffff10">
+      <span style="width:9px;height:9px;border-radius:50%;background:${z.color};display:inline-block;margin-right:10px;flex-shrink:0"></span>
       <span style="flex:1;font-size:14px">${z.sku}</span>
       <span style="font-size:13px;color:${z.color};font-weight:700">
-        ${z.status==="empty"?"EMPTY":z.status==="low"?"LOW — "+z.qty+" units":z.qty+" units"}
+        ${z.status === "empty" ? "EMPTY" : z.status === "low" ? "LOW — " + z.qty + " u" : z.qty + " u"}
       </span>
-    </div>`;
-  }
+    </div>`).join("");
 
-  panel.innerHTML = `
-    <div style="font-size:17px;font-weight:800;color:#4499ff;margin-bottom:4px">🏭 Bay A-14 Scan Result</div>
-    <div style="font-size:12px;color:#555;margin-bottom:12px">SAM 3.1 · ${new Date().toLocaleTimeString()}</div>
-    <div style="background:#ff330018;border:1px solid #ff4444;border-radius:10px;padding:10px;margin-bottom:14px">
-      <span style="color:#ff9999;font-size:13px">⚠️ 2 SKUs require immediate action</span>
+      panel.innerHTML = `
+    <div style="font-size:16px;font-weight:800;color:#4499ff;margin-bottom:4px">🏭 Bay A-14 Scan</div>
+    <div style="font-size:11px;color:#444;margin-bottom:12px">SAM 3.1 · ${new Date().toLocaleTimeString()}</div>
+    <div style="background:#ff330018;border:1px solid #ff4444;border-radius:8px;padding:8px 12px;margin-bottom:12px;color:#ff9999;font-size:12px">
+      ⚠️ 2 SKUs require immediate action
     </div>
     ${zones}
     <button onclick="triggerAgentRestock()" style="
-      margin-top:16px;width:100%;padding:14px;
+      margin-top:14px;width:100%;padding:14px;
       background:linear-gradient(135deg,#0066ff,#0044cc);
       border:none;border-radius:12px;color:#fff;
-      font-size:15px;font-weight:800;cursor:pointer;
-      box-shadow:0 4px 16px rgba(0,102,255,0.4)">
+      font-size:15px;font-weight:800;cursor:pointer">
       🤖 Restock Widget-A — Run A2A Agents
     </button>
     <div onclick="document.getElementById('ar-panel').style.display='none'"
-      style="text-align:center;margin-top:12px;color:#333;font-size:12px;cursor:pointer;padding:4px">
-      ✕ close
+      style="text-align:center;margin-top:10px;color:#333;font-size:11px;cursor:pointer">✕ close</div>`;
+    }
+
+    // ── RENDER INVOICE RESULT ─────────────────────────────────────────────────────
+    function renderInvoiceResult(data) {
+      const panel = document.getElementById("ar-panel");
+      panel.style.display = "block";
+      panel.style.borderTopColor = "#00cc88";
+
+      // Show context note if restock wasn't triggered from shelf
+      const contextNote = restockTriggered ? "" :
+        `<div style="background:#ffaa0018;border:1px solid #ffaa00;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:#ffcc88">
+      💡 Scan the shelf first to trigger an automated restock PO
     </div>`;
-}
 
-// ── RENDER INVOICE RESULT ─────────────────────────────────────────────────────
-function renderInvoiceResult(data) {
-  const panel = document.getElementById("ar-panel");
-  panel.style.display = "block";
-  panel.style.borderTopColor = "#00cc88";
-
-  const items = (data.items||[]).map(i =>
-    `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #ffffff10;font-size:13px">
+      const items = (data.items || []).map(i => `
+    <div style="display:flex;justify-content:space-between;padding:6px 0;
+      border-bottom:1px solid #ffffff10;font-size:13px">
       <span style="color:#ccc">${i.sku}</span>
       <span style="color:#888">qty ${i.qty}</span>
       <span style="color:#00cc88;font-weight:700">$${(i.qty * parseFloat(i.cost)).toLocaleString()}</span>
-    </div>`
-  ).join("");
+    </div>`).join("");
 
-  panel.innerHTML = `
-    <div style="font-size:17px;font-weight:800;color:#00cc88;margin-bottom:4px">📄 Invoice Extracted</div>
-    <div style="font-size:12px;color:#555;margin-bottom:12px">Muse Image · ${new Date().toLocaleTimeString()}</div>
+      panel.innerHTML = `
+    <div style="font-size:16px;font-weight:800;color:#00cc88;margin-bottom:4px">📄 Invoice Extracted</div>
+    <div style="font-size:11px;color:#444;margin-bottom:12px">Muse Image · ${new Date().toLocaleTimeString()}</div>
+    ${contextNote}
     <div style="font-size:14px;margin-bottom:4px"><b>Supplier:</b> ${data.supplier}</div>
-    <div style="font-size:13px;color:#666;margin-bottom:12px"><b>Delivery:</b> ${(data.dates||[]).join(" → ")}</div>
+    <div style="font-size:12px;color:#666;margin-bottom:10px"><b>Delivery:</b> ${(data.dates || []).join(" → ")}</div>
     ${items}
-    <div style="margin-top:10px;padding:12px;background:#ffffff08;border-radius:8px;
+    <div style="margin-top:10px;padding:10px;background:#ffffff08;border-radius:8px;
       display:flex;justify-content:space-between;align-items:center">
-      <span style="font-size:14px;color:#888">Total</span>
-      <span style="font-size:20px;font-weight:900;color:#00cc88">${data.total}</span>
+      <span style="font-size:13px;color:#888">Total</span>
+      <span style="font-size:18px;font-weight:900;color:#00cc88">${data.total}</span>
     </div>
     <div style="margin-top:12px;background:#00441122;border:1px solid #00cc88;
-      border-radius:10px;padding:12px;font-size:13px;color:#88ffcc">
+      border-radius:10px;padding:12px;font-size:12px;color:#88ffcc">
       <b>AI Draft:</b> ${data.draft_instruction}
     </div>
     <div style="display:flex;gap:10px;margin-top:14px">
-      <button onclick="approveAction('PO approved — $4,100 to Apex Logistics')" style="
+      <button onclick="approveInvoice()" style="
         flex:1;padding:14px;background:linear-gradient(135deg,#00cc88,#008855);
-        border:none;border-radius:12px;color:#000;
-        font-size:15px;font-weight:800;cursor:pointer">
+        border:none;border-radius:12px;color:#000;font-size:15px;font-weight:800;cursor:pointer">
         ✅ Approve PO
       </button>
-      <button onclick="rejectAction()" style="
-        flex:1;padding:14px;background:rgba(255,50,50,0.15);
+      <button onclick="rejectInvoice()" style="
+        flex:1;padding:14px;background:rgba(255,50,50,0.1);
         border:1px solid #ff4444;border-radius:12px;color:#ff6666;
-        font-size:15px;font-weight:700;cursor:pointer">
+        font-size:14px;font-weight:700;cursor:pointer">
         ✕ Reject
       </button>
     </div>
     <div onclick="document.getElementById('ar-panel').style.display='none'"
-      style="text-align:center;margin-top:12px;color:#333;font-size:12px;cursor:pointer;padding:4px">
-      ✕ close
+      style="text-align:center;margin-top:10px;color:#333;font-size:11px;cursor:pointer">✕ close</div>`;
+    }
+
+    // ── INVOICE APPROVE / REJECT ───────────────────────────────────────────────────
+    function approveInvoice() {
+      const panel = document.getElementById("ar-panel");
+      panel.style.borderTopColor = "#00ff88";
+      panel.innerHTML = `
+    <div style="text-align:center;padding:28px 20px">
+      <div style="font-size:48px;margin-bottom:10px">✅</div>
+      <div style="font-size:18px;font-weight:800;color:#00ff88;margin-bottom:8px">PO Approved</div>
+      <div style="font-size:13px;color:#666">$4,100 · Apex Logistics · Widget-A × 500<br>ETA 3 days</div>
     </div>`;
-}
+      setStatus("✅ PO approved");
 
-// ── AGENT RESTOCK ─────────────────────────────────────────────────────────────
-async function triggerAgentRestock() {
-  const panel = document.getElementById("ar-panel");
-  panel.style.borderTopColor = "#aa44ff";
+      // Only update shelf state if restock was triggered from shelf scan
+      if (restockTriggered) {
+        setTimeout(() => updateShelfToInbound(), 1500);
+      }
 
-  const steps = [
-    "🔍 Checking inventory — Widget-A: 0 units",
-    "📡 Disruption radar: Port delays +2 days",
-    "🤝 Buyer agent: Sending RFQ to 3 suppliers",
-    "💬 Apex Logistics: $8.20/unit · 3 days",
-    "💬 MegaSupply Co: $8.95/unit · 5 days",
-    "💬 FastParts Inc: $9.10/unit · 2 days",
-    "🧮 Optimizing: price vs delivery vs risk",
-    "✅ Best deal: Apex Logistics $8.20 · 3 days",
-  ];
+      setTimeout(() => {
+        panel.style.display = "none";
+        scanning = false;
+      }, 3500);
+    }
 
-  let html = `
-    <div style="font-size:17px;font-weight:800;color:#aa44ff;margin-bottom:4px">🤖 Muse A2A Agents</div>
-    <div style="font-size:12px;color:#555;margin-bottom:12px">Live negotiation · muse-spark-1.3</div>
-    <div id="agent-lines" style="font-family:monospace;font-size:12px;color:#ccaaff;line-height:2"></div>
-    <div id="agent-po" style="display:none"></div>
+    function rejectInvoice() {
+      // Invoice reject = just close, no re-negotiation
+      // Re-negotiation only happens from the shelf/agent flow
+      const panel = document.getElementById("ar-panel");
+      panel.style.borderTopColor = "#ff4444";
+      panel.innerHTML = `
+    <div style="text-align:center;padding:28px 20px">
+      <div style="font-size:48px;margin-bottom:10px">✕</div>
+      <div style="font-size:18px;font-weight:800;color:#ff6666;margin-bottom:8px">PO Rejected</div>
+      <div style="font-size:13px;color:#666">Invoice sent back to supplier.<br>Return to shelf to initiate a new restock.</div>
+      <button onclick="showScene('shelf')" style="
+        margin-top:16px;padding:12px 24px;
+        background:rgba(0,102,255,0.15);border:1px solid #0066ff;
+        border-radius:10px;color:#66aaff;font-size:13px;cursor:pointer">
+        ← Back to Shelf
+      </button>
+    </div>`;
+      setStatus("Invoice rejected · back to shelf to restock");
+      restockTriggered = false;
+      scanning = false;
+    }
+
+    // ── AGENT RESTOCK (from shelf) ────────────────────────────────────────────────
+    async function triggerAgentRestock() {
+      restockTriggered = true;
+      const panel = document.getElementById("ar-panel");
+      panel.style.borderTopColor = "#aa44ff";
+
+      const steps = [
+        "🔍 Checking inventory — Widget-A: 0 units",
+        "📡 Disruption radar: Port delays +2 days",
+        "🤝 Buyer agent: Sending RFQ to 3 suppliers",
+        "💬 Apex Logistics: $8.20/unit · 3 days",
+        "💬 MegaSupply Co: $8.95/unit · 5 days",
+        "💬 FastParts Inc: $9.10/unit · 2 days",
+        "🧮 Optimizing: price vs delivery vs risk",
+        "✅ Best deal: Apex Logistics $8.20 · 3 days",
+      ];
+
+      panel.innerHTML = `
+    <div style="font-size:16px;font-weight:800;color:#aa44ff;margin-bottom:4px">🤖 Muse A2A Agents</div>
+    <div style="font-size:11px;color:#555;margin-bottom:12px">Live negotiation · muse-spark-1.3</div>
+    <div id="agent-lines" style="font-family:monospace;font-size:12px;color:#ccaaff;line-height:2.2"></div>
+    <div id="agent-po"></div>
     <div onclick="document.getElementById('ar-panel').style.display='none'"
-      style="text-align:center;margin-top:12px;color:#333;font-size:12px;cursor:pointer;padding:4px">
-      ✕ close
-    </div>`;
-  panel.innerHTML = html;
-  setStatus("🤖 A2A agents negotiating…");
+      style="text-align:center;margin-top:10px;color:#333;font-size:11px;cursor:pointer">✕ close</div>`;
+      setStatus("🤖 A2A agents negotiating…");
 
-  // Stream lines one by one
-  const linesEl = document.getElementById("agent-lines");
-  for (const step of steps) {
-    await sleep(600);
-    linesEl.innerHTML += `<div style="opacity:0;animation:fadein 0.3s forwards">${step}</div>`;
-  }
+      const linesEl = document.getElementById("agent-lines");
+      for (const s of steps) {
+        await sleep(550);
+        const d = document.createElement("div");
+        d.textContent = s; d.style.cssText = "opacity:0;transition:opacity 0.3s";
+        linesEl.appendChild(d);
+        await sleep(50); d.style.opacity = "1";
+      }
 
-  // Show draft PO
-  await sleep(500);
-  document.getElementById("agent-po").style.display = "block";
-  document.getElementById("agent-po").innerHTML = `
-    <div style="margin-top:16px;background:#22004433;border:2px solid #aa44ff;
-      border-radius:12px;padding:16px;">
-      <div style="font-size:13px;color:#cc88ff;font-weight:700;margin-bottom:10px">
-        Draft PO Ready
-      </div>
-      <div style="display:flex;justify-content:space-between;font-size:13px;
-        color:#ccc;margin-bottom:6px">
-        <span>Apex Logistics · Widget-A</span>
-        <span>500 units</span>
-      </div>
-      <div style="display:flex;justify-content:space-between;font-size:13px;
-        color:#ccc;margin-bottom:12px">
-        <span>$8.20/unit · 3 day delivery</span>
-        <span style="color:#aa44ff;font-weight:800">$4,100</span>
-      </div>
-      <div style="display:flex;gap:10px">
-        <button onclick="approveAction('PO #2026-847 approved — 500x Widget-A from Apex')" style="
-          flex:1;padding:13px;background:linear-gradient(135deg,#aa44ff,#8822cc);
+      await sleep(400);
+      document.getElementById("agent-po").innerHTML = `
+    <div style="margin-top:14px;background:#22004433;border:2px solid #aa44ff;
+      border-radius:12px;padding:14px;">
+      <div style="font-size:12px;color:#cc88ff;font-weight:700;margin-bottom:8px">Draft PO Ready</div>
+      <div style="font-size:13px;color:#ccc;margin-bottom:4px">Apex Logistics · Widget-A · 500 units</div>
+      <div style="font-size:13px;color:#ccc;margin-bottom:10px">$8.20/unit · 3 day delivery</div>
+      <div style="font-size:16px;font-weight:900;color:#aa44ff;margin-bottom:12px">Total: $4,100</div>
+      <div style="display:flex;gap:8px">
+        <button onclick="approveAgentPO()" style="
+          flex:1;padding:12px;background:linear-gradient(135deg,#aa44ff,#8822cc);
           border:none;border-radius:10px;color:#fff;
-          font-size:14px;font-weight:800;cursor:pointer;
-          box-shadow:0 4px 16px rgba(170,68,255,0.4)">
+          font-size:14px;font-weight:800;cursor:pointer">
           👌 Pinch to Approve
         </button>
-        <button onclick="rejectAction()" style="
-          flex:1;padding:13px;background:rgba(255,50,50,0.1);
+        <button onclick="rejectAgentPO()" style="
+          flex:1;padding:12px;background:rgba(255,50,50,0.1);
           border:1px solid #ff4444;border-radius:10px;
-          color:#ff6666;font-size:14px;font-weight:700;cursor:pointer">
+          color:#ff6666;font-size:13px;font-weight:700;cursor:pointer">
           ✕ Reject
         </button>
       </div>
     </div>`;
-  setStatus("Draft PO ready · Approve or Reject");
-}
-
-// ── APPROVE / REJECT ──────────────────────────────────────────────────────────
-function approveAction(msg) {
-  const panel = document.getElementById("ar-panel");
-  panel.style.borderTopColor = "#00ff88";
-  panel.innerHTML = `
-    <div style="text-align:center;padding:32px 20px">
-      <div style="font-size:56px;margin-bottom:12px">✅</div>
-      <div style="font-size:20px;font-weight:800;color:#00ff88;margin-bottom:8px">Approved!</div>
-      <div style="font-size:13px;color:#666;line-height:1.6">${msg}</div>
-      <div style="margin-top:16px;font-size:12px;color:#333">
-        Widget-A: restock inbound · ETA 3 days
-      </div>
-    </div>`;
-  setStatus("✅ PO approved · Widget-A restocking");
-  setTimeout(() => {
-    panel.style.display = "none";
-    scanning = false;
-    // Update shelf visual — Widget-A now shows "pending"
-    const emptyFill = document.querySelector(".bin-bar-fill.empty");
-    if (emptyFill) {
-      emptyFill.style.height = "30%";
-      emptyFill.style.background = "linear-gradient(180deg,#aa44ff,#8822cc)";
-      emptyFill.classList.remove("empty");
-      const qtyEl = emptyFill.closest(".bin")?.querySelector(".bin-qty");
-      if (qtyEl) { qtyEl.textContent = "⏳ inbound"; qtyEl.style.color = "#aa44ff"; }
+      setStatus("Draft PO ready · Approve or Reject");
     }
-    const badge = document.querySelector(".alert-badge");
-    if (badge) { badge.textContent = "✓ RESTOCK ORDERED"; badge.style.background = "#aa44ff"; badge.style.animation = "none"; }
-  }, 3500);
-}
 
-function rejectAction() {
-  const panel = document.getElementById("ar-panel");
-  panel.style.borderTopColor = "#ff4444";
-  panel.innerHTML = `
+    function approveAgentPO() {
+      const panel = document.getElementById("ar-panel");
+      panel.style.borderTopColor = "#00ff88";
+      panel.innerHTML = `
     <div style="text-align:center;padding:28px 20px">
-      <div style="font-size:48px;margin-bottom:12px">✕</div>
+      <div style="font-size:48px;margin-bottom:10px">✅</div>
+      <div style="font-size:18px;font-weight:800;color:#00ff88;margin-bottom:8px">Approved!</div>
+      <div style="font-size:13px;color:#666">PO #2026-847 · 500× Widget-A<br>Apex Logistics · ETA 3 days</div>
+    </div>`;
+      setStatus("✅ PO approved · Widget-A restocking");
+      updateShelfToInbound();
+      setTimeout(() => { panel.style.display = "none"; scanning = false; }, 3500);
+    }
+
+    function rejectAgentPO() {
+      restockTriggered = false;
+      const panel = document.getElementById("ar-panel");
+      panel.style.borderTopColor = "#ff4444";
+      panel.innerHTML = `
+    <div style="text-align:center;padding:28px 20px">
+      <div style="font-size:48px;margin-bottom:10px">✕</div>
       <div style="font-size:18px;font-weight:800;color:#ff6666;margin-bottom:8px">PO Rejected</div>
       <div style="font-size:13px;color:#666">Re-negotiating with backup suppliers…</div>
       <button onclick="triggerAgentRestock()" style="
-        margin-top:16px;padding:12px 24px;
-        background:rgba(255,100,100,0.15);
-        border:1px solid #ff4444;border-radius:10px;
-        color:#ff6666;font-size:13px;cursor:pointer">
+        margin-top:14px;padding:12px 24px;
+        background:rgba(255,100,100,0.1);border:1px solid #ff4444;
+        border-radius:10px;color:#ff6666;font-size:13px;cursor:pointer">
         🔄 Try Again
       </button>
     </div>`;
-  setStatus("PO rejected · re-negotiating");
-}
+      setStatus("PO rejected · try again or find new supplier");
+      scanning = false;
+    }
 
-// ── VOICE GUIDE ───────────────────────────────────────────────────────────────
-function showVoiceGuide() {
-  document.getElementById("ar-scene").style.display = "none";
-  document.getElementById("invoice-scene").style.display = "none";
-  document.getElementById("btn-shelf").className   = "nav-btn inactive";
-  document.getElementById("btn-invoice").className = "nav-btn inactive";
-  document.getElementById("btn-voice").className   = "nav-btn active";
+    // ── SHELF STATE UPDATE ────────────────────────────────────────────────────────
+    function updateShelfToInbound() {
+      const fill = document.getElementById("fill-a");
+      const qty = document.getElementById("qty-a");
+      const hint = document.getElementById("hint-a");
+      const alert = document.getElementById("alert-a");
+      if (fill) { fill.className = "bin-bar-fill inbound"; }
+      if (qty) { qty.textContent = "⏳ inbound"; qty.className = "bin-qty inbound"; }
+      if (hint) { hint.style.display = "none"; }
+      if (alert) { alert.textContent = "✓"; alert.style.animation = "none"; alert.style.color = "#aa44ff"; }
+      const pinchPrompt = document.querySelector(".pinch-prompt");
+      if (pinchPrompt) pinchPrompt.style.display = "none";
+    }
 
-  const panel = document.getElementById("ar-panel");
-  panel.style.display = "block";
-  panel.style.borderTopColor = "#aa44ff";
+    // ── VOICE GUIDE ───────────────────────────────────────────────────────────────
+    function showVoiceGuide() {
+      document.getElementById("ar-scene").style.display = "none";
+      document.getElementById("invoice-scene").style.display = "none";
+      document.getElementById("btn-shelf").className = "nav-btn inactive";
+      document.getElementById("btn-invoice").className = "nav-btn inactive";
+      document.getElementById("btn-voice").className = "nav-btn active";
 
-  const cmds = [
-    ["restock Widget-A",        () => { showScene("shelf"); setTimeout(triggerAgentRestock, 400); }],
-    ["approve",                 () => approveAction("Voice approved — PO executed")],
-    ["reject",                  () => rejectAction()],
-    ["check invoice",           () => showScene("invoice")],
-    ["show shelf",              () => showScene("shelf")],
-    ["check disruptions",       () => showDisruptionPanel()],
-  ];
+      const panel = document.getElementById("ar-panel");
+      panel.style.display = "block";
+      panel.style.borderTopColor = "#aa44ff";
 
-  panel.innerHTML = `
-    <div style="font-size:17px;font-weight:800;color:#cc88ff;margin-bottom:4px">🎤 Voice Commands</div>
-    <div style="font-size:12px;color:#555;margin-bottom:16px">Muse Voice Transcribe · say or tap</div>
-    ${cmds.map(([cmd, fn], i) => `
+      const cmds = [
+        ["restock Widget-A", () => { showScene("shelf"); setTimeout(triggerAgentRestock, 400); }],
+        ["approve", () => approveAgentPO()],
+        ["reject", () => rejectAgentPO()],
+        ["check invoice", () => showScene("invoice")],
+        ["show shelf", () => showScene("shelf")],
+        ["check disruptions", () => showDisruptionPanel()],
+      ];
+      window._voiceCmds = cmds.map(c => c[1]);
+
+      panel.innerHTML = `
+    <div style="font-size:16px;font-weight:800;color:#cc88ff;margin-bottom:4px">🎤 Voice Commands</div>
+    <div style="font-size:11px;color:#555;margin-bottom:14px">Muse Voice Transcribe · say or tap · tap 🎤 to activate mic</div>
+    ${cmds.map(([cmd], i) => `
       <div onclick="simulateVoice(${i})" style="
-        display:flex;align-items:center;padding:10px 12px;
-        margin-bottom:8px;background:rgba(170,68,255,0.08);
-        border:1px solid #aa44ff33;border-radius:10px;cursor:pointer;
-        transition:background 0.2s" 
-        onmouseover="this.style.background='rgba(170,68,255,0.16)'"
-        onmouseout="this.style.background='rgba(170,68,255,0.08)'">
-        <span style="font-size:18px;margin-right:10px">🎤</span>
+        display:flex;align-items:center;padding:10px 12px;margin-bottom:8px;
+        background:rgba(170,68,255,0.08);border:1px solid #aa44ff33;
+        border-radius:10px;cursor:pointer">
+        <span style="font-size:16px;margin-right:10px">🎤</span>
         <span style="font-family:monospace;font-size:13px;color:#cc88ff;flex:1">"${cmd}"</span>
-        <span style="font-size:11px;color:#555">tap to run →</span>
-      </div>`
-    ).join("")}
+        <span style="font-size:11px;color:#444">tap →</span>
+      </div>`).join("")}
     <div onclick="showScene('shelf')"
-      style="text-align:center;margin-top:8px;color:#333;font-size:12px;cursor:pointer;padding:4px">
-      ← back to shelf
-    </div>`;
+      style="text-align:center;margin-top:8px;color:#333;font-size:11px;cursor:pointer">← back to shelf</div>`;
 
-  // Store callbacks
-  window._voiceCmds = cmds.map(c => c[1]);
-  setStatus("🎤 Say a command or tap one above");
-}
+      setStatus("🎤 Say a command or tap · 🎤 button to activate mic");
+    }
 
-function simulateVoice(i) {
-  window._voiceCmds?.[i]?.();
-}
+    function simulateVoice(i) { window._voiceCmds?.[i]?.(); }
 
-function showDisruptionPanel() {
-  const panel = document.getElementById("ar-panel");
-  panel.style.display = "block";
-  panel.style.borderTopColor = "#ffaa00";
-  panel.innerHTML = `
-    <div style="font-size:17px;font-weight:800;color:#ffcc44;margin-bottom:12px">📡 Disruption Radar</div>
-    ${[
-      ["🚢 Port of LA",      "Delays +2 days",   "#ffaa00"],
-      ["✈️ Air freight",     "Normal",            "#00cc88"],
-      ["🏭 Apex Logistics",  "On schedule",       "#00cc88"],
-      ["🌊 Weather",         "Storm warning SE",  "#ff6644"],
-    ].map(([source, status, color]) => `
-      <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #ffffff10">
-        <span style="font-size:13px;color:#ccc">${source}</span>
-        <span style="font-size:13px;color:${color};font-weight:700">${status}</span>
-      </div>`
-    ).join("")}
+    // ── REAL VOICE ────────────────────────────────────────────────────────────────
+    function startVoiceListening() {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) { setStatus("🎤 Voice not supported in this browser"); return; }
+
+      if (recognition) { recognition.stop(); recognition = null; resetMicBtn(); return; }
+
+      recognition = new SR();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = "en-US";
+
+      recognition.onstart = () => {
+        document.getElementById("mic-btn").classList.add("listening");
+        document.getElementById("mic-btn").textContent = "🔴";
+        setStatus("🎤 Listening…");
+      };
+      recognition.onresult = (e) => {
+        const t = e.results[0][0].transcript.toLowerCase().trim();
+        setStatus("🎤 \"" + t + "\"");
+        handleVoiceCommand(t);
+        recognition = null;
+      };
+      recognition.onerror = (e) => {
+        setStatus("🎤 " + e.error + " — try again");
+        recognition = null; resetMicBtn();
+      };
+      recognition.onend = () => { recognition = null; resetMicBtn(); };
+      recognition.start();
+    }
+
+    function resetMicBtn() {
+      const btn = document.getElementById("mic-btn");
+      btn.classList.remove("listening");
+      btn.textContent = "🎤";
+    }
+
+    function handleVoiceCommand(t) {
+      if (t.includes("restock") || t.includes("order")) {
+        showScene("shelf"); setTimeout(triggerAgentRestock, 300);
+      } else if (t.includes("approve")) {
+        approveAgentPO();
+      } else if (t.includes("reject")) {
+        rejectAgentPO();
+      } else if (t.includes("invoice")) {
+        showScene("invoice");
+      } else if (t.includes("shelf") || t.includes("stock")) {
+        showScene("shelf"); setTimeout(onShelfPinch, 300);
+      } else if (t.includes("disruption") || t.includes("radar")) {
+        showDisruptionPanel();
+      } else {
+        setStatus("🎤 \"" + t + "\" — try: restock / approve / reject / invoice");
+      }
+    }
+
+    // ── DISRUPTION PANEL ──────────────────────────────────────────────────────────
+    function showDisruptionPanel() {
+      const panel = document.getElementById("ar-panel");
+      panel.style.display = "block"; panel.style.borderTopColor = "#ffaa00";
+      panel.innerHTML = `
+    <div style="font-size:16px;font-weight:800;color:#ffcc44;margin-bottom:12px">📡 Disruption Radar</div>
+    ${[["🚢 Port of LA", "Delays +2 days", "#ffaa00"], ["✈️ Air freight", "Normal", "#00cc88"],
+        ["🏭 Apex Logistics", "On schedule", "#00cc88"], ["🌊 Weather SE", "Storm warning", "#ff6644"]]
+          .map(([s, v, c]) => `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #ffffff10">
+        <span style="font-size:13px;color:#ccc">${s}</span>
+        <span style="font-size:13px;color:${c};font-weight:700">${v}</span>
+      </div>`).join("")}
     <div onclick="document.getElementById('ar-panel').style.display='none'"
-      style="text-align:center;margin-top:14px;color:#333;font-size:12px;cursor:pointer">✕ close</div>`;
-}
-
-// ── XR SESSION ────────────────────────────────────────────────────────────────
-async function startXRSession() {
-  xrSession = await navigator.xr.requestSession("immersive-ar", {
-    requiredFeatures: ["local-floor"],
-    optionalFeatures: ["hand-tracking", "dom-overlay"],
-    domOverlay: { root: document.body }
-  });
-  const canvas = document.getElementById("canvas");
-  gl = canvas.getContext("webgl2", { xrCompatible: true });
-  await gl.makeXRCompatible();
-  xrSession.updateRenderState({ baseLayer: new XRWebGLLayer(xrSession, gl) });
-  xrRefSpace = await xrSession.requestReferenceSpace("local-floor");
-  xrSession.addEventListener("end", () => { xrSession = null; });
-  xrSession.requestAnimationFrame(onXRFrame);
-}
-
-function onXRFrame(time, frame) {
-  if (!xrSession) return;
-  xrSession.requestAnimationFrame(onXRFrame);
-  const pose = frame.getViewerPose(xrRefSpace);
-  if (!pose) return;
-  for (const src of xrSession.inputSources) {
-    if (!src.hand) continue;
-    if (src.handedness === "right") handRight = src;
-    if (src.handedness === "left")  handLeft  = src;
-  }
-  if (!scanning) {
-    const rPinch = detectPinch(frame, handRight);
-    const lPinch = detectPinch(frame, handLeft);
-    if (rPinch && !pinchWasDown.right) {
-      if (mode === "shelf")   onShelfPinch();
-      if (mode === "invoice") onInvoicePinch();
+      style="text-align:center;margin-top:12px;color:#333;font-size:11px;cursor:pointer">✕ close</div>`;
     }
-    if (lPinch && !pinchWasDown.left) {
-      showScene(mode === "shelf" ? "invoice" : "shelf");
+
+    // ── XR SESSION ────────────────────────────────────────────────────────────────
+    async function startXRSession() {
+      xrSession = await navigator.xr.requestSession("immersive-ar", {
+        requiredFeatures: ["local-floor"],
+        optionalFeatures: ["hand-tracking", "dom-overlay"],
+        domOverlay: { root: document.body }
+      });
+      const canvas = document.getElementById("canvas");
+      gl = canvas.getContext("webgl2", { xrCompatible: true });
+      await gl.makeXRCompatible();
+      xrSession.updateRenderState({ baseLayer: new XRWebGLLayer(xrSession, gl) });
+      xrRefSpace = await xrSession.requestReferenceSpace("local-floor");
+      xrSession.addEventListener("end", () => { xrSession = null; });
+      xrSession.requestAnimationFrame(onXRFrame);
+      setStatus("👐 Pinch RIGHT on Widget-A · LEFT to switch scene");
     }
-    pinchWasDown.right = rPinch;
-    pinchWasDown.left  = lPinch;
-  }
-  const baseLayer = xrSession.renderState.baseLayer;
-  gl.bindFramebuffer(gl.FRAMEBUFFER, baseLayer.framebuffer);
-  gl.clearColor(0, 0, 0, 0);
-  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-}
 
-function detectPinch(frame, src) {
-  if (!src?.hand || !xrRefSpace) return false;
-  try {
-    const idx = frame.getJointPose(src.hand.get("index-finger-tip"), xrRefSpace);
-    const thm = frame.getJointPose(src.hand.get("thumb-tip"), xrRefSpace);
-    if (!idx || !thm) return false;
-    const p = idx.transform.position, q = thm.transform.position;
-    return Math.hypot(p.x-q.x, p.y-q.y, p.z-q.z) < 0.025;
-  } catch { return false; }
-}
+    function onXRFrame(time, frame) {
+      if (!xrSession) return;
+      xrSession.requestAnimationFrame(onXRFrame);
+      const pose = frame.getViewerPose(xrRefSpace);
+      if (!pose) return;
+      for (const src of xrSession.inputSources) {
+        if (!src.hand) continue;
+        if (src.handedness === "right") handRight = src;
+        if (src.handedness === "left") handLeft = src;
+      }
+      if (!scanning) {
+        const rP = detectPinch(frame, handRight);
+        const lP = detectPinch(frame, handLeft);
+        if (rP && !pinchWasDown.right) {
+          if (mode === "shelf") onShelfPinch();
+          if (mode === "invoice") onInvoicePinch();
+        }
+        if (lP && !pinchWasDown.left) showScene(mode === "shelf" ? "invoice" : "shelf");
+        pinchWasDown.right = rP; pinchWasDown.left = lP;
+      }
+      const bl = xrSession.renderState.baseLayer;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, bl.framebuffer);
+      gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    }
 
-// ── FALLBACK DATA ─────────────────────────────────────────────────────────────
-const FALLBACK_SHELF = {
-  type: "shelf", action_required: true,
-  summary: "Bay A-14: 2 of 4 SKUs require attention.",
-  zones: [
-    {sku:"Widget-A", qty:0,  status:"empty", color:"#ff3333"},
-    {sku:"Widget-B", qty:3,  status:"low",   color:"#ffaa00"},
-    {sku:"Widget-C", qty:18, status:"ok",    color:"#00ff88"},
-    {sku:"Widget-D", qty:24, status:"ok",    color:"#00ff88"},
-  ]
-};
-const FALLBACK_INVOICE = {
-  type:"invoice", supplier:"Apex Logistics",
-  dates:["2026-11-14","2026-11-17"],
-  items:[{sku:"Widget-A", qty:500, cost:"8.20"}],
-  total:"$4,100.00",
-  draft_instruction:"Approve PO for 500x Widget-A from Apex Logistics at $8.20/unit. Delivery in 3 days."
-};
+    function detectPinch(frame, src) {
+      if (!src?.hand || !xrRefSpace) return false;
+      try {
+        const i = frame.getJointPose(src.hand.get("index-finger-tip"), xrRefSpace);
+        const t = frame.getJointPose(src.hand.get("thumb-tip"), xrRefSpace);
+        if (!i || !t) return false;
+        const p = i.transform.position, q = t.transform.position;
+        return Math.hypot(p.x - q.x, p.y - q.y, p.z - q.z) < 0.025;
+      } catch { return false; }
+    }
 
-// ── UTILS ─────────────────────────────────────────────────────────────────────
-function setStatus(msg) {
-  const el = document.getElementById("status");
-  if (el) el.textContent = msg;
-}
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-</script>
+    // ── FALLBACK DATA ─────────────────────────────────────────────────────────────
+    const FALLBACK_SHELF = {
+      type: "shelf", action_required: true,
+      summary: "Bay A-14: 2 of 4 SKUs require attention.",
+      zones: [
+        { sku: "Widget-A", qty: 0, status: "empty", color: "#ff3333" },
+        { sku: "Widget-B", qty: 3, status: "low", color: "#ffaa00" },
+        { sku: "Widget-C", qty: 18, status: "ok", color: "#00ff88" },
+        { sku: "Widget-D", qty: 24, status: "ok", color: "#00ff88" },
+      ]
+    };
+    const FALLBACK_INVOICE = {
+      type: "invoice", supplier: "Apex Logistics",
+      dates: ["2026-11-14", "2026-11-17"],
+      items: [{ sku: "Widget-A", qty: 500, cost: "8.20" }],
+      total: "$4,100.00",
+      draft_instruction: "Approve PO for 500× Widget-A from Apex Logistics at $8.20/unit. Delivery in 3 days."
+    };
 
-<style>
-@keyframes fadein { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
-#invoice-scene { display: none; }
-</style>
+    function setStatus(m) {
+      const el = document.getElementById("status");
+      if (el) el.textContent = m;
+    }
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+  </script>
 </body>
+
 </html>
