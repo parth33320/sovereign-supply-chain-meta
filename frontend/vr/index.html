@@ -359,8 +359,10 @@
   let hitTestSupported = false;
 
   async function startARSession() {
+    console.log("startARSession: navigator.xr=", navigator.xr);
     if (!navigator.xr) {
-      setStatus("WebXR unavailable · 2D fallback mode", true); return;
+      console.error("navigator.xr is null/undefined");
+      setStatus("WebXR unavailable · Check Quest browser version", true); return;
     }
 
     // Try with hit-test first (Quest 3, Android ARCore)
@@ -385,6 +387,7 @@
           domOverlay: {root: document.getElementById("overlay")} };
 
     try {
+      console.log("Requesting AR session with options:", sessionOpts);
       xrSession = await navigator.xr.requestSession("immersive-ar", sessionOpts);
       renderer.xr.setReferenceSpaceType("local-floor");
       await renderer.xr.setSession(xrSession);
@@ -408,8 +411,9 @@
       }
       renderer.setAnimationLoop(onXRFrame);
     } catch(err) {
-      console.error("XR failed:", err);
-      setStatus("AR unavailable · 2D fallback mode", true);
+      console.error("XR session failed:", err?.message || err);
+      console.log("Quest device may need: OS version 15+, Quest 2/3 Browser update, or Pro headset for full AR support");
+      setStatus("AR failed: " + (err?.message || "unknown error") + " · 2D mode", true);
     }
   }
 
