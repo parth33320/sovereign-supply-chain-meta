@@ -65,6 +65,16 @@ if os.path.exists(frontend_dist):
             async def _serve_static(p=static_path):
                 return FileResponse(p)
 
+    # VR page — must be registered BEFORE the SPA catch-all
+    vr_html = os.path.join(repo_root, "frontend", "vr", "index.html")
+
+    @app.get("/vr")
+    @app.get("/vr/")
+    async def serve_vr_dist():
+        if os.path.exists(vr_html):
+            return FileResponse(vr_html, media_type="text/html")
+        return JSONResponse({"error": "VR page not found"})
+
     # SPA catch-all: serve index.html for any unmatched path
     index_html = os.path.join(frontend_dist, "index.html")
 

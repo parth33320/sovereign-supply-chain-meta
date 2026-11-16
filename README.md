@@ -1,4 +1,14 @@
-## Quickstart 
+# 🏭 Sovereign Supply Chain AR
+
+## 🚀 Live AR Demo — open this on your headset or phone
+
+> **[👉 https://sovereign-supply-chain.onrender.com/vr](https://sovereign-supply-chain.onrender.com/vr)**
+
+Open in **Meta Quest Browser** or any WebXR-capable browser. Tap **Enter AR Walk**, point at the floor until the blue ring appears, tap to place the shelf, then tap Widget-A to trigger AI-powered A2A procurement.
+
+---
+
+## Quickstart
 ```bash
 git clone <repo-url>
 cd sovereign-supply-chain-meta
