@@ -75,9 +75,14 @@
 
     /* Modal panel */
     #ar-panel-backdrop { position: absolute; inset: 0; display: flex; align-items: center;
-      justify-content: center; padding: 16px; pointer-events: none;
+      justify-content: flex-end; padding: 16px; pointer-events: none;
       visibility: hidden; }
-    #ar-panel-backdrop.open { visibility: visible; pointer-events: auto; }
+    #ar-panel-backdrop.open { visibility: visible; pointer-events: none; }
+    #ar-panel-backdrop.open .card { pointer-events: auto; }
+    /* On desktop/2D, panel slides to right so shelf stays visible */
+    @media (min-width: 500px) {
+      #ar-panel-backdrop { align-items: flex-start; padding-top: 60px; }
+    }
     .card { background: var(--surface); border: 1px solid var(--border); backdrop-filter: blur(16px);
       border-radius: 16px; max-width: 420px; width: 100%; padding: 18px;
       box-shadow: 0 20px 48px rgba(0,0,0,.7); animation: cardPop .2s ease-out; }
@@ -99,7 +104,7 @@
     .card__actions { display: flex; gap: 10px; margin-top: 14px; }
     .card__actions .btn { flex: 1; }
 
-    .hud-bottom { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; }
+    .hud-bottom { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; position: relative; z-index: 20; }
     .controls-row { display: flex; gap: 8px; max-width: 420px; width: 100%; }
     .controls-row .btn { flex: 1; }
     .voice-hints { font-size: 11px; color: var(--muted); text-align: center;
@@ -127,7 +132,7 @@
         <button class="btn btn-primary interactive" id="btn-enter-ar">🏭 Enter AR Walk</button>
       </div>
       <div class="shelf-preview interactive">
-        <div class="shelf-preview__hdr"><span>BAY A-14 · AISLE 3 (2D Preview)</span><span>Live Sync</span></div>
+        <div class="shelf-preview__hdr"><span>Supply Chain Shelf</span><span>Live Sync</span></div>
         <div class="bin-grid" id="desktop-bin-grid"></div>
       </div>
     </div>
@@ -642,6 +647,7 @@
       <span class="card__badge">COMPLETE</span></div>
       <div class="card__body">
         <div class="card__line">✅ 3-way match: PO ↔ Invoice ↔ GRN verified</div>
+        <div class="card__line" style="color:var(--accent);font-size:11px;margin-top:2px">muse-image-1.0 · invoice scan · 100% PO match</div>
         <div class="card__line" style="color:var(--muted);font-size:11.5px;margin-top:4px">PO-2026-847 · Apex Logistics · $4,100.00</div>
         <div class="card__line" style="color:var(--ok);font-weight:600;margin-top:8px">
           📦 Delivery inbound · Widget-A: ${newQty} units
@@ -654,6 +660,7 @@
   }
 
   async function resetDemo() {
+    closePanel(); // always close any open panel first
     try { await fetch("/api/vr/reset-demo",{method:"POST"}); } catch {}
     bins = JSON.parse(JSON.stringify(INITIAL_BINS));
     pendingPO=null; approvedPO=null; activeInvoice=null;
