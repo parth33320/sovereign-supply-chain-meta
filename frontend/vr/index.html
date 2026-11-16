@@ -356,16 +356,36 @@
     if (hits.length > 0) onShelfPinch();
   }
 
+  let hitTestSupported = false;
+
   async function startARSession() {
     if (!navigator.xr) {
       setStatus("WebXR unavailable · 2D fallback mode", true); return;
     }
+
+    // Try with hit-test first (Quest 3, Android ARCore)
+    // Fall back to local-floor only (Quest 2, devices without hit-test)
+    let sessionOpts = null;
+    hitTestSupported = false;
+
+    const withHitTest = await navigator.xr.isSessionSupported("immersive-ar").catch(()=>false);
+    if (withHitTest) {
+      try {
+        await navigator.xr.requestSession("immersive-ar", {requiredFeatures:["hit-test","local-floor"]}).then(s=>{s.end();});
+        hitTestSupported = true;
+      } catch(e) { hitTestSupported = false; }
+    }
+
+    sessionOpts = hitTestSupported
+      ? { requiredFeatures: ["hit-test","local-floor"],
+          optionalFeatures: ["dom-overlay","hand-tracking"],
+          domOverlay: {root: document.getElementById("overlay")} }
+      : { requiredFeatures: ["local-floor"],
+          optionalFeatures: ["dom-overlay","hand-tracking"],
+          domOverlay: {root: document.getElementById("overlay")} };
+
     try {
-      xrSession = await navigator.xr.requestSession("immersive-ar", {
-        requiredFeatures: ["hit-test","local-floor"],
-        optionalFeatures: ["dom-overlay","hand-tracking"],
-        domOverlay: {root: document.getElementById("overlay")}
-      });
+      xrSession = await navigator.xr.requestSession("immersive-ar", sessionOpts);
       renderer.xr.setReferenceSpaceType("local-floor");
       await renderer.xr.setSession(xrSession);
       xrRefSpace = await xrSession.requestReferenceSpace("local-floor");
@@ -378,12 +398,39 @@
         setStatus("Supply Chain AR · Ready");
       });
       document.body.classList.add("xr-active");
-      setStatus("📱 Point at floor · tap when blue ring appears", true);
+
+      if (hitTestSupported) {
+        setStatus("📱 Point at floor · tap when blue ring appears", true);
+      } else {
+        // Quest 2 / no hit-test: auto-place shelf 1.5m ahead at floor level after short delay
+        setStatus("🥽 Quest 2 mode · placing shelf…", true);
+        setTimeout(() => autoPlaceShelf(), 1800);
+      }
       renderer.setAnimationLoop(onXRFrame);
     } catch(err) {
       console.error("XR failed:", err);
       setStatus("AR unavailable · 2D fallback mode", true);
     }
+  }
+
+  function autoPlaceShelf() {
+    // Place shelf 1.5m in front of camera at floor level (y=0)
+    if (shelfPlaced) return;
+    const camPos = new THREE.Vector3();
+    camera.getWorldPosition(camPos);
+    const camDir = new THREE.Vector3();
+    camera.getWorldDirection(camDir);
+    camDir.y = 0; camDir.normalize();
+    shelfGroup.position.set(
+      camPos.x + camDir.x * 1.5,
+      0,
+      camPos.z + camDir.z * 1.5
+    );
+    shelfGroup.lookAt(camPos.x, 0, camPos.z);
+    shelfGroup.visible = true;
+    shelfPlaced = true;
+    reticle.visible = false;
+    setStatus("🥽 Shelf placed · Air-tap Widget-A to restock");
   }
 
   function onXRFrame(time, frame) {
@@ -394,8 +441,8 @@
       widgetAMesh.material.emissiveIntensity = 0.25 + 0.35*Math.sin(time*0.006);
     }
 
-    // Request hit-test source once per session
-    if (!hitTestSourceRequested) {
+    // Request hit-test source once per session (Quest 3 / ARCore only)
+    if (hitTestSupported && !hitTestSourceRequested) {
       hitTestSourceRequested = true;
       xrSession.requestReferenceSpace("viewer").then(viewerSpace => {
         xrSession.requestHitTestSource({space: viewerSpace}).then(src => {
@@ -405,7 +452,7 @@
     }
 
     // Show reticle only on horizontal floor surfaces (normalY > 0.75)
-    if (hitTestSource && !shelfPlaced && xrRefSpace) {
+    if (hitTestSupported && hitTestSource && !shelfPlaced && xrRefSpace) {
       const hits = frame.getHitTestResults(hitTestSource);
       if (hits.length > 0) {
         const pose = hits[0].getPose(xrRefSpace);  // FIX: hits[0] not hits
