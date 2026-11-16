@@ -147,6 +147,7 @@ Across sprints S1 through S14, we transformed the baseline skeleton into an inte
 - **S12: Demand Forecasting node (proactive stockout prediction)** — Integrated predictive intelligence into the decision graph to project inventory exhaustion horizons and trigger proactive restock cycles.
 - **S13: Analytics Dashboard Panel** — Deployed real-time diagnostic telemetry in Streamlit: MCP query audit logs, WAF rate-limiting counters, and negotiation transcript views.
 - **S14: Automated Demo Video (Playwright + gTTS + moviepy)** — Developed automated end-to-end browser walkthroughs and synthetic voiceover generation to record verifiable demo runs.
+- **S26: Voice-Intent AR Walk Polish** — Replaced the VR nav bar with contextual spatial triggers (pinch Widget-A to restock, pinch again after PO approval for the invoice), added LLM intent classification (`POST /api/vr/interpret-voice`, `muse-spark-1.3` with keyword fallback), a floating 420px A2A card with scene dimming, Inter typography, one reusable card system, and smooth edge-triggered pinch feedback with Quest haptics.
 
 ---
 
@@ -228,6 +229,8 @@ cp .env.example .env
 | `META_API_KEY` | Yes | none | Your Meta AI API key from dev.meta.ai |
 | `META_API_BASE_URL` | No | https://api.meta.ai/v1 | Meta API base URL |
 | `META_MODEL_NAME` | No | muse-spark-1.3 | Main orchestration model |
+| `MUSE_API_KEY` | No | falls back to `META_API_KEY` | Alias used by the VR voice-intent endpoint |
+| `MUSE_BASE_URL` | No | falls back to `META_API_BASE_URL` | Alias base URL for the VR voice-intent endpoint |
 | `DEMO_MODE` | No | 0 | Set to 1 for simulated demo without PostgreSQL |
 | `POSTGRES_DB_URI` | No | SQLite fallback | PostgreSQL for persistent state across sessions |
 | `CELERY_BROKER_URL` | No | redis://localhost:6379/0 | Redis message broker URL for Celery workers |

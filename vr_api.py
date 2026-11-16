@@ -7,12 +7,13 @@ Run alongside Streamlit:  uvicorn vr_api:app --port 8502 --reload
 import base64
 import json
 import os
+import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from db import get_db_connection, execute_query, execute_mutation
+from db import execute_query, execute_mutation
 
 app = FastAPI(title="Supply Chain VR API")
 
@@ -42,6 +43,20 @@ class ImagePayload(BaseModel):
     image_b64: str
     mime_type: str = "image/jpeg"
 
+
+class VoiceIntentPayload(BaseModel):
+    transcript: str = ""
+
+
+VOICE_INTENTS = ("restock", "approve_po", "reject_po", "pay_invoice", "show_invoice", "unknown")
+
+VOICE_INTENT_SYSTEM_PROMPT = (
+    "You are a supply chain warehouse assistant. Extract intent from voice commands. "
+    "Reply with JSON only: "
+    '{"intent": "restock"|"approve_po"|"reject_po"|"pay_invoice"|"show_invoice"|"unknown", '
+    '"item": string|null}'
+)
+
 @app.get("/")
 async def serve_frontend():
     return FileResponse(
@@ -50,7 +65,7 @@ async def serve_frontend():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "version": "S15"}
+    return {"status": "ok", "version": "S26"}
 
 @app.get("/api/vr/agent-status/{thread_id}")
 async def agent_status(thread_id: str):
@@ -100,6 +115,11 @@ async def agent_status(thread_id: str):
 
         lines = []
         for entry in transcript:
+            if isinstance(entry, str):
+                lines.append(entry)
+                continue
+            if not isinstance(entry, dict):
+                continue
             role = entry.get("role", "agent")
             if role == "buyer_agent":
                 lines.append("🔍 Checking inventory — Widget-A: 0 units")
@@ -145,8 +165,8 @@ async def shelf_scan_demo():
         "zones": [
             {"sku": "Widget-A", "qty": 0,  "status": "empty", "color": "#ff3333", "label": "Widget-A: EMPTY"},
             {"sku": "Widget-B", "qty": 3,  "status": "low",   "color": "#ffaa00", "label": "Widget-B: LOW: 3"},
-            {"sku": "Widget-C", "qty": 24, "status": "ok",    "color": "#00ff88", "label": "Widget-C: 24 units"},
-            {"sku": "Widget-D", "qty": 18, "status": "ok",    "color": "#00ff88", "label": "Widget-D: 18 units"},
+            {"sku": "Widget-C", "qty": 18, "status": "ok",    "color": "#00ff88", "label": "Widget-C: 18 units"},
+            {"sku": "Widget-D", "qty": 24, "status": "ok",    "color": "#00ff88", "label": "Widget-D: 24 units"},
         ]
     }
 
@@ -262,6 +282,80 @@ async def shelf_scan(payload: ImagePayload):
     # analyze_shelf_image returns a dict; adapt field names to what your code actually returns
     overlay = _shelf_result_to_overlay(result)
     return overlay
+
+@app.post("/api/vr/interpret-voice")
+async def interpret_voice(payload: VoiceIntentPayload):
+    """
+    Classify a voice transcript into a warehouse intent via muse-spark-1.3.
+    Always returns a valid {"intent": <allowed>, "item": <str|null>} object; never raises.
+    """
+    transcript = (payload.transcript or "").strip()[:500]
+    if not transcript:
+        return {"intent": "unknown", "item": None}
+
+    api_key = os.environ.get("MUSE_API_KEY") or os.environ.get("META_API_KEY")
+    if not api_key:
+        return {"intent": "unknown", "item": None}
+
+    base_url = (
+        os.environ.get("MUSE_BASE_URL")
+        or os.environ.get("META_API_BASE_URL")
+        or "https://api.meta.ai/v1"
+    ).rstrip("/")
+    model = os.environ.get("MUSE_MODEL_NAME") or os.environ.get("META_MODEL_NAME") or "muse-spark-1.3"
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(
+                f"{base_url}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": VOICE_INTENT_SYSTEM_PROMPT},
+                        {"role": "user", "content": transcript},
+                    ],
+                    "max_tokens": 60,
+                    "temperature": 0,
+                },
+            )
+            response.raise_for_status()
+            content = response.json()["choices"][0]["message"]["content"]
+    except Exception:
+        return {"intent": "unknown", "item": None}
+
+    return _parse_intent_json(content)
+
+
+def _parse_intent_json(content):
+    """Extract the {"intent", "item"} dict from an LLM reply, tolerating fences and prose."""
+    if isinstance(content, dict):
+        data = content
+    else:
+        text = (content or "").strip()
+        if text.startswith("```"):
+            text = text.strip("`").strip()
+            if text.lower().startswith("json"):
+                text = text[4:].strip()
+        start, end = text.find("{"), text.rfind("}")
+        if start == -1 or end <= start:
+            return {"intent": "unknown", "item": None}
+        try:
+            data = json.loads(text[start:end + 1])
+        except json.JSONDecodeError:
+            return {"intent": "unknown", "item": None}
+
+    if not isinstance(data, dict):
+        return {"intent": "unknown", "item": None}
+
+    intent = str(data.get("intent", "unknown")).strip().lower()
+    if intent not in VOICE_INTENTS:
+        intent = "unknown"
+    item = data.get("item")
+    return {"intent": intent, "item": item if isinstance(item, str) else None}
 
 @app.post("/api/vr/invoice-scan")
 async def invoice_scan(payload: ImagePayload):

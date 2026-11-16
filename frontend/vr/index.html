@@ -5,718 +5,436 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Supply Chain AR Walk</title>
+  <link rel="icon" href="data:,">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
       background: #000;
-      font-family: -apple-system, sans-serif;
+      font-family: 'Inter', -apple-system, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
       color: #fff;
       overflow: hidden;
     }
+
+    .is-hidden { display: none !important; }
 
     /* ── ENTER SCREEN ── */
     #enter-screen {
-      position: fixed;
-      inset: 0;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      z-index: 500;
+      position: fixed; inset: 0; z-index: 500;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
       background: radial-gradient(ellipse at center, #001133 0%, #000 100%);
+      padding: 24px;
     }
-
     #enter-btn {
-      padding: 22px 56px;
-      font-size: 24px;
-      font-weight: 800;
+      padding: 22px 56px; font-size: 24px; font-weight: 800;
       background: linear-gradient(135deg, #0066ff, #0044cc);
-      color: #fff;
-      border: none;
-      border-radius: 20px;
-      cursor: pointer;
+      color: #fff; border: none; border-radius: 20px; cursor: pointer;
       box-shadow: 0 8px 32px rgba(0, 102, 255, 0.4);
+      transition: transform .16s cubic-bezier(.2,.9,.3,1.4), box-shadow .2s ease;
     }
+    #enter-btn:hover { transform: translateY(-2px); box-shadow: 0 12px 40px rgba(0, 102, 255, 0.55); }
+    #enter-btn:active { transform: scale(.97); }
+    #enter-subtitle { margin-top: 14px; font-size: 13px; color: #8fa3c8; text-align: center; }
 
-    #enter-subtitle {
-      margin-top: 14px;
-      font-size: 13px;
-      color: #334;
-      text-align: center;
-    }
-
-    /* ── STATUS BAR ── */
+    /* ── STATUS ── */
     #status {
-      position: fixed;
-      top: 12px;
-      left: 50%;
-      transform: translateX(-50%);
-      font-size: 12px;
-      color: #888;
-      z-index: 400;
-      text-align: center;
-      background: rgba(0, 0, 0, 0.7);
-      padding: 5px 14px;
-      border-radius: 16px;
-      pointer-events: none;
-      white-space: nowrap;
-      display: none;
-      max-width: 90vw;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      position: fixed; top: 12px; left: 50%; transform: translateX(-50%);
+      font-size: 12px; color: #bbb; z-index: 400; text-align: center;
+      background: rgba(0, 0, 0, 0.72); padding: 5px 14px; border-radius: 16px;
+      pointer-events: none; white-space: nowrap; display: none;
+      max-width: 90vw; overflow: hidden; text-overflow: ellipsis;
     }
 
-    /* ── NAV BAR — slim, bottom, no overlap ── */
-    #nav-bar {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      display: none;
-      z-index: 400;
-      background: linear-gradient(0deg, rgba(0, 0, 0, 0.95) 0%, rgba(0, 0, 0, 0.0) 100%);
-      padding: 12px 16px 20px;
-      flex-direction: row;
-      align-items: center;
-      justify-content: center;
-      gap: 10px;
+    /* ── VOICE FEEDBACK (top-centre, below status) ── */
+    .voice-feedback {
+      position: fixed; top: 48px; left: 50%;
+      transform: translate(-50%, -8px);
+      background: rgba(10, 12, 18, 0.92);
+      border: 1px solid #30363d; border-radius: 12px;
+      padding: 10px 16px; z-index: 600;
+      text-align: center; pointer-events: none;
+      max-width: min(92vw, 560px);
+      opacity: 0;
+      transition: opacity .22s ease, transform .22s cubic-bezier(.2,.9,.3,1.2);
+    }
+    .voice-feedback.visible { opacity: 1; transform: translate(-50%, 0); }
+    .voice-feedback-transcript { font-size: 12px; font-style: italic; color: #9fb6c9; }
+    .voice-feedback-intent { font-size: 13px; font-weight: 700; color: #ffcc66; margin-top: 2px; }
+    .voice-feedback-icon { margin-left: 4px; }
+    .voice-feedback-hint { font-size: 11px; color: #6b7785; margin-top: 2px; }
+
+    /* ── CARD SYSTEM (defined once) ── */
+    .card {
+      background: rgba(18, 18, 24, 0.94);
+      border: 1px solid #2d2d3a;
+      border-radius: 14px;
+      padding: 16px;
+      backdrop-filter: blur(10px);
+    }
+    .card--elevated { box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.03) inset; }
+    .card--primary { border-color: #0066ff; background: linear-gradient(180deg, rgba(0, 102, 255, 0.10), rgba(18, 18, 24, 0.94)); }
+    .card--accent  { border-color: #aa44ff; background: linear-gradient(180deg, rgba(170, 68, 255, 0.10), rgba(18, 18, 24, 0.94)); }
+    .card--success { border-color: #00cc88; background: linear-gradient(180deg, rgba(0, 204, 136, 0.10), rgba(18, 18, 24, 0.94)); }
+    .card--danger  { border-color: #ff4444; background: linear-gradient(180deg, rgba(255, 68, 68, 0.10), rgba(18, 18, 24, 0.94)); }
+
+    .card__title { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .6px; color: #9aa7c7; }
+    .card__subtitle { font-size: 12px; color: #7d8aa0; margin-top: 3px; margin-bottom: 8px; }
+    .card__row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 8px 0; border-bottom: 1px solid #23232c; gap: 12px;
+    }
+    .card__row:last-child { border-bottom: none; }
+    .card__label { font-size: 13px; color: #a8b0c0; }
+    .card__label--item { display: inline-flex; align-items: center; gap: 9px; }
+    .card__data { font-size: 14px; font-weight: 700; color: #fff; text-align: right; }
+    .card__dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
+    .card__dot--empty { background: #ff4444; }
+    .card__dot--low   { background: #ffaa00; }
+    .card__dot--ok    { background: #00cc88; }
+    .card__data--empty { color: #ff8080; }
+    .card__data--low   { color: #ffcc66; }
+    .card__data--ok    { color: #7dffb0; }
+
+    .card__list { margin-top: 4px; }
+    .card__list-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 7px 0; border-bottom: 1px solid #23232c; font-size: 13px; gap: 10px;
+    }
+    .card__list-row:last-child { border-bottom: none; }
+
+    .card__note { margin-top: 10px; padding: 9px 12px; border-radius: 9px; font-size: 12px; line-height: 1.45; }
+    .card__note--danger { background: rgba(255, 68, 68, 0.10); border: 1px solid rgba(255, 68, 68, 0.65); color: #ff9b9b; }
+    .card__note--warn   { background: rgba(255, 170, 0, 0.10); border: 1px solid rgba(255, 170, 0, 0.65); color: #ffd28a; }
+    .card__note--ok     { background: rgba(0, 204, 136, 0.10); border: 1px solid rgba(0, 204, 136, 0.65); color: #8dffca; }
+    .card__note--accent { background: rgba(170, 68, 255, 0.10); border: 1px solid rgba(170, 68, 255, 0.55); color: #d9b3ff; }
+
+    .card__actions { display: flex; gap: 8px; margin-top: 14px; }
+    .card__btn {
+      flex: 1; padding: 12px 10px; border: none; border-radius: 11px;
+      font-size: 14px; font-weight: 800; cursor: pointer; color: #fff;
+      transition: transform .1s ease, box-shadow .1s ease, filter .1s ease;
+    }
+    .card__btn:hover { filter: brightness(1.08); }
+    .card__btn:active { transform: scale(.97); }
+    .card__btn--primary { background: linear-gradient(135deg, #0066ff, #0044cc); box-shadow: 0 4px 16px rgba(0, 102, 255, 0.35); }
+    .card__btn--accent  { background: linear-gradient(135deg, #aa44ff, #7722cc); box-shadow: 0 4px 16px rgba(170, 68, 255, 0.35); }
+    .card__btn--success { background: linear-gradient(135deg, #00cc88, #008855); color: #04140d; box-shadow: 0 4px 16px rgba(0, 204, 136, 0.35); }
+    .card__btn--danger  { background: rgba(255, 68, 68, 0.10); border: 1px solid #ff4444; color: #ff8a8a; }
+    .card__btn--secondary { background: rgba(255, 255, 255, 0.05); border: 1px solid #333; color: #ccc; }
+
+    .card__close { margin-top: 10px; text-align: center; font-size: 11px; color: #7d8aa0; cursor: pointer; }
+    .card__close:hover { color: #c8d2e4; }
+
+    .card__state { text-align: center; padding: 22px 12px; }
+    .card__state-icon { font-size: 44px; line-height: 1; margin-bottom: 10px; }
+    .card__state-title { font-size: 18px; font-weight: 800; margin-bottom: 6px; }
+    .card__state-text { font-size: 13px; color: #b6c0d2; line-height: 1.5; }
+    .card__state--ok     .card__state-title { color: #5dffa8; }
+    .card__state--warn   .card__state-title { color: #ffc04d; }
+    .card__state--danger .card__state-title { color: #ff7b7b; }
+    .card__hint { margin-top: 12px; font-size: 11px; color: #7d8aa0; }
+
+    .card__mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px; line-height: 2.1; color: #cbb2ee;
+      min-height: 40px;
+    }
+    .card__mono-line { opacity: 0; transform: translateY(4px); animation: lineIn .25s ease forwards; }
+    @keyframes lineIn { to { opacity: 1; transform: translateY(0); } }
+
+    .card__po {
+      margin-top: 14px; padding: 14px;
+      background: rgba(170, 68, 255, 0.08);
+      border: 2px solid #aa44ff; border-radius: 12px;
+    }
+    .card__po .card__title { color: #d9b3ff; }
+    .card__po-total {
+      display: flex; justify-content: space-between; align-items: baseline;
+      margin-top: 8px; font-size: 16px; font-weight: 900; color: #c98bff;
     }
 
-    .nav-btn {
-      padding: 8px 18px;
-      border-radius: 20px;
-      border: none;
-      font-size: 13px;
-      font-weight: 700;
-      cursor: pointer;
+    /* ── PINCH FEEDBACK ── */
+    .pinch-hint {
+      font-size: 11px; color: #6ea8ff; font-weight: 600; text-align: center;
+      transform-origin: center bottom;
+      transition: transform .18s cubic-bezier(.2,.9,.3,1.5), opacity .18s ease, color .18s ease, text-shadow .18s ease;
+      will-change: transform;
     }
-
-    .nav-btn.active {
-      background: #0066ff;
-      color: #fff;
+    .pinch-hint.pinch-active {
+      transform: scale(1.18);
+      color: #d6e6ff;
+      text-shadow: 0 0 14px rgba(0, 102, 255, 0.95);
     }
-
-    .nav-btn.inactive {
-      background: rgba(255, 255, 255, 0.07);
-      color: #555;
-      border: 1px solid #222;
+    .pinch-indicator {
+      position: fixed; bottom: 132px; z-index: 300;
+      padding: 6px 13px; border-radius: 999px;
+      background: rgba(0, 10, 30, 0.55);
+      border: 1px solid rgba(80, 140, 255, 0.35);
+      backdrop-filter: blur(6px);
+      opacity: .75;
+      transition: opacity .2s ease, transform .18s cubic-bezier(.2,.9,.3,1.5), color .18s ease, text-shadow .18s ease;
     }
+    .pinch-indicator--right { right: 18px; }
+    .pinch-indicator--left { left: 18px; }
+    body.panel-open .pinch-indicator { opacity: .12; }
 
-    /* Locked Invoice tab (greyed until PO approved) */
-    .nav-btn.locked {
-      background: rgba(255, 255, 255, 0.06);
-      color: #555;
-      border: 1px solid #222;
-      opacity: 0.5;
-      cursor: not-allowed;
+    /* ── MIC BUTTON ── */
+    #mic-btn {
+      position: fixed; bottom: 24px; right: 16px;
+      width: 52px; height: 52px; border-radius: 50%;
+      background: #aa44ff; border: none; color: #fff;
+      font-size: 20px; cursor: pointer; z-index: 500;
+      box-shadow: 0 4px 16px rgba(170, 68, 255, 0.5);
+      display: none; align-items: center; justify-content: center;
+      transition: transform .16s cubic-bezier(.2,.9,.3,1.4), box-shadow .2s ease, background .2s ease;
     }
-
-    /* Floating tooltips */
-    #invoice-tooltip, #mic-tooltip {
-      position: fixed;
-      z-index: 600;
-      display: none;
-      background: #161b22;
-      border: 1px solid #30363d;
-      border-radius: 10px;
-      padding: 10px 14px;
-      color: #e6edf3;
-      font-size: 12px;
-      line-height: 1.4;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
-      pointer-events: none;
-      white-space: nowrap;
+    body.entered #mic-btn { display: flex; }
+    #mic-btn:hover { transform: translateY(-2px); }
+    #mic-btn:active { transform: scale(.92); }
+    #mic-btn.listening { background: #ff3333; animation: mic-pulse .8s ease-in-out infinite; }
+    @keyframes mic-pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(255, 50, 50, 0.45); }
+      50%      { box-shadow: 0 0 0 12px rgba(255, 50, 50, 0); }
     }
 
     #mic-tooltip {
-      white-space: normal;
-      max-width: 260px;
-      padding: 12px 14px;
+      position: fixed; z-index: 600; display: none;
+      background: #161b22; border: 1px solid #30363d; border-radius: 10px;
+      padding: 12px 14px; color: #e6edf3; font-size: 12px; line-height: 1.4;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+      pointer-events: none; max-width: 260px;
     }
+    #mic-tooltip ul { margin: 6px 0 0 0; padding-left: 18px; color: #8b949e; font-size: 11px; line-height: 1.6; }
+    .mic-tooltip__title { font-weight: 800; color: #e6edf3; margin-bottom: 4px; }
 
-    #mic-tooltip ul {
-      margin: 6px 0 0 0;
-      padding-left: 18px;
-      color: #8b949e;
-      font-size: 11px;
-      line-height: 1.6;
-    }
-
-    /* Reset Demo button (top-right corner, always visible) */
+    /* ── RESET + TOAST ── */
     #reset-btn {
-      position: fixed;
-      top: 16px;
-      right: 16px;
-      z-index: 550;
-      display: block;
-      padding: 8px 16px;
-      background: #21262d;
-      border: 1px solid #30363d;
-      color: #58a6ff;
-      border-radius: 8px;
-      font-size: 12px;
-      font-weight: 800;
-      cursor: pointer;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+      position: fixed; top: 16px; right: 16px; z-index: 550;
+      padding: 8px 16px; background: #21262d; border: 1px solid #30363d;
+      color: #58a6ff; border-radius: 8px; font-size: 12px; font-weight: 800;
+      cursor: pointer; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+      transition: background .15s ease, color .15s ease;
     }
+    #reset-btn:hover { background: #30363d; color: #79c0ff; }
 
-    #reset-btn:hover {
-      background: #30363d;
-      color: #79c0ff;
-    }
-
-    /* Completion toast (centered) */
     #completion-toast {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      z-index: 700;
-      display: none;
-      padding: 16px 26px;
-      background: #0d1117;
-      border: 2px solid #238636;
-      border-radius: 12px;
-      color: #3fb950;
-      font-size: 14px;
-      font-weight: 800;
-      text-align: center;
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      z-index: 700; display: none; padding: 16px 26px;
+      background: #0d1117; border: 2px solid #238636; border-radius: 12px;
+      color: #3fb950; font-size: 14px; font-weight: 800; text-align: center;
       box-shadow: 0 12px 40px rgba(0, 0, 0, 0.8);
-    }
-
-    /* Dismissible dispute card */
-    .dispute-card {
-      margin-top: 10px;
-      padding: 12px;
-      background: #fff8f0;
-      border-left: 3px solid #ff6600;
-      border-radius: 8px;
-      font-size: 12px;
-      color: #1a1a1a;
-    }
-
-    .dismissible {
-      float: right;
-      cursor: pointer;
-      font-weight: 900;
-      color: #ff4444;
-    }
-
-    /* Pending supplier response state */
-    .pending-response {
-      margin-top: 10px;
-      padding: 10px;
-      background: #0d2444;
-      border: 1px solid #ffaa00;
-      border-radius: 8px;
-      font-size: 12px;
-      color: #ffcc88;
-      text-align: center;
-    }
-
-    /* Mic button — fixed floating, never hidden */
-    #mic-btn {
-      position: fixed;
-      bottom: 24px;
-      right: 16px;
-      width: 52px;
-      height: 52px;
-      border-radius: 50%;
-      background: #aa44ff;
-      border: none;
-      color: #fff;
-      font-size: 20px;
-      cursor: pointer;
-      z-index: 500;
-      box-shadow: 0 4px 16px rgba(170, 68, 255, 0.5);
-      display: none;
-    }
-
-    #mic-btn.listening {
-      background: #ff3333;
-      animation: mic-pulse 0.8s ease-in-out infinite;
-    }
-
-    @keyframes mic-pulse {
-
-      0%,
-      100% {
-        box-shadow: 0 0 0 0 rgba(255, 50, 50, 0.4)
-      }
-
-      50% {
-        box-shadow: 0 0 0 12px rgba(255, 50, 50, 0)
-      }
     }
 
     /* ── SHELF SCENE ── */
     #ar-scene {
-      position: fixed;
-      inset: 0;
-      display: none;
-      z-index: 10;
-      align-items: flex-end;
-      justify-content: center;
-      padding-bottom: 64px;
-      /* clear nav bar */
+      position: fixed; inset: 0; display: none; z-index: 10;
+      align-items: flex-end; justify-content: center; padding-bottom: 56px;
     }
-
     .shelf-unit {
-      width: 94vw;
-      max-width: 520px;
+      width: 94vw; max-width: 520px;
       background: linear-gradient(180deg, #1a1008 0%, #100a04 100%);
-      border: 2px solid #5a3a1a;
-      border-radius: 12px;
+      border: 2px solid #5a3a1a; border-radius: 12px;
       box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
       overflow: visible;
-      /* allow alert triangles to overflow */
     }
-
     .shelf-header {
       background: linear-gradient(90deg, #2a1a08, #1a1008);
-      padding: 10px 16px;
-      border-bottom: 1px solid #5a3a1a;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
+      padding: 10px 16px; border-bottom: 1px solid #5a3a1a;
+      display: flex; align-items: center; justify-content: space-between;
     }
-
-    .shelf-header-title {
-      font-size: 13px;
-      font-weight: 700;
-      color: #cc8844;
-      letter-spacing: 1px;
-    }
-
-    .shelf-header-sub {
-      font-size: 11px;
-      color: #664422;
-    }
+    .shelf-header-title { font-size: 13px; font-weight: 700; color: #cc8844; letter-spacing: 1px; }
+    .shelf-header-sub { font-size: 11px; color: #997755; }
 
     .shelf-row {
-      display: flex;
-      padding: 10px 8px 14px;
+      display: flex; padding: 10px 8px 14px;
       border-bottom: 3px solid #3a2010;
       background: linear-gradient(180deg, #1e1208, #161008);
     }
-
-    .shelf-row:last-child {
-      border-bottom: none;
-    }
-
-    .shelf-row.dim {
-      opacity: 0.35;
-    }
+    .shelf-row:last-child { border-bottom: none; }
+    .shelf-row.dim { opacity: .35; }
 
     .bin {
-      flex: 1;
-      padding: 4px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      border-right: 1px solid #2a1808;
-      position: relative;
-      cursor: pointer;
-      transition: background 0.2s;
+      flex: 1; padding: 4px; display: flex; flex-direction: column; align-items: center;
+      border-right: 1px solid #2a1808; position: relative;
+      cursor: pointer; transform-origin: center bottom;
+      transition: background .18s ease, transform .18s cubic-bezier(.2,.9,.3,1.5);
     }
+    .bin:last-child { border-right: none; }
+    .bin:active { background: rgba(0, 102, 255, 0.14); transform: scale(1.05); }
+    .bin-spacer { height: 20px; }
 
-    .bin:last-child {
-      border-right: none;
-    }
-
-    .bin:active {
-      background: rgba(255, 255, 255, 0.05);
-    }
-
-    /* Stock bar */
     .bin-bar-bg {
-      width: 26px;
-      height: 60px;
-      background: rgba(255, 255, 255, 0.05);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 3px;
-      display: flex;
-      flex-direction: column;
-      justify-content: flex-end;
-      overflow: hidden;
-      margin-bottom: 4px;
+      width: 26px; height: 60px; background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 3px;
+      display: flex; flex-direction: column; justify-content: flex-end;
+      overflow: hidden; margin-bottom: 4px;
     }
+    .bin-bar-fill { width: 100%; border-radius: 2px 2px 0 0; transition: height .6s cubic-bezier(.2,.8,.3,1); }
+    .bin-bar-fill.full    { background: linear-gradient(180deg, #00ff88, #00cc66); height: 85%; }
+    .bin-bar-fill.medium  { background: linear-gradient(180deg, #44aaff, #2288dd); height: 55%; }
+    .bin-bar-fill.low     { background: linear-gradient(180deg, #ffaa00, #cc8800); height: 15%; }
+    .bin-bar-fill.empty   { background: linear-gradient(180deg, #ff4444, #cc2222); height: 4%; }
+    .bin-bar-fill.inbound { background: linear-gradient(180deg, #aa44ff, #8822cc); height: 30%; }
 
-    .bin-bar-fill {
-      width: 100%;
-      border-radius: 2px 2px 0 0;
-      transition: height 0.6s ease;
-    }
+    .bin-label { font-size: 9px; font-weight: 700; color: #a07a52; letter-spacing: .5px; }
+    .bin-qty { font-size: 11px; font-weight: 800; }
+    .bin-qty.full { color: #00cc66; }
+    .bin-qty.medium { color: #2288dd; }
+    .bin-qty.low { color: #ffaa00; }
+    .bin-qty.empty { color: #ff4444; }
+    .bin-qty.inbound { color: #aa44ff; font-size: 9px; }
 
-    .bin-bar-fill.full {
-      background: linear-gradient(180deg, #00ff88, #00cc66);
-      height: 85%;
-    }
-
-    .bin-bar-fill.medium {
-      background: linear-gradient(180deg, #44aaff, #2288dd);
-      height: 55%;
-    }
-
-    .bin-bar-fill.low {
-      background: linear-gradient(180deg, #ffaa00, #cc8800);
-      height: 15%;
-    }
-
-    .bin-bar-fill.empty {
-      background: linear-gradient(180deg, #ff4444, #cc2222);
-      height: 4%;
-    }
-
-    .bin-bar-fill.inbound {
-      background: linear-gradient(180deg, #aa44ff, #8822cc);
-      height: 30%;
-    }
-
-    .bin-label {
-      font-size: 9px;
-      font-weight: 700;
-      color: #886644;
-      letter-spacing: 0.5px;
-    }
-
-    .bin-qty {
-      font-size: 11px;
-      font-weight: 800;
-    }
-
-    .bin-qty.full {
-      color: #00cc66;
-    }
-
-    .bin-qty.medium {
-      color: #2288dd;
-    }
-
-    .bin-qty.low {
-      color: #ffaa00;
-    }
-
-    .bin-qty.empty {
-      color: #ff4444;
-    }
-
-    .bin-qty.inbound {
-      color: #aa44ff;
-      font-size: 9px;
-    }
-
-    /* Alert triangle — sits inline above the bin bar, no floating */
     .bin-alert {
-      width: 20px;
-      height: 20px;
-      margin-bottom: 2px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 16px;
-      animation: triangle-pulse 1.2s ease-in-out infinite;
+      width: 20px; height: 20px; margin-bottom: 2px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px; animation: triangle-pulse 1.2s ease-in-out infinite;
     }
-
-    @keyframes triangle-pulse {
-
-      0%,
-      100% {
-        opacity: 1
-      }
-
-      50% {
-        opacity: 0.5
-      }
-    }
-
-    /* Pinch hint — tiny text under qty, only on alerted bin */
-    .bin-pinch-hint {
-      font-size: 8px;
-      color: #0066ff;
-      margin-top: 2px;
-      font-weight: 700;
-      letter-spacing: 0.3px;
-      text-align: center;
-    }
+    .bin-alert--inbound { animation: none; color: #aa44ff; }
+    .bin-alert--ok { animation: none; color: #00cc88; }
+    @keyframes triangle-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
 
     /* ── INVOICE SCENE ── */
     #invoice-scene {
-      position: fixed;
-      inset: 0;
-      display: none;
-      z-index: 10;
-      align-items: center;
-      justify-content: center;
-      padding: 16px 16px 72px;
-      /* clear nav */
+      position: fixed; inset: 0; display: none; z-index: 10;
+      align-items: center; justify-content: center; padding: 16px 16px 72px;
     }
-
     .invoice-paper {
-      width: 100%;
-      max-width: 400px;
+      width: 100%; max-width: 400px;
       background: linear-gradient(180deg, #f8f6f0, #f0ece0);
-      border-radius: 8px;
-      overflow: hidden;
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
-      color: #1a1a1a;
+      border-radius: 8px; overflow: hidden;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8); color: #1a1a1a;
     }
-
     .inv-top {
       background: linear-gradient(90deg, #1a3a6a, #0d2444);
-      padding: 14px 20px;
-      color: #fff;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
+      padding: 14px 20px; color: #fff;
+      display: flex; justify-content: space-between; align-items: center;
     }
-
-    .inv-company {
-      font-size: 16px;
-      font-weight: 800;
-    }
-
-    .inv-num {
-      font-size: 11px;
-      color: #8ab;
-    }
-
-    .inv-meta {
-      font-size: 11px;
-      color: #8ab;
-      text-align: right;
-    }
-
+    .inv-company { font-size: 16px; font-weight: 800; }
+    .inv-num { font-size: 11px; color: #8ab; }
+    .inv-meta { font-size: 11px; color: #8ab; text-align: right; }
     .inv-row {
-      display: flex;
-      justify-content: space-between;
-      padding: 6px 20px;
-      font-size: 12px;
-      border-bottom: 1px solid #e8e4d8;
+      display: flex; justify-content: space-between;
+      padding: 6px 20px; font-size: 12px; border-bottom: 1px solid #e8e4d8;
     }
-
-    .inv-row .lbl {
-      color: #666;
-    }
-
-    .inv-row .val {
-      font-weight: 700;
-    }
-
+    .inv-row--last { border-bottom: none; }
+    .inv-row .lbl { color: #666; }
+    .inv-row .val { font-weight: 700; }
     .inv-items-hdr {
-      background: #1a3a6a;
-      color: #fff;
-      padding: 7px 20px;
-      font-size: 10px;
-      font-weight: 700;
-      letter-spacing: 1px;
-      display: flex;
-      justify-content: space-between;
+      background: #1a3a6a; color: #fff; padding: 7px 20px;
+      font-size: 10px; font-weight: 700; letter-spacing: 1px;
+      display: flex; justify-content: space-between;
     }
-
-    .inv-line {
-      display: flex;
-      padding: 10px 20px;
-      border-bottom: 1px solid #e8e4d8;
-      font-size: 12px;
-      align-items: center;
-    }
-
-    .inv-line.alert {
-      background: #fff8f0;
-      border-left: 3px solid #ff6600;
-    }
-
-    .inv-line .sku {
-      flex: 2;
-      font-weight: 700;
-    }
-
-    .inv-line .qty {
-      flex: 1;
-      text-align: center;
-      color: #446;
-    }
-
-    .inv-line .price {
-      flex: 1;
-      text-align: center;
-      color: #446;
-    }
-
-    .inv-line .total {
-      flex: 1;
-      text-align: right;
-      font-weight: 700;
-      color: #1a3a6a;
-    }
-
+    .inv-line { display: flex; padding: 10px 20px; border-bottom: 1px solid #e8e4d8; font-size: 12px; align-items: center; }
+    .inv-line.alert { background: #fff8f0; border-left: 3px solid #ff6600; }
+    .inv-line .sku { flex: 2; font-weight: 700; }
+    .inv-line .qty { flex: 1; text-align: center; color: #446; }
+    .inv-line .price { flex: 1; text-align: center; color: #446; }
+    .inv-line .total { flex: 1; text-align: right; font-weight: 700; color: #1a3a6a; }
     .inv-total {
-      background: #f0ece0;
-      padding: 12px 20px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
+      background: #f0ece0; padding: 12px 20px;
+      display: flex; justify-content: space-between; align-items: center;
     }
-
-    .inv-total-lbl {
-      font-size: 13px;
-      font-weight: 700;
-      color: #446;
-    }
-
-    .inv-total-val {
-      font-size: 18px;
-      font-weight: 900;
-      color: #1a3a6a;
-    }
-
+    .inv-total-lbl { font-size: 13px; font-weight: 700; color: #446; }
+    .inv-total-val { font-size: 18px; font-weight: 900; color: #1a3a6a; }
     .inv-pinch {
-      text-align: center;
-      padding: 14px;
+      text-align: center; padding: 14px;
       background: linear-gradient(90deg, #0d2444, #1a3a6a);
-      cursor: pointer;
+      cursor: pointer; transition: filter .15s ease;
     }
+    .inv-pinch:hover { filter: brightness(1.15); }
+    .inv-pinch span { font-size: 14px; font-weight: 700; color: #fff; }
 
-    .inv-pinch span {
-      font-size: 14px;
-      font-weight: 700;
-      color: #fff;
-    }
+    /* ── SCENES + PANEL ── */
+    .scene { transition: opacity .25s ease; }
+    body.panel-open .scene { opacity: .14; pointer-events: none; }
 
-    /* ── AR RESULT PANEL — floating card above nav ── */
     #ar-panel {
-      position: fixed;
-      bottom: 120px;
-      left: 50%;
+      position: fixed; bottom: 84px; left: 50%;
       transform: translateX(-50%);
-      width: 420px;
-      max-width: 92vw;
-      max-height: 50vh;
-      overflow-y: auto;
-      background: rgba(0, 8, 24, 0.95);
-      border-radius: 16px;
-      border: 2px solid #aa44ff;
-      padding: 16px;
-      z-index: 300;
-      display: none;
+      width: 420px; max-width: 92vw; max-height: 52vh;
+      overflow-y: auto; overscroll-behavior: contain;
+      background: rgba(0, 8, 24, 0.96);
+      border-radius: 16px; border: 2px solid #aa44ff;
+      padding: 16px; z-index: 300; display: none;
       box-shadow: 0 -4px 32px rgba(170, 68, 255, 0.3);
+      transition: border-color .2s ease, box-shadow .2s ease;
+    }
+    #ar-panel[data-accent="info"]   { border-top-color: #0066ff; box-shadow: 0 -4px 32px rgba(0, 102, 255, 0.35); }
+    #ar-panel[data-accent="ok"]     { border-top-color: #00cc88; box-shadow: 0 -4px 32px rgba(0, 204, 136, 0.35); }
+    #ar-panel[data-accent="warn"]   { border-top-color: #ffaa00; box-shadow: 0 -4px 32px rgba(255, 170, 0, 0.35); }
+    #ar-panel[data-accent="danger"] { border-top-color: #ff4444; box-shadow: 0 -4px 32px rgba(255, 68, 68, 0.35); }
+    #ar-panel[data-accent="accent"] { border-top-color: #aa44ff; }
+    #ar-panel.card--animated { animation: cardIn .26s cubic-bezier(.2,.8,.3,1); }
+    @keyframes cardIn {
+      from { opacity: 0; transform: translate(-50%, 16px) scale(.98); }
+      to   { opacity: 1; transform: translate(-50%, 0) scale(1); }
     }
 
-    canvas {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      z-index: 0;
-    }
+    canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; }
   </style>
 </head>
 
 <body>
   <canvas id="canvas"></canvas>
 
-  <!-- Enter screen -->
   <div id="enter-screen">
     <button id="enter-btn" onclick="enterAR()">🏭 Enter AR Walk</button>
     <div id="enter-subtitle">Supply Chain AR · Hands-first · Meta Quest · IWSDK/WebXR</div>
   </div>
 
   <div id="status"></div>
+  <div id="voice-feedback" class="voice-feedback" role="status" aria-live="polite"></div>
 
   <!-- Shelf AR scene -->
-  <div id="ar-scene" style="display:flex">
+  <div id="ar-scene" class="scene">
     <div class="shelf-unit">
       <div class="shelf-header">
         <div class="shelf-header-title">BAY A-14 · AISLE 3</div>
         <div class="shelf-header-sub">Last scan: 3:20 AM</div>
       </div>
-      <!-- Row 1: main inventory -->
       <div class="shelf-row">
-        <!-- Widget-A: EMPTY with inline alert -->
-        <div class="bin" id="bin-a" onclick="onShelfPinch()" title="Widget-A — tap to scan">
+        <div class="bin" id="bin-a" onclick="onShelfPinch()" title="Widget-A — pinch to scan">
           <div class="bin-alert" id="alert-a">⚠️</div>
-          <div class="bin-bar-bg">
-            <div class="bin-bar-fill empty" id="fill-a"></div>
-          </div>
+          <div class="bin-bar-bg"><div class="bin-bar-fill empty" id="fill-a"></div></div>
           <div class="bin-label">Widget-A</div>
           <div class="bin-qty empty" id="qty-a">0 u</div>
-          <div class="bin-pinch-hint" id="hint-a">👌 pinch to restock PO</div>
+          <div class="pinch-hint" id="hint-a">👌 pinch to restock</div>
         </div>
-        <!-- Widget-B: LOW -->
-        <div class="bin" title="Widget-B">
+        <div class="bin" title="Widget-B — 3 units">
           <div class="bin-alert">⚠️</div>
-          <div class="bin-bar-bg">
-            <div class="bin-bar-fill low"></div>
-          </div>
+          <div class="bin-bar-bg"><div class="bin-bar-fill low"></div></div>
           <div class="bin-label">Widget-B</div>
           <div class="bin-qty low">3 u</div>
         </div>
-        <!-- Widget-C: MEDIUM -->
-        <div class="bin" title="Widget-C">
-          <div style="height:20px"></div>
-          <div class="bin-bar-bg">
-            <div class="bin-bar-fill medium"></div>
-          </div>
+        <div class="bin" title="Widget-C — 18 units">
+          <div class="bin-spacer"></div>
+          <div class="bin-bar-bg"><div class="bin-bar-fill medium"></div></div>
           <div class="bin-label">Widget-C</div>
           <div class="bin-qty medium">18 u</div>
         </div>
-        <!-- Widget-D: FULL -->
-        <div class="bin" title="Widget-D">
-          <div style="height:20px"></div>
-          <div class="bin-bar-bg">
-            <div class="bin-bar-fill full"></div>
-          </div>
+        <div class="bin" title="Widget-D — 24 units">
+          <div class="bin-spacer"></div>
+          <div class="bin-bar-bg"><div class="bin-bar-fill full"></div></div>
           <div class="bin-label">Widget-D</div>
           <div class="bin-qty full">24 u</div>
         </div>
       </div>
-      <!-- Row 2: background stock, dimmed -->
       <div class="shelf-row dim">
-        <div class="bin">
-          <div style="height:20px"></div>
-          <div class="bin-bar-bg">
-            <div class="bin-bar-fill full"></div>
-          </div>
-          <div class="bin-label">Widget-E</div>
-          <div class="bin-qty full">30 u</div>
-        </div>
-        <div class="bin">
-          <div style="height:20px"></div>
-          <div class="bin-bar-bg">
-            <div class="bin-bar-fill medium"></div>
-          </div>
-          <div class="bin-label">Widget-F</div>
-          <div class="bin-qty medium">12 u</div>
-        </div>
-        <div class="bin">
-          <div style="height:20px"></div>
-          <div class="bin-bar-bg">
-            <div class="bin-bar-fill full"></div>
-          </div>
-          <div class="bin-label">Widget-G</div>
-          <div class="bin-qty full">28 u</div>
-        </div>
-        <div class="bin">
-          <div style="height:20px"></div>
-          <div class="bin-bar-bg">
-            <div class="bin-bar-fill medium"></div>
-          </div>
-          <div class="bin-label">Widget-H</div>
-          <div class="bin-qty medium">9 u</div>
-        </div>
+        <div class="bin"><div class="bin-spacer"></div><div class="bin-bar-bg"><div class="bin-bar-fill full"></div></div><div class="bin-label">Widget-E</div><div class="bin-qty full">30 u</div></div>
+        <div class="bin"><div class="bin-spacer"></div><div class="bin-bar-bg"><div class="bin-bar-fill medium"></div></div><div class="bin-label">Widget-F</div><div class="bin-qty medium">12 u</div></div>
+        <div class="bin"><div class="bin-spacer"></div><div class="bin-bar-bg"><div class="bin-bar-fill full"></div></div><div class="bin-label">Widget-G</div><div class="bin-qty full">28 u</div></div>
+        <div class="bin"><div class="bin-spacer"></div><div class="bin-bar-bg"><div class="bin-bar-fill medium"></div></div><div class="bin-label">Widget-H</div><div class="bin-qty medium">9 u</div></div>
       </div>
     </div>
   </div>
 
   <!-- Invoice AR scene -->
-  <div id="invoice-scene">
+  <div id="invoice-scene" class="scene">
     <div class="invoice-paper">
       <div class="inv-top">
         <div>
@@ -727,8 +445,7 @@
       </div>
       <div class="inv-row"><span class="lbl">Bill To</span><span class="val">Sovereign Supply Co.</span></div>
       <div class="inv-row"><span class="lbl">Ship Via</span><span class="val">FedEx Ground · 3 days</span></div>
-      <div class="inv-row" style="border:none"><span class="lbl">PO Reference</span><span class="val">Pending
-          approval</span></div>
+      <div class="inv-row inv-row--last"><span class="lbl">PO Reference</span><span class="val">Pending approval</span></div>
       <div class="inv-items-hdr"><span>ITEM</span><span>QTY</span><span>UNIT</span><span>TOTAL</span></div>
       <div class="inv-line alert">
         <span class="sku">Widget-A ⚠</span>
@@ -746,94 +463,113 @@
     </div>
   </div>
 
-  <!-- AR result panel -->
-  <div id="ar-panel"></div>
+  <!-- Floating AR result panel -->
+  <div id="ar-panel" role="dialog" aria-label="AR result"></div>
 
-  <!-- Nav bar — Shelf | Invoice (Invoice locked until PO approved) -->
-  <div id="nav-bar">
-    <button class="nav-btn inactive locked" id="btn-invoice" onclick="showScene('invoice')" title="Invoice locked">
-      📄 Invoice
-    </button>
-  </div>
+  <!-- Hand-tracking pinch indicators -->
+  <div class="pinch-hint pinch-indicator pinch-indicator--right">👌 RIGHT pinch: interact</div>
+  <div class="pinch-hint pinch-indicator pinch-indicator--left">LEFT pinch: shelf / invoice</div>
 
-  <!-- Invoice locked tooltip (shows on hover/focus of greyed tab) -->
-  <div id="invoice-tooltip">Supplier will send an invoice after you create a PO to restock Widget-A</div>
+  <!-- Mic: always floating, triggered by pinch or click -->
+  <button id="mic-btn" onclick="startVoiceListening()" title="Voice commands">🎤</button>
 
-  <!-- Mic button: always floating, never in nav -->
-  <button id="mic-btn" onclick="startVoiceListening()">🎤</button>
-
-  <!-- Mic hover/focus tooltip listing available voice commands -->
   <div id="mic-tooltip">
-    <div style="font-weight:800;color:#e6edf3;margin-bottom:6px;font-size:12px">Say:</div>
+    <div class="mic-tooltip__title">Say:</div>
     <ul>
       <li>"restock Widget-A"</li>
-      <li>"approve"</li>
-      <li>"reject"</li>
-      <li>"check invoice"</li>
-      <li>"show shelf"</li>
+      <li>"approve PO"</li>
+      <li>"reject PO"</li>
+      <li>"pay invoice"</li>
+      <li>"show invoice"</li>
     </ul>
   </div>
 
-  <!-- Reset Demo button (top-right corner, appears after demo completion) -->
   <button id="reset-btn" onclick="resetDemo()">🔄 Reset Demo</button>
-
-  <!-- Completion toast (shown ~3s after payment release) -->
   <div id="completion-toast"></div>
 
   <script>
     const API_BASE = "";
+    const INTENT_LABELS = {
+      restock: "Restock Widget-A",
+      approve_po: "Approve PO",
+      reject_po: "Reject PO",
+      pay_invoice: "Pay Invoice",
+      show_invoice: "Show Widget-A Invoice",
+      unknown: "Unknown command",
+    };
+    const INTENTS = new Set(Object.keys(INTENT_LABELS));
+
     let mode = "shelf";
     let scanning = false;
-    let restockTriggered = false; // tracks if shelf restock was initiated
-    let invoiceLocked = true;     // Invoice tab greyed/locked until PO approved
-    let approvedPO = null;        // the approved PO object
-    let micActive = false;        // mic actively recording flag
-    let widgetAOriginalQty = 50;  // Widget-A starting qty (Tenant_A seed)
-    let demoComplete = false;     // full flow completed
-    let voiceHistory = [];        // voice command transcripts
-    let disputeDraft = null;      // current dispute draft text
-    let invoiceState = null;      // null | 'pending' supplier response
-    let lastInvoice = null;       // last scanned invoice payload
+    let restockTriggered = false;
+    let invoiceLocked = true;
+    let approvedPO = null;
+    let pendingPO = null;
+    let lastInvoice = null;
+    let widgetAOriginalQty = 50;
     let xrSession = null, xrRefSpace = null, gl = null;
     let handRight = null, handLeft = null;
     let pinchWasDown = { left: false, right: false };
     let recognition = null;
+    let panelToken = 0;
 
     // ── ENTRY ─────────────────────────────────────────────────────────────────────
     async function enterAR() {
       document.getElementById("enter-screen").style.display = "none";
       document.getElementById("status").style.display = "block";
-      document.getElementById("nav-bar").style.display = "flex";
-      document.getElementById("mic-btn").style.display = "flex";
-      document.getElementById("mic-btn").style.alignItems = "center";
-      document.getElementById("mic-btn").style.justifyContent = "center";
+      document.body.classList.add("entered");
       showScene("shelf");
 
       if (navigator.xr) {
         const ok = await navigator.xr.isSessionSupported("immersive-ar").catch(() => false);
-        if (ok) { try { await startXRSession(); return; } catch (e) { } }
+        if (ok) { try { await startXRSession(); return; } catch (e) { /* fall back to DOM */ } }
       }
-      setStatus("👌 Tap Widget-A to scan · 🎤 for voice commands");
+      setStatus("👌 Pinch Widget-A · 🎤 for voice commands");
+    }
+
+    // ── PANEL ─────────────────────────────────────────────────────────────────────
+    function openPanel(html, accent) {
+      const panel = document.getElementById("ar-panel");
+      panel.innerHTML = html;
+      if (accent) { panel.setAttribute("data-accent", accent); } else { panel.removeAttribute("data-accent"); }
+      panel.style.display = "block";
+      panel.classList.remove("card--animated");
+      void panel.offsetWidth;
+      panel.classList.add("card--animated");
+      document.body.classList.add("panel-open");
+      panelToken++;
+      return panelToken;
+    }
+
+    function closePanel() {
+      const panel = document.getElementById("ar-panel");
+      panel.style.display = "none";
+      panel.innerHTML = "";
+      panel.removeAttribute("data-accent");
+      document.body.classList.remove("panel-open");
+      panelToken++;
     }
 
     // ── SCENE SWITCHER ────────────────────────────────────────────────────────────
     function showScene(scene) {
-      if (scene === "invoice" && invoiceLocked) return; // blocked — tooltip explains why
+      if (scene === "invoice" && invoiceLocked) {
+        setStatus("⚠️ Approve Widget-A PO first — supplier invoice pending");
+        return;
+      }
       mode = scene;
       document.getElementById("ar-scene").style.display = scene === "shelf" ? "flex" : "none";
       document.getElementById("invoice-scene").style.display = scene === "invoice" ? "flex" : "none";
-      document.getElementById("ar-panel").style.display = "none";
-      const invBtn = document.getElementById("btn-invoice");
+      closePanel();
       if (scene === "shelf") {
-        invBtn.className = invoiceLocked ? "nav-btn inactive locked" : "nav-btn inactive";
-        setStatus("👌 Tap Widget-A · 🎤 say 'restock Widget-A'");
-      } else if (scene === "invoice") {
-        invBtn.className = "nav-btn active";
-        setStatus("👌 Tap invoice to extract · verify PO");
+        setStatus(invoiceLocked
+          ? "👌 Pinch Widget-A · 🎤 say 'restock Widget-A'"
+          : "👌 Pinch Widget-A to view the supplier invoice");
+      } else {
+        setStatus("👌 Pinch the invoice to extract · verify amounts");
       }
     }
 
-    // ── MIC TOOLTIP (hover / focus + tap-away dismiss) ────────────────────────────
+    // ── MIC TOOLTIP ───────────────────────────────────────────────────────────────
     (function initMicTooltip() {
       const btn = document.getElementById("mic-btn");
       const tip = document.getElementById("mic-tooltip");
@@ -854,29 +590,30 @@
       });
     })();
 
-    // ── UNLOCK INVOICE TAB (called once PO is approved) ───────────────────────────
-    function unlockInvoiceTab() {
-      invoiceLocked = false;
-      const btn = document.getElementById("btn-invoice");
-      btn.classList.remove("locked");
-      btn.title = "";
-    }
-
     // ── SHELF PINCH ───────────────────────────────────────────────────────────────
     async function onShelfPinch() {
       if (scanning) return;
+      if (!invoiceLocked) {
+        showScene("invoice");
+        setStatus("📄 Supplier invoice unlocked · pinch it to validate against the PO");
+        return;
+      }
+
       scanning = true;
       setStatus("🔬 SAM 3.1 analyzing bay A-14…");
       await sleep(500);
 
+      let data;
       try {
-        const res = await fetch("/api/vr/shelf-scan/demo", { method: "POST" });
-        renderShelfResult(await res.json());
+        const res = await fetch(API_BASE + "/api/vr/shelf-scan/demo", { method: "POST" });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        data = await res.json();
       } catch (e) {
-        renderShelfResult(FALLBACK_SHELF);
+        data = FALLBACK_SHELF;
       }
+      renderShelfResult(data);
       scanning = false;
-      setStatus("⚠️ Widget-A empty · tap Restock to run A2A agents");
+      setStatus("⚠️ Widget-A empty · Restock to run A2A agents");
     }
 
     // ── INVOICE PINCH ─────────────────────────────────────────────────────────────
@@ -886,181 +623,154 @@
       setStatus("🔬 Muse Image extracting invoice fields…");
       await sleep(700);
 
+      let data;
       try {
-        const res = await fetch("/api/vr/invoice-scan/demo", { method: "POST" });
-        renderInvoiceResult(await res.json());
+        const res = await fetch(API_BASE + "/api/vr/invoice-scan/demo", { method: "POST" });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        data = await res.json();
       } catch (e) {
-        lastInvoice = FALLBACK_INVOICE;
-        renderInvoiceResult(FALLBACK_INVOICE);
+        data = FALLBACK_INVOICE;
       }
+      lastInvoice = data;
+      renderInvoiceResult(data);
       scanning = false;
       setStatus("📄 Invoice extracted · verify amounts · release payment");
     }
 
     // ── RENDER SHELF RESULT ───────────────────────────────────────────────────────
     function renderShelfResult(data) {
-      const panel = document.getElementById("ar-panel");
-      panel.style.display = "block";
-      panel.style.borderTopColor = "#0066ff";
+      const zones = (data.zones || []).map(z => {
+        const tone = z.status === "empty" ? "empty" : z.status === "low" ? "low" : "ok";
+        const label = z.status === "empty" ? "EMPTY"
+          : z.status === "low" ? "LOW — " + z.qty + " u"
+          : z.qty + " u";
+        return `
+      <div class="card__row">
+        <span class="card__label card__label--item"><span class="card__dot card__dot--${tone}"></span>${z.sku}</span>
+        <span class="card__data card__data--${tone}">${label}</span>
+      </div>`;
+      }).join("");
 
-      let zones = (data.zones || []).map(z => `
-    <div style="display:flex;align-items:center;padding:7px 0;border-bottom:1px solid #ffffff10">
-      <span style="width:9px;height:9px;border-radius:50%;background:${z.color};display:inline-block;margin-right:10px;flex-shrink:0"></span>
-      <span style="flex:1;font-size:14px">${z.sku}</span>
-      <span style="font-size:13px;color:${z.color};font-weight:700">
-        ${z.status === "empty" ? "EMPTY" : z.status === "low" ? "LOW — " + z.qty + " u" : z.qty + " u"}
-      </span>
-    </div>`).join("");
+      const attention = (data.zones || []).filter(z => z.status !== "ok").length;
 
-      panel.innerHTML = `
-    <div style="font-size:16px;font-weight:800;color:#4499ff;margin-bottom:4px">🏭 Bay A-14 Scan</div>
-    <div style="font-size:11px;color:#444;margin-bottom:12px">SAM 3.1 · ${new Date().toLocaleTimeString()}</div>
-    <div style="background:#ff330018;border:1px solid #ff4444;border-radius:8px;padding:8px 12px;margin-bottom:12px;color:#ff9999;font-size:12px">
-      ⚠️ 2 SKUs require immediate action
-    </div>
-    ${zones}
-    <button onclick="triggerAgentRestock()" style="
-      margin-top:14px;width:100%;padding:14px;
-      background:linear-gradient(135deg,#0066ff,#0044cc);
-      border:none;border-radius:12px;color:#fff;
-      font-size:15px;font-weight:800;cursor:pointer">
-      🤖 Restock Widget-A — Run A2A Agents
-    </button>
-    <div onclick="document.getElementById('ar-panel').style.display='none'"
-      style="text-align:center;margin-top:10px;color:#333;font-size:11px;cursor:pointer">✕ close</div>`;
+      openPanel(`
+    <div class="card card--primary card--elevated">
+      <div class="card__title">Bay A-14 Scan</div>
+      <div class="card__subtitle">SAM 3.1 · ${new Date().toLocaleTimeString()}</div>
+      <div class="card__note card__note--danger">⚠️ ${attention} SKUs require immediate action</div>
+      ${zones}
+      <div class="card__actions">
+        <button class="card__btn card__btn--primary" onclick="triggerAgentRestock()">🤖 Restock Widget-A — Run A2A Agents</button>
+      </div>
+      <div class="card__close" onclick="closePanel()">✕ close</div>
+    </div>`, "info");
     }
 
     // ── RENDER INVOICE RESULT ─────────────────────────────────────────────────────
     function renderInvoiceResult(data) {
-      lastInvoice = data;
-      const panel = document.getElementById("ar-panel");
-      panel.style.display = "block";
-      panel.style.borderTopColor = "#00cc88";
+      const items = (data.items || []).map(i => {
+        const cost = parseFloat(i.cost);
+        const total = (i.qty * (isNaN(cost) ? 0 : cost)).toLocaleString(undefined, { style: "currency", currency: "USD" });
+        return `
+      <div class="card__list-row">
+        <span class="card__label card__label--item">${i.sku}</span>
+        <span class="card__label">qty ${i.qty}</span>
+        <span class="card__data card__data--ok">${total}</span>
+      </div>`;
+      }).join("");
 
-      // Show context note if restock wasn't triggered from shelf
       const contextNote = restockTriggered ? "" :
-        `<div style="background:#ffaa0018;border:1px solid #ffaa00;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:#ffcc88">
-      💡 Scan the shelf first to trigger an automated restock PO
-    </div>`;
+        `<div class="card__note card__note--warn">💡 Scan the shelf first to trigger an automated restock PO</div>`;
 
-      const items = (data.items || []).map(i => `
-    <div style="display:flex;justify-content:space-between;padding:6px 0;
-      border-bottom:1px solid #ffffff10;font-size:13px">
-      <span style="color:#ccc">${i.sku}</span>
-      <span style="color:#888">qty ${i.qty}</span>
-      <span style="color:#00cc88;font-weight:700">$${(i.qty * parseFloat(i.cost)).toLocaleString()}</span>
-    </div>`).join("");
-
-      // Cross-check against approved PO (demo: no API key → fallback match)
       let matchConfidence = 1.0;
-      let matchMsg = "✅ All fields match PO #2026-847";
+      let matchMsg = "All fields match PO #2026-847";
       if (approvedPO) {
         const poUnit = Number(approvedPO.unit_price || 0);
         const invUnit = Number((data.items && data.items[0] ? data.items[0].cost : 0) || 0);
-        const delta = invUnit - poUnit;
-        matchConfidence = Math.abs(delta) < 0.001 ? 1.0 : 0.0;
+        matchConfidence = Math.abs(invUnit - poUnit) < 0.001 ? 1.0 : 0.0;
         if (matchConfidence < 1) {
-          matchMsg = `⚠️ Delta: invoice $${invUnit.toFixed(2)}/unit vs PO $${poUnit.toFixed(2)}/unit`;
+          matchMsg = `Delta: invoice $${invUnit.toFixed(2)}/unit vs PO $${poUnit.toFixed(2)}/unit`;
         }
       }
+      const matchTone = matchConfidence >= 1 ? "ok" : "warn";
 
-      const matchLine = `
-    <div style="margin-top:8px;padding:8px;border-radius:8px;font-size:12px;
-      background:${matchConfidence >= 1 ? "#00441122" : "#44110022"};
-      border:1px solid ${matchConfidence >= 1 ? "#00cc88" : "#ff6600"};
-      color:${matchConfidence >= 1 ? "#88ffcc" : "#ff9999"}">
-      <b>Match confidence:</b> ${Math.round(matchConfidence * 100)}% — ${matchMsg}
-    </div>`;
-
-      panel.innerHTML = `
-    <div style="font-size:15px;font-weight:800;color:#00cc88;margin-bottom:4px">⚠️ Invoice received for PO #2026-847</div>
-    <div style="font-size:12px;color:#444;margin-bottom:10px">verify amounts match and release payment</div>
-    ${contextNote}
-    <div style="font-size:14px;margin-bottom:4px"><b>Supplier:</b> ${data.supplier}</div>
-    <div style="font-size:12px;color:#666;margin-bottom:10px"><b>Delivery:</b> ${(data.dates || []).join(" → ")}</div>
-    ${items}
-    ${matchLine}
-    <div style="margin-top:12px;background:#00441122;border:1px solid #00cc88;
-      border-radius:10px;padding:12px;font-size:12px;color:#88ffcc">
-      <b>AI Draft:</b> ${data.draft_instruction}
-    </div>
-    <div style="display:flex;gap:10px;margin-top:14px">
-      <button onclick="verifyInvoicePayment()" style="
-        flex:1;padding:14px;background:linear-gradient(135deg,#00cc88,#008855);
-        border:none;border-radius:12px;color:#000;font-size:15px;font-weight:800;cursor:pointer">
-        ✅ Verify &amp; Release Payment
-      </button>
-      <button onclick="flagDiscrepancy()" style="
-        flex:1;padding:14px;background:rgba(255,102,102,0.15);
-        border:1px solid #ffaa44;border-radius:12px;color:#ffaa44;
-        font-size:14px;font-weight:700;cursor:pointer">
-        ⚠️ Flag Discrepancy
-      </button>
-    </div>
-    <div onclick="document.getElementById('ar-panel').style.display='none'"
-      style="text-align:center;margin-top:10px;color:#333;font-size:11px;cursor:pointer">✕ close</div>`;
+      openPanel(`
+    <div class="card card--success card--elevated">
+      <div class="card__title">Invoice Received</div>
+      <div class="card__subtitle">Verify amounts match and release payment</div>
+      ${contextNote}
+      <div class="card__row"><span class="card__label">Supplier</span><span class="card__data">${data.supplier}</span></div>
+      <div class="card__row"><span class="card__label">Delivery</span><span class="card__data">${(data.dates || []).join(" → ")}</span></div>
+      <div class="card__list">${items}</div>
+      <div class="card__note card__note--${matchTone}"><b>Match confidence:</b> ${Math.round(matchConfidence * 100)}% — ${matchMsg}</div>
+      <div class="card__note card__note--accent"><b>AI Draft:</b> ${data.draft_instruction}</div>
+      <div class="card__actions">
+        <button class="card__btn card__btn--success" onclick="verifyInvoicePayment()">✅ Verify &amp; Release Payment</button>
+        <button class="card__btn card__btn--danger" onclick="flagDiscrepancy()">⚠️ Flag Discrepancy</button>
+      </div>
+      <div class="card__close" onclick="closePanel()">✕ close</div>
+    </div>`, "ok");
     }
 
-    // ── INVOICE VERIFY & RELEASE PAYMENT / FLAG DISCREPANCY ───────────────────────
+    // ── PAY / DISPUTE ─────────────────────────────────────────────────────────────
     async function verifyInvoicePayment() {
-      const panel = document.getElementById("ar-panel");
-      panel.style.borderTopColor = "#00ff88";
-      if (!approvedPO) { setStatus("No approved PO on file"); return; }
+      if (!approvedPO) {
+        setStatus("⚠️ No approved PO on file — say 'restock Widget-A' first");
+        return;
+      }
       const invoice = lastInvoice || FALLBACK_INVOICE;
 
       let newQty = null;
       try {
-        const pay = await fetch("/api/vr/invoice-pay/demo", {
+        const pay = await fetch(API_BASE + "/api/vr/invoice-pay/demo", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ po: approvedPO, invoice })
+          body: JSON.stringify({ po: approvedPO, invoice }),
         });
         const result = await pay.json();
         if (result.status === "paid" && result.newQty != null) {
           newQty = result.newQty;
         } else {
-          // server flagged a discrepancy — route to dispute flow
           flagDiscrepancy();
           return;
         }
       } catch (e) {
-        // Demo fallback (no backend): treat as match
-        newQty = widgetAOriginalQty + (approvedPO.qty || 500);
+        newQty = widgetAOriginalQty + (Number(approvedPO.qty) || 500);
       }
 
-      panel.innerHTML = `
-    <div style="text-align:center;padding:28px 20px">
-      <div style="font-size:48px;margin-bottom:10px">✅</div>
-      <div style="font-size:18px;font-weight:800;color:#00ff88;margin-bottom:8px">Payment Released</div>
-      <div style="font-size:13px;color:#666">Widget-A × ${invoice.items?.[0]?.qty || 500}<br>New stock: ${newQty} units</div>
-    </div>`;
+      const line = invoice.items && invoice.items[0] ? invoice.items[0] : {};
+      const qty = line.qty || approvedPO.qty || 500;
+      const sku = line.sku || approvedPO.sku || "Widget-A";
+      const token = openPanel(`
+    <div class="card__state card__state--ok">
+      <div class="card__state-icon">✅</div>
+      <div class="card__state-title">Payment Released</div>
+      <div class="card__state-text">${sku} × ${qty}<br>New stock: ${newQty} units</div>
+    </div>`, "ok");
+
       setStatus("✅ Payment released · Widget-A restocked");
       updateShelfToRestocked(newQty);
       showCompletionToast(newQty);
-      setTimeout(() => { panel.style.display = "none"; scanning = false; }, 3500);
+      setTimeout(() => { if (token === panelToken) { closePanel(); scanning = false; } }, 3500);
     }
 
     function flagDiscrepancy() {
-      invoiceState = "pending";
-      const panel = document.getElementById("ar-panel");
-      panel.style.borderTopColor = "#ffaa44";
-      panel.innerHTML = `
-    <div style="text-align:center;padding:28px 20px">
-      <div style="font-size:48px;margin-bottom:10px">⚠️</div>
-      <div style="font-size:18px;font-weight:800;color:#ffaa44;margin-bottom:8px">Pending Supplier Response for Discrepancy</div>
-    </div>`;
+      const token = openPanel(`
+    <div class="card__state card__state--warn">
+      <div class="card__state-icon">⚠️</div>
+      <div class="card__state-title">Pending Supplier Response</div>
+      <div class="card__state-text">Discrepancy flagged — Apex Logistics has been asked for a credit memo.</div>
+    </div>`, "warn");
       setStatus("Pending Supplier Response for Discrepancy");
+      setTimeout(() => { if (token === panelToken) closePanel(); }, 4000);
     }
 
-    // ── AGENT RESTOCK (from shelf) ────────────────────────────────────────────────
+    // ── AGENT RESTOCK ─────────────────────────────────────────────────────────────
     async function triggerAgentRestock() {
       restockTriggered = true;
-      const panel = document.getElementById("ar-panel");
-      panel.style.borderTopColor = "#aa44ff";
-      panel.style.display = "block";
+      pendingPO = null;
 
       const threadId = "vr-" + Date.now();
-
       const steps = [
         "🔍 Checking inventory — Widget-A: 0 units",
         "🤝 Buyer agent: Sending RFQ to 3 suppliers",
@@ -1070,7 +780,6 @@
         "🧮 Optimizing: price vs delivery vs risk",
         "✅ Best deal: Apex Logistics $8.20 · 3 days",
       ];
-
       const draftPo = {
         supplier: "Apex Logistics",
         sku: "Widget-A",
@@ -1078,163 +787,159 @@
         unit_price: 8.20,
         total: 4100,
         lead_time: 3,
-        delivery_days: 3
+        delivery_days: 3,
       };
 
-      panel.innerHTML = `
-    <div style="font-size:16px;font-weight:800;color:#aa44ff;margin-bottom:4px">🤖 Muse A2A Agents</div>
-    <div style="font-size:11px;color:#555;margin-bottom:12px">Live negotiation · muse-spark-1.3</div>
-    <div id="agent-lines" style="font-family:monospace;font-size:12px;color:#ccaaff;line-height:2.2"></div>
-    <div id="agent-po"></div>
-    <div onclick="document.getElementById('ar-panel').style.display='none'"
-      style="text-align:center;margin-top:10px;color:#333;font-size:11px;cursor:pointer">✕ close</div>`;
+      openPanel(`
+    <div class="card card--accent card--elevated">
+      <div class="card__title">🤖 Muse A2A Agents</div>
+      <div class="card__subtitle">Live negotiation · muse-spark-1.3</div>
+      <div id="agent-lines" class="card__mono"></div>
+      <div id="agent-po"></div>
+      <div class="card__close" onclick="closePanel()">✕ close</div>
+    </div>`, "accent");
+
       setStatus("🤖 A2A agents negotiating…");
 
-      const linesEl = document.getElementById("agent-lines");
-
-      // Seed the backend with demo transcript + draft_po so agent-status polling works
       try {
-        await fetch("/api/vr/agent-threads/" + threadId, {
+        await fetch(API_BASE + "/api/vr/agent-threads/" + threadId, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ transcript: steps, draft_po: draftPo })
+          body: JSON.stringify({ transcript: steps, draft_po: draftPo }),
         });
-      } catch (e) {
-        // backend unavailable — fall back to local rendering below
-      }
+      } catch (e) { /* backend down — local render still works */ }
 
-      // Render lines incrementally (local), then poll agent-status until done
       let lineIndex = 0;
-      async function renderNextLine() {
-        if (lineIndex < steps.length) {
+      function appendNextLine() {
+        if (lineIndex >= steps.length) return;
+        const el = document.getElementById("agent-lines");
+        if (el) {
           const d = document.createElement("div");
+          d.className = "card__mono-line";
           d.textContent = steps[lineIndex];
-          d.style.cssText = "opacity:0;transition:opacity 0.3s";
-          linesEl.appendChild(d);
-          await sleep(50); d.style.opacity = "1";
-          lineIndex++;
-          setTimeout(renderNextLine, 500);
+          el.appendChild(d);
         }
+        lineIndex++;
+        setTimeout(appendNextLine, 500);
       }
-      renderNextLine();
+      appendNextLine();
 
       let polled = false;
       async function pollStatus() {
+        if (polled) return;
         try {
-          const res = await fetch("/api/vr/agent-status/" + threadId);
-          const data = await res.json();
-          if (data.done && !polled) {
-            polled = true;
-            renderPoCard(data.draft_po || draftPo);
-            setStatus("Draft PO ready · Approve or Reject");
-            return;
+          const res = await fetch(API_BASE + "/api/vr/agent-status/" + threadId);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.done) { polled = true; renderPoCard(data.draft_po || draftPo); return; }
           }
-        } catch (e) { /* backend down, fall through */ }
+        } catch (e) { /* backend down — fall through to local card */ }
 
-        // If lines are done rendering and still no PO card, show it anyway
-        if (!polled && lineIndex >= steps.length) {
-          polled = true;
-          renderPoCard(draftPo);
-          setStatus("Draft PO ready · Approve or Reject");
-          return;
-        }
-        if (!polled) setTimeout(pollStatus, 600);
+        if (lineIndex >= steps.length) { polled = true; renderPoCard(draftPo); return; }
+        setTimeout(pollStatus, 600);
       }
-
-      // Wait for lines to finish (steps.length * 500ms) then poll
       setTimeout(pollStatus, steps.length * 500 + 300);
+    }
 
-      async function renderPoCard(po) {
-        document.getElementById("agent-po").innerHTML = `
-    <div style="margin-top:14px;background:#22004433;border:2px solid #aa44ff;
-      border-radius:12px;padding:14px;">
-      <div style="font-size:12px;color:#cc88ff;font-weight:700;margin-bottom:8px">Draft PO Ready</div>
-      <div style="font-size:13px;color:#ccc;margin-bottom:4px">${po.supplier} · ${po.sku} · ${po.qty} units</div>
-      <div style="font-size:13px;color:#ccc;margin-bottom:10px">$${po.unit_price}/unit · ${po.lead_time} day delivery</div>
-      <div style="font-size:16px;font-weight:900;color:#aa44ff;margin-bottom:12px">Total: $${po.total}</div>
-      <div style="display:flex;gap:8px">
-        <button onclick="approveAgentPO()" style="
-          flex:1;padding:12px;background:linear-gradient(135deg,#aa44ff,#8822cc);
-          border:none;border-radius:10px;color:#fff;
-          font-size:14px;font-weight:800;cursor:pointer">
-          👌 Pinch to Approve
-        </button>
-        <button onclick="rejectAgentPO()" style="
-          flex:1;padding:12px;background:rgba(255,50,50,0.1);
-          border:1px solid #ff4444;border-radius:10px;
-          color:#ff6666;font-size:13px;font-weight:700;cursor:pointer">
-          ✕ Reject
-        </button>
+    function renderPoCard(po) {
+      pendingPO = po;
+      const el = document.getElementById("agent-po");
+      if (!el) return;
+      const lead = po.lead_time != null ? po.lead_time : (po.delivery_days != null ? po.delivery_days : 3);
+      const total = Number(po.total || 0).toLocaleString();
+      const unit = Number(po.unit_price || 0).toFixed(2);
+      el.innerHTML = `
+    <div class="card__po">
+      <div class="card__title">Draft PO Ready</div>
+      <div class="card__row"><span class="card__label">Supplier</span><span class="card__data">${po.supplier}</span></div>
+      <div class="card__row"><span class="card__label">SKU</span><span class="card__data">${po.sku}</span></div>
+      <div class="card__row"><span class="card__label">Quantity</span><span class="card__data">${po.qty} units</span></div>
+      <div class="card__row"><span class="card__label">Unit price</span><span class="card__data">$${unit}</span></div>
+      <div class="card__row"><span class="card__label">Delivery</span><span class="card__data">${lead} days</span></div>
+      <div class="card__po-total"><span>Total</span><span>$${total}</span></div>
+      <div class="card__actions">
+        <button class="card__btn card__btn--accent" onclick="approveAgentPO()">👌 Pinch to Approve</button>
+        <button class="card__btn card__btn--danger" onclick="rejectAgentPO()">✕ Reject</button>
       </div>
     </div>`;
-      }
+      setStatus("Draft PO ready · Approve or Reject");
     }
 
     function approveAgentPO() {
-      const panel = document.getElementById("ar-panel");
-      panel.style.borderTopColor = "#00ff88";
-      approvedPO = {
-        supplier: "Apex Logistics",
-        sku: "Widget-A",
-        qty: 500,
-        unit_price: 8.20,
-        total: 4100,
-        po_id: "PO #2026-847"
-      };
-      panel.innerHTML = `
-    <div style="text-align:center;padding:28px 20px">
-      <div style="font-size:48px;margin-bottom:10px">✅</div>
-      <div style="font-size:18px;font-weight:800;color:#00ff88;margin-bottom:8px">Approved!</div>
-      <div style="font-size:13px;color:#666">PO #2026-847 · 500× Widget-A<br>Apex Logistics · ETA 3 days</div>
-    </div>`;
-      setStatus("✅ PO approved · Widget-A restocking");
+      if (!pendingPO) {
+        setStatus("⚠️ No draft PO to approve — say 'restock Widget-A' first");
+        return;
+      }
+      const po = pendingPO;
+      pendingPO = null;
+      approvedPO = Object.assign({}, po, { po_id: "PO #2026-847" });
+
+      const lead = po.lead_time != null ? po.lead_time : 3;
+      const token = openPanel(`
+    <div class="card__state card__state--ok">
+      <div class="card__state-icon">✅</div>
+      <div class="card__state-title">Approved!</div>
+      <div class="card__state-text">PO #2026-847 · ${po.qty}× ${po.sku}<br>${po.supplier} · ETA ${lead} days</div>
+      <div class="card__hint">Supplier invoice unlocked — pinch Widget-A again</div>
+    </div>`, "ok");
+
+      setStatus("✅ PO approved · Widget-A restocking · pinch Widget-A for the invoice");
       updateShelfToInbound();
-      unlockInvoiceTab();
-      setTimeout(() => { panel.style.display = "none"; scanning = false; }, 3500);
+      unlockInvoice();
+      setTimeout(() => { if (token === panelToken) { closePanel(); scanning = false; } }, 3500);
     }
 
     function rejectAgentPO() {
+      if (!pendingPO) {
+        setStatus("⚠️ No draft PO to reject");
+        return;
+      }
+      pendingPO = null;
       restockTriggered = false;
-      const panel = document.getElementById("ar-panel");
-      panel.style.borderTopColor = "#ff4444";
-      panel.innerHTML = `
-    <div style="text-align:center;padding:28px 20px">
-      <div style="font-size:48px;margin-bottom:10px">✕</div>
-      <div style="font-size:18px;font-weight:800;color:#ff6666;margin-bottom:8px">PO Rejected</div>
-      <div style="font-size:13px;color:#666">Widget-A restock paused.<br>Muse flagged for procurement review.</div>
-      <div style="font-size:12px;color:#8b949e;margin-top:10px">Use 🔄 Reset Demo to try the approval path again.</div>
-    </div>`;
+
+      openPanel(`
+    <div class="card__state card__state--danger">
+      <div class="card__state-icon">✕</div>
+      <div class="card__state-title">PO Rejected</div>
+      <div class="card__state-text">Widget-A restock paused.<br>Muse flagged for procurement review.</div>
+      <div class="card__hint">Use 🔄 Reset Demo to try the approval path again.</div>
+    </div>`, "danger");
+
       setStatus("PO rejected — Widget-A restock paused. Muse flagged for procurement review.");
       scanning = false;
     }
 
-    // ── SHELF STATE UPDATE ────────────────────────────────────────────────────────
+    // ── SHELF STATE ───────────────────────────────────────────────────────────────
+    function setBinAHint(text, visible) {
+      const hint = document.getElementById("hint-a");
+      if (!hint) return;
+      hint.textContent = text;
+      hint.classList.toggle("is-hidden", !visible);
+    }
+
     function updateShelfToInbound() {
       const fill = document.getElementById("fill-a");
       const qty = document.getElementById("qty-a");
-      const hint = document.getElementById("hint-a");
       const alert = document.getElementById("alert-a");
-      if (fill) { fill.className = "bin-bar-fill inbound"; }
+      if (fill) fill.className = "bin-bar-fill inbound";
       if (qty) { qty.textContent = "⏳ inbound"; qty.className = "bin-qty inbound"; }
-      if (hint) { hint.style.display = "none"; }
-      if (alert) { alert.textContent = "✓"; alert.style.animation = "none"; alert.style.color = "#aa44ff"; }
-      const pinchPrompt = document.querySelector(".pinch-prompt");
-      if (pinchPrompt) pinchPrompt.style.display = "none";
+      if (alert) { alert.textContent = "✓"; alert.className = "bin-alert bin-alert--inbound"; }
+      setBinAHint("👌 pinch for invoice", true);
     }
 
-    // ── SHELF STATE UPDATE — restocked (after payment release) ────────────────────
     function updateShelfToRestocked(newQty) {
       const fill = document.getElementById("fill-a");
       const qty = document.getElementById("qty-a");
-      const hint = document.getElementById("hint-a");
       const alert = document.getElementById("alert-a");
-      if (fill) { fill.className = "bin-bar-fill full"; }
+      if (fill) fill.className = "bin-bar-fill full";
       if (qty) { qty.textContent = newQty + " u"; qty.className = "bin-qty full"; }
-      if (hint) { hint.style.display = "none"; }
-      if (alert) { alert.textContent = "✓"; alert.style.animation = "none"; alert.style.color = "#00cc88"; }
+      if (alert) { alert.textContent = "✓"; alert.className = "bin-alert bin-alert--ok"; }
+      setBinAHint("", false);
     }
 
-    // ── COMPLETION TOAST ──────────────────────────────────────────────────────────
+    function unlockInvoice() { invoiceLocked = false; }
+
+    // ── TOAST + RESET ─────────────────────────────────────────────────────────────
     function showCompletionToast(newQty) {
       const toast = document.getElementById("completion-toast");
       toast.textContent = `✅ Demo complete — Widget-A restocked. ${newQty} units now in stock.`;
@@ -1242,50 +947,43 @@
       setTimeout(() => { toast.style.display = "none"; }, 3000);
     }
 
-    // ── RESET DEMO ────────────────────────────────────────────────────────────────
     async function resetDemo() {
-      // Restore Widget-A qty in DB
-      try {
-        await fetch("/api/vr/reset-demo", { method: "POST" });
-      } catch (e) {
-        // backend fallback handled locally below
-      }
+      try { await fetch(API_BASE + "/api/vr/reset-demo", { method: "POST" }); } catch (e) { /* offline */ }
 
-      // Reset shelf Widget-A to default/EMPTY (not inbound)
+      closePanel();
+      clearVoiceFeedback();
+      scanning = false;
+      restockTriggered = false;
+      approvedPO = null;
+      pendingPO = null;
+      lastInvoice = null;
+      invoiceLocked = true;
+
       const fill = document.getElementById("fill-a");
       const qty = document.getElementById("qty-a");
-      const hint = document.getElementById("hint-a");
       const alert = document.getElementById("alert-a");
-      if (fill) { fill.className = "bin-bar-fill empty"; }
+      if (fill) fill.className = "bin-bar-fill empty";
       if (qty) { qty.textContent = "0 u"; qty.className = "bin-qty empty"; }
-      if (hint) { hint.style.display = "block"; }
-      if (alert) { alert.textContent = "⚠️"; alert.style.animation = "triangle-pulse 1.2s ease-in-out infinite"; alert.style.color = "#ff3333"; }
+      if (alert) { alert.textContent = "⚠️"; alert.className = "bin-alert"; }
+      setBinAHint("👌 pinch to restock", true);
 
-      // Reset demo state
-      approvedPO = null;
-      invoiceLocked = true;
-      invoiceState = null;
-      disputeDraft = null;
-      lastInvoice = null;
-      voiceHistory = [];
-      const invBtn = document.getElementById("btn-invoice");
-      invBtn.className = "nav-btn inactive locked";
-      invBtn.title = "Invoice locked";
       document.getElementById("completion-toast").style.display = "none";
-      document.getElementById("ar-panel").style.display = "none";
       showScene("shelf");
-      setStatus("Demo ready — restock Widget-A to begin");
+      setStatus("Demo ready — pinch Widget-A to begin");
     }
 
-    // ── VOICE GUIDE ───────────────────────────────────────────────────────────────
-    function simulateVoice(i) { window._voiceCmds?.[i]?.(); }
-
-    // ── REAL VOICE ────────────────────────────────────────────────────────────────
+    // ── VOICE ─────────────────────────────────────────────────────────────────────
     function startVoiceListening() {
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SR) { setStatus("🎤 Voice not supported in this browser"); return; }
+      if (!SR) { setStatus("🎤 Voice not supported in this browser — pinch to interact"); return; }
 
-      if (recognition) { recognition.stop(); recognition = null; resetMicBtn(); return; }
+      if (recognition) {
+        recognition.stop();
+        recognition = null;
+        resetMicBtn(true);
+        setStatus("🎤 Mic off");
+        return;
+      }
 
       recognition = new SR();
       recognition.continuous = false;
@@ -1293,49 +991,133 @@
       recognition.lang = "en-US";
 
       recognition.onstart = () => {
-        micActive = true;
+        clearVoiceFeedback();
         document.getElementById("mic-btn").classList.add("listening");
         document.getElementById("mic-btn").textContent = "🔴";
         setStatus("🎤 Listening…");
       };
-      recognition.onresult = (e) => {
-        const t = e.results[0][0].transcript.toLowerCase().trim();
-        micActive = false;
-        setStatus("🎤 \"" + t + "\"");
-        handleVoiceCommand(t);
-        recognition = null;
-        resetMicBtn();
+
+      recognition.onresult = async (e) => {
+        const transcript = e.results[e.results.length - 1][0].transcript.trim();
+        const intent = await resolveIntent(transcript);
+        const label = INTENT_LABELS[intent] || INTENT_LABELS.unknown;
+
+        showVoiceFeedback(transcript, intent, label);
+
+        await handleIntent(intent, transcript);
       };
+
       recognition.onerror = (e) => {
-        micActive = false;
+        recognition = null;
+        if (e.error === "aborted") { resetMicBtn(false); return; }
+        resetMicBtn(true);
         setStatus("🎤 " + e.error + " — try again");
-        recognition = null; resetMicBtn();
       };
-      recognition.onend = () => { micActive = false; recognition = null; resetMicBtn(); };
+
+      recognition.onend = () => {
+        recognition = null;
+        resetMicBtn(false);
+      };
+
       recognition.start();
     }
 
-    function resetMicBtn() {
+    function resetMicBtn(clearFeedback) {
       const btn = document.getElementById("mic-btn");
-      btn.classList.remove("listening");
-      btn.textContent = "🎤";
+      if (btn) { btn.classList.remove("listening"); btn.textContent = "🎤"; }
+      if (clearFeedback) clearVoiceFeedback();
     }
 
-    function handleVoiceCommand(t) {
-      if (t.includes("restock") || t.includes("order")) {
-        if (mode !== "shelf") showScene("shelf");
-        setTimeout(triggerAgentRestock, 400);
-      } else if (t.includes("approve")) {
-        approveAgentPO();
-      } else if (t.includes("reject")) {
-        rejectAgentPO();
-      } else if (t.includes("invoice")) {
-        showScene("invoice");
-      } else if (t.includes("shelf") || t.includes("stock")) {
-        showScene("shelf"); setTimeout(onShelfPinch, 300);
-      } else {
-        setStatus("🎤 \"" + t + "\" — try: restock / approve / reject / invoice / show shelf");
+    async function resolveIntent(transcript) {
+      try {
+        const r = await fetch(API_BASE + "/api/vr/interpret-voice", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ transcript }),
+        });
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        const data = await r.json();
+        const parsed = typeof data === "string" ? JSON.parse(data) : data;
+        const intent = String((parsed && parsed.intent) || "").toLowerCase();
+        if (INTENTS.has(intent) && intent !== "unknown") return intent;
+        return fallbackIntent(transcript);
+      } catch (e) {
+        return fallbackIntent(transcript);
       }
+    }
+
+    function fallbackIntent(transcript) {
+      const t = transcript.toLowerCase();
+      if (/\b(restock|re-?stock|order|buy|purchase|replenish)\b/.test(t)) return "restock";
+      if (/\b(approve|accept|confirm|yes|ok)\b/.test(t)) return "approve_po";
+      if (/\b(reject|deny|decline|cancel|no)\b/.test(t)) return "reject_po";
+      if (/\b(pay|payment|release|settle)\b/.test(t)) return "pay_invoice";
+      if (/\b(invoice|bill|bol|document)\b/.test(t)) return "show_invoice";
+      return "unknown";
+    }
+
+    async function handleIntent(intent, transcript) {
+      switch (intent) {
+        case "restock":
+          if (approvedPO) {
+            setStatus("✅ Widget-A restock already approved — pinch Widget-A for the invoice");
+            break;
+          }
+          if (mode !== "shelf") showScene("shelf");
+          await sleep(400);
+          triggerAgentRestock();
+          break;
+        case "approve_po":
+          approveAgentPO();
+          break;
+        case "reject_po":
+          rejectAgentPO();
+          break;
+        case "pay_invoice":
+          if (invoiceLocked) setStatus("⚠️ No approved PO — say 'restock Widget-A' first");
+          else verifyInvoicePayment();
+          break;
+        case "show_invoice":
+          if (invoiceLocked) setStatus("⚠️ Approve Widget-A PO first — supplier invoice pending");
+          else showScene("invoice");
+          break;
+        default:
+          setStatus('🎤 "' + transcript + '" — try: restock / approve / reject / pay invoice / show invoice');
+      }
+    }
+
+    function showVoiceFeedback(transcript, intent, intentLabel) {
+      const el = document.getElementById("voice-feedback");
+      if (!el) return;
+      const icon = intent === "unknown" ? "❓" : "✓";
+
+      el.innerHTML = "";
+
+      const heard = document.createElement("div");
+      heard.className = "voice-feedback-transcript";
+      heard.textContent = '🎤 Heard: "' + transcript + '"';
+
+      const line = document.createElement("div");
+      line.className = "voice-feedback-intent";
+      line.appendChild(document.createTextNode("🤖 Intent: " + intentLabel + " "));
+      const iconEl = document.createElement("span");
+      iconEl.className = "voice-feedback-icon";
+      iconEl.textContent = icon;
+      line.appendChild(iconEl);
+
+      const hint = document.createElement("div");
+      hint.className = "voice-feedback-hint";
+      hint.textContent = "👌 pinch mic to give another command";
+
+      el.append(heard, line, hint);
+      el.classList.add("visible");
+    }
+
+    function clearVoiceFeedback() {
+      const el = document.getElementById("voice-feedback");
+      if (!el) return;
+      el.classList.remove("visible");
+      el.innerHTML = "";
     }
 
     // ── XR SESSION ────────────────────────────────────────────────────────────────
@@ -1343,7 +1125,7 @@
       xrSession = await navigator.xr.requestSession("immersive-ar", {
         requiredFeatures: ["local-floor"],
         optionalFeatures: ["hand-tracking", "dom-overlay"],
-        domOverlay: { root: document.body }
+        domOverlay: { root: document.body },
       });
       const canvas = document.getElementById("canvas");
       gl = canvas.getContext("webgl2", { xrCompatible: true });
@@ -1352,7 +1134,7 @@
       xrRefSpace = await xrSession.requestReferenceSpace("local-floor");
       xrSession.addEventListener("end", () => { xrSession = null; });
       xrSession.requestAnimationFrame(onXRFrame);
-      setStatus("👐 Pinch RIGHT on Widget-A · LEFT to switch scene");
+      setStatus("👐 Pinch RIGHT on Widget-A · LEFT to switch shelf / invoice");
     }
 
     function onXRFrame(time, frame) {
@@ -1360,35 +1142,66 @@
       xrSession.requestAnimationFrame(onXRFrame);
       const pose = frame.getViewerPose(xrRefSpace);
       if (!pose) return;
+
       for (const src of xrSession.inputSources) {
         if (!src.hand) continue;
         if (src.handedness === "right") handRight = src;
         if (src.handedness === "left") handLeft = src;
       }
-      if (!scanning) {
-        const rP = detectPinch(frame, handRight);
-        const lP = detectPinch(frame, handLeft);
-        if (rP && !pinchWasDown.right) {
-          if (mode === "shelf") onShelfPinch();
-          if (mode === "invoice") onInvoicePinch();
-        }
-        if (lP && !pinchWasDown.left) showScene(mode === "shelf" ? "invoice" : "shelf");
-        pinchWasDown.right = rP; pinchWasDown.left = lP;
+
+      const rP = detectPinch(frame, handRight);
+      const lP = detectPinch(frame, handLeft);
+
+      if (rP && !pinchWasDown.right) {
+        pulseHaptic(handRight);
+        setPinchVisual("right", true);
+        if (!scanning) { mode === "shelf" ? onShelfPinch() : onInvoicePinch(); }
+      } else if (!rP && pinchWasDown.right) {
+        setPinchVisual("right", false);
       }
+
+      if (lP && !pinchWasDown.left) {
+        pulseHaptic(handLeft);
+        setPinchVisual("left", true);
+        if (!scanning) {
+          if (mode === "shelf" && !invoiceLocked) showScene("invoice");
+          else if (mode === "invoice") showScene("shelf");
+          else setStatus("⚠️ Approve Widget-A PO first — supplier invoice pending");
+        }
+      } else if (!lP && pinchWasDown.left) {
+        setPinchVisual("left", false);
+      }
+
+      pinchWasDown.right = rP;
+      pinchWasDown.left = lP;
+
       const bl = xrSession.renderState.baseLayer;
       gl.bindFramebuffer(gl.FRAMEBUFFER, bl.framebuffer);
-      gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     }
 
     function detectPinch(frame, src) {
-      if (!src?.hand || !xrRefSpace) return false;
+      if (!src || !src.hand || !xrRefSpace) return false;
       try {
         const i = frame.getJointPose(src.hand.get("index-finger-tip"), xrRefSpace);
         const t = frame.getJointPose(src.hand.get("thumb-tip"), xrRefSpace);
         if (!i || !t) return false;
         const p = i.transform.position, q = t.transform.position;
         return Math.hypot(p.x - q.x, p.y - q.y, p.z - q.z) < 0.025;
-      } catch { return false; }
+      } catch (e) { return false; }
+    }
+
+    function setPinchVisual(hand, active) {
+      const el = document.querySelector(hand === "right" ? ".pinch-indicator--right" : ".pinch-indicator--left");
+      if (el) el.classList.toggle("pinch-active", active);
+    }
+
+    function pulseHaptic(src) {
+      try {
+        const actuator = src && src.gamepad && src.gamepad.hapticActuators && src.gamepad.hapticActuators[0];
+        if (actuator && actuator.pulse) actuator.pulse(0.6, 70);
+      } catch (e) { /* haptics unsupported */ }
     }
 
     // ── FALLBACK DATA ─────────────────────────────────────────────────────────────
@@ -1396,18 +1209,18 @@
       type: "shelf", action_required: true,
       summary: "Bay A-14: 2 of 4 SKUs require attention.",
       zones: [
-        { sku: "Widget-A", qty: 0, status: "empty", color: "#ff3333" },
-        { sku: "Widget-B", qty: 3, status: "low", color: "#ffaa00" },
-        { sku: "Widget-C", qty: 18, status: "ok", color: "#00ff88" },
-        { sku: "Widget-D", qty: 24, status: "ok", color: "#00ff88" },
-      ]
+        { sku: "Widget-A", qty: 0, status: "empty" },
+        { sku: "Widget-B", qty: 3, status: "low" },
+        { sku: "Widget-C", qty: 18, status: "ok" },
+        { sku: "Widget-D", qty: 24, status: "ok" },
+      ],
     };
     const FALLBACK_INVOICE = {
       type: "invoice", supplier: "Apex Logistics",
       dates: ["2026-11-14", "2026-11-17"],
       items: [{ sku: "Widget-A", qty: 500, cost: "8.20" }],
       total: "$4,100.00",
-      draft_instruction: "Approve PO for 500× Widget-A from Apex Logistics at $8.20/unit. Delivery in 3 days."
+      draft_instruction: "Approve PO for 500× Widget-A from Apex Logistics at $8.20/unit. Delivery in 3 days.",
     };
 
     function setStatus(m) {
