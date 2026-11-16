@@ -279,7 +279,9 @@
         box.position.set(bx, by, 0);
         box.userData = {sku: bin.sku};
         const sub = bin.status==="empty" ? "0 u · TAP RESTOCK"
-                  : bin.status==="inbound" ? "500 u · INBOUND" : bin.qty+" u";
+                  : bin.status==="inbound" ? "500 u · INBOUND"
+                  : bin.status==="awaiting-invoice" ? "PO APPROVED · VALIDATE INV"
+                  : bin.qty+" u";
         const labelTex = createLabelTexture(bin.sku, sub, "#0d1117", bin.color);
         const label = new THREE.Mesh(new THREE.PlaneGeometry(0.19,0.08),
           new THREE.MeshBasicMaterial({map:labelTex}));
@@ -299,6 +301,7 @@
     entry.mesh.material.emissive.setHex(newStatus==="empty"?0xff3333:0);
     entry.mesh.material.emissiveIntensity = newStatus==="empty"?0.35:0;
     const sub = newStatus==="inbound" ? "500 u · INBOUND"
+              : newStatus==="awaiting-invoice" ? "PO APPROVED · VALIDATE INV"
               : newStatus==="empty" ? "0 u · TAP RESTOCK" : newQty+" u";
     const tex = createLabelTexture(sku, sub, "#0d1117", newColor);
     entry.labelMesh.material.map.dispose();
@@ -443,7 +446,9 @@
         ? (invoiceLocked ? "<div class='bin-tile__hint'>👆 Tap to restock</div>"
                         : "<div class='bin-tile__hint'>🧾 Tap for invoice</div>")
         : "";
-      const qty = b.status==="inbound" ? "500 u (Inbound)" : b.qty+" u";
+      const qty = b.status==="inbound" ? "500 u · Inbound"
+              : b.status==="awaiting-invoice" ? "Validate Invoice →"
+              : b.qty+" u";
       return `<div class="bin-tile ${b.status}" data-sku="${b.sku}">
         <div class="bin-tile__top"><span>${b.sku}</span><span style="color:${b.color}">${qty}</span></div>
         ${hint}</div>`;
@@ -468,19 +473,35 @@
     triggerAgentRestock();
   }
 
+  // A2A negotiation log — persisted so it shows above PO card
+  const A2A_LOG = [
+    {icon:"🔍", text:"Widget-A: <strong>0 units</strong> — restock triggered"},
+    {icon:"📡", text:"RFQ broadcast to 3 registered suppliers"},
+    {icon:"💬", text:"Apex Logistics bid: <strong>$8.20/u · 3 days</strong>"},
+    {icon:"💬", text:"Global Parts Co bid: <strong>$8.75/u · 6 days</strong>"},
+    {icon:"💬", text:"FastShip Inc bid: <strong>$9.10/u · 2 days</strong>"},
+    {icon:"🧠", text:"Muse evaluated: cost vs lead-time vs reliability"},
+    {icon:"✅", text:"Selected: <strong>Apex Logistics</strong> — best score"},
+  ];
+
+  function a2aLogHTML() {
+    return `<div style="margin-bottom:10px;">
+      <div style="font-size:11px;font-weight:700;color:var(--accent);letter-spacing:.05em;margin-bottom:6px;">A2A NEGOTIATION LOG · muse-spark-1.3</div>
+      ${A2A_LOG.map(l=>`<div style="font-size:11.5px;padding:3px 0;display:flex;gap:7px;border-bottom:1px solid rgba(48,54,61,.5);">
+        <span>${l.icon}</span><span>${l.text}</span></div>`).join("")}
+    </div>`;
+  }
+
   async function triggerAgentRestock() {
     if (isNegotiating) return;
     isNegotiating = true;
     setStatus("A2A agents negotiating Widget-A...", true);
+    // Show live negotiation log while fetching
     openPanel(`<div class="card__header">
       <span class="card__title">🤖 A2A Procurement</span>
       <span class="card__badge">muse-spark-1.3</span></div>
-      <div class="card__body">
-        <div class="card__line">🔍 Widget-A: 0 units</div>
-        <div class="card__line">🤝 Sending RFQ to 3 suppliers…</div>
-        <div class="card__line">💬 Apex Logistics: $8.20/unit · 3 days</div>
-        <div class="card__line">💬 Global Parts Co: $8.75/unit · 6 days</div>
-        <div class="card__line">✅ Best: Apex Logistics $8.20</div>
+      <div class="card__body">${a2aLogHTML()}
+        <div style="font-size:12px;color:var(--muted);text-align:center;padding:8px 0;">Generating PO…</div>
       </div>`, "accent");
     const threadId = "ar-"+Date.now();
     try {
@@ -499,10 +520,12 @@
   }
 
   function renderPoCard(po) {
+    // A2A log stays visible above the PO
     openPanel(`<div class="card__header">
       <span class="card__title">⏸ Purchase Order</span>
       <span class="card__badge">${po.po_id||"PO-2026-847"}</span></div>
       <div class="card__body">
+        ${a2aLogHTML()}
         <div class="card__box">
           <div class="card__row"><span>Supplier</span><strong>${po.supplier}</strong></div>
           <div class="card__row"><span>Item</span><strong>${po.sku} × ${po.qty} u</strong></div>
@@ -523,19 +546,25 @@
     if (!pendingPO) return;
     approvedPO = {...pendingPO}; pendingPO = null;
     invoiceLocked = false;
-    bins[0].status = "inbound"; bins[0].color = "#aa44ff";
-    renderDesktopBins(); update3DBin("Widget-A", 500, "inbound", "#aa44ff");
-    setStatus("PO approved · Tap Widget-A for invoice");
+    // Widget-A stays EMPTY visually until invoice is verified & paid
+    // Just show "awaiting invoice" hint on the bin
+    bins[0].status = "awaiting-invoice"; bins[0].color = "#aa44ff";
+    renderDesktopBins();
+    update3DBin("Widget-A", 0, "awaiting-invoice", "#aa44ff");
+    setStatus("PO approved · Tap Widget-A to validate invoice");
     openPanel(`<div class="card__header">
       <span class="card__title">✅ PO Approved</span>
-      <span class="card__badge">DISPATCHED</span></div>
+      <span class="card__badge">AWAITING DELIVERY</span></div>
       <div class="card__body">
-        <div class="card__line">Locked with <strong>${approvedPO.supplier}</strong> — 500× Widget-A</div>
-        <div class="card__line" style="color:var(--accent);margin-top:6px">
-          👉 Tap Widget-A again (or say "show invoice") to verify the incoming invoice.
+        <div class="card__line">Order locked with <strong>${approvedPO.supplier}</strong> — 500× Widget-A</div>
+        <div class="card__line" style="color:var(--warn);margin-top:6px">
+          ⏳ Widget-A stays empty until supplier invoice is verified.
+        </div>
+        <div class="card__line" style="color:var(--accent);margin-top:4px">
+          👉 Tap Widget-A to validate supplier invoice against PO.
         </div>
         <div class="card__actions">
-          <button class="btn btn-accent interactive" id="btn-open-inv">🧾 Open Invoice</button>
+          <button class="btn btn-accent interactive" id="btn-open-inv">🧾 Validate Invoice</button>
           <button class="btn btn-ghost interactive" id="btn-close-after-approve">Close</button>
         </div>
       </div>`, "ok");
@@ -587,7 +616,10 @@
   async function verifyInvoicePayment() {
     if (!activeInvoice) await onInvoicePinch();
     setStatus("Releasing payment…");
-    let newQty = 550;
+    // Show inbound state while "payment clears"
+    bins[0].status = "inbound"; bins[0].color = "#aa44ff";
+    renderDesktopBins(); update3DBin("Widget-A", 500, "inbound", "#aa44ff");
+    let newQty = 500; // correct: ordered 500, receive 500
     try {
       const res = await fetch("/api/vr/invoice-pay/demo", {
         method:"POST", headers:{"Content-Type":"application/json"},
@@ -598,14 +630,15 @@
     } catch {}
     bins[0].qty = newQty; bins[0].status = "ok"; bins[0].color = "#00ff88";
     renderDesktopBins(); update3DBin("Widget-A", newQty, "ok", "#00ff88");
-    setStatus(`✅ Paid · Widget-A: ${newQty} u`);
+    setStatus(`✅ Paid · Delivery inbound · Widget-A: ${newQty} u`);
     openPanel(`<div class="card__header">
       <span class="card__title">💸 Payment Released</span>
       <span class="card__badge">COMPLETE</span></div>
       <div class="card__body">
-        <div class="card__line">3-way match verified — PO-2026-847.</div>
-        <div class="card__line" style="color:var(--ok);font-weight:600;margin-top:6px">
-          ✅ Widget-A updated to ${newQty} units.
+        <div class="card__line">✅ 3-way match: PO ↔ Invoice ↔ GRN verified</div>
+        <div class="card__line" style="color:var(--muted);font-size:11.5px;margin-top:4px">PO-2026-847 · Apex Logistics · $4,100.00</div>
+        <div class="card__line" style="color:var(--ok);font-weight:600;margin-top:8px">
+          📦 Delivery inbound · Widget-A: ${newQty} units
         </div>
         <div class="card__actions">
           <button class="btn btn-ghost interactive" id="btn-close-done">Done</button>
