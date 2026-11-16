@@ -1,1363 +1,695 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>Supply Chain AR Walk</title>
-  <link rel="icon" href="data:,">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
+  <title>Supply Chain AR Walk — Sovereign</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0d1117; --surface: rgba(22,27,34,0.92); --border: rgba(48,54,61,0.9);
+      --text: #e6edf3; --muted: #8b949e; --accent: #58a6ff;
+      --ok: #3fb950; --warn: #d29922; --danger: #f85149;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0;
+        font-family: 'Inter', -apple-system, sans-serif; -webkit-font-smoothing: antialiased; }
+    body { background: var(--bg); color: var(--text); min-height: 100vh; overflow: hidden; }
 
-    body {
-      background: #000;
-      font-family: 'Inter', -apple-system, sans-serif;
-      -webkit-font-smoothing: antialiased;
-      text-rendering: optimizeLegibility;
-      color: #fff;
-      overflow: hidden;
-    }
+    #webgl-canvas { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
 
-    .is-hidden { display: none !important; }
+    /* DOM Overlay root — 2D HUD only, shelf is 3D WebGL */
+    #overlay { position: fixed; inset: 0; z-index: 10; pointer-events: none;
+      display: flex; flex-direction: column; justify-content: space-between; padding: 16px; }
+    .interactive { pointer-events: auto; }
 
-    /* ── ENTER SCREEN ── */
-    #enter-screen {
-      position: fixed; inset: 0; z-index: 500;
-      display: flex; flex-direction: column; align-items: center; justify-content: center;
-      background: radial-gradient(ellipse at center, #001133 0%, #000 100%);
-      padding: 24px;
-    }
-    #enter-btn {
-      padding: 22px 56px; font-size: 24px; font-weight: 800;
-      background: linear-gradient(135deg, #0066ff, #0044cc);
-      color: #fff; border: none; border-radius: 20px; cursor: pointer;
-      box-shadow: 0 8px 32px rgba(0, 102, 255, 0.4);
-      transition: transform .16s cubic-bezier(.2,.9,.3,1.4), box-shadow .2s ease;
-    }
-    #enter-btn:hover { transform: translateY(-2px); box-shadow: 0 12px 40px rgba(0, 102, 255, 0.55); }
-    #enter-btn:active { transform: scale(.97); }
-    #enter-subtitle { margin-top: 14px; font-size: 13px; color: #8fa3c8; text-align: center; }
+    .hud-top { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; }
+    .status-pill { background: var(--surface); border: 1px solid var(--border);
+      backdrop-filter: blur(12px); padding: 8px 14px; border-radius: 999px;
+      font-size: 12px; font-weight: 500; color: var(--text);
+      display: flex; align-items: center; gap: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.45); }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
+    .status-dot.warn { background: var(--warn); }
 
-    /* ── STATUS ── */
-    #status {
-      position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
-      font-size: 12px; color: #bbb; z-index: 400; text-align: center;
-      background: rgba(0, 0, 0, 0.72); padding: 5px 14px; border-radius: 16px;
-      pointer-events: none; white-space: nowrap; display: none;
-      max-width: calc(100% - 120px); overflow: hidden; text-overflow: ellipsis;
-    }
+    .voice-feedback { background: rgba(13,17,23,.94); border: 1px solid var(--accent);
+      border-radius: 12px; padding: 10px 14px; max-width: 420px; width: 100%;
+      font-size: 12px; box-shadow: 0 10px 28px rgba(0,0,0,.55); display: none; }
+    .voice-feedback.visible { display: block; }
+    .voice-feedback__heard { color: var(--muted); margin-bottom: 4px; }
+    .voice-feedback__intent { color: var(--accent); font-weight: 600; }
 
-    /* ── VOICE FEEDBACK (top-centre, below status) ── */
-    .voice-feedback {
-      position: fixed; top: 48px; left: 50%;
-      transform: translate(-50%, -8px);
-      background: rgba(10, 12, 18, 0.92);
-      border: 1px solid #30363d; border-radius: 12px;
-      padding: 10px 16px; z-index: 600;
-      text-align: center; pointer-events: none;
-      max-width: min(92vw, 560px);
-      opacity: 0;
-      transition: opacity .22s ease, transform .22s cubic-bezier(.2,.9,.3,1.2);
-    }
-    .voice-feedback.visible { opacity: 1; transform: translate(-50%, 0); }
-    .voice-feedback-transcript { font-size: 12px; font-style: italic; color: #9fb6c9; }
-    .voice-feedback-intent { font-size: 13px; font-weight: 700; color: #ffcc66; margin-top: 2px; }
-    .voice-feedback-icon { margin-left: 4px; }
-    .voice-feedback-hint { font-size: 11px; color: #6b7785; margin-top: 2px; }
+    /* 2D desktop fallback shelf */
+    #ar-scene { flex: 1; display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 16px; padding: 12px 0; }
+    body.xr-active #ar-scene { display: none !important; }
 
-    /* ── CARD SYSTEM (defined once) ── */
-    .card {
-      background: rgba(18, 18, 24, 0.94);
-      border: 1px solid #2d2d3a;
-      border-radius: 14px;
-      padding: 16px;
-      backdrop-filter: blur(10px);
-    }
-    .card--elevated { box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.03) inset; }
-    .card--primary { border-color: #0066ff; background: linear-gradient(180deg, rgba(0, 102, 255, 0.10), rgba(18, 18, 24, 0.94)); }
-    .card--accent  { border-color: #aa44ff; background: linear-gradient(180deg, rgba(170, 68, 255, 0.10), rgba(18, 18, 24, 0.94)); }
-    .card--success { border-color: #00cc88; background: linear-gradient(180deg, rgba(0, 204, 136, 0.10), rgba(18, 18, 24, 0.94)); }
-    .card--danger  { border-color: #ff4444; background: linear-gradient(180deg, rgba(255, 68, 68, 0.10), rgba(18, 18, 24, 0.94)); }
+    .hero-card { background: var(--surface); border: 1px solid var(--border);
+      border-radius: 16px; padding: 20px; max-width: 420px; width: 100%;
+      text-align: center; box-shadow: 0 16px 40px rgba(0,0,0,.5); }
+    .hero-title { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+    .hero-sub { font-size: 12px; color: var(--muted); margin-bottom: 16px; }
 
-    .card__title { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .6px; color: #9aa7c7; }
-    .card__subtitle { font-size: 12px; color: #7d8aa0; margin-top: 3px; margin-bottom: 8px; }
-    .card__row {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 8px 0; border-bottom: 1px solid #23232c; gap: 12px;
-    }
-    .card__row:last-child { border-bottom: none; }
-    .card__label { font-size: 13px; color: #a8b0c0; }
-    .card__label--item { display: inline-flex; align-items: center; gap: 9px; }
-    .card__data { font-size: 14px; font-weight: 700; color: #fff; text-align: right; }
-    .card__dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
-    .card__dot--empty { background: #ff4444; }
-    .card__dot--low   { background: #ffaa00; }
-    .card__dot--ok    { background: #00cc88; }
-    .card__data--empty { color: #ff8080; }
-    .card__data--low   { color: #ffcc66; }
-    .card__data--ok    { color: #7dffb0; }
+    .btn { border: none; border-radius: 10px; padding: 11px 16px; font-size: 13px; font-weight: 600;
+      cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+      gap: 8px; transition: transform .12s ease, opacity .15s ease; }
+    .btn:active { transform: scale(.97); }
+    .btn-primary { background: #238636; color: #fff; width: 100%; }
+    .btn-accent { background: var(--accent); color: #0d1117; }
+    .btn-danger { background: #da3633; color: #fff; }
+    .btn-ghost { background: rgba(48,54,61,.65); color: var(--text); border: 1px solid var(--border); }
 
-    .card__list { margin-top: 4px; }
-    .card__list-row {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 7px 0; border-bottom: 1px solid #23232c; font-size: 13px; gap: 10px;
-    }
-    .card__list-row:last-child { border-bottom: none; }
+    .shelf-preview { background: var(--surface); border: 1px solid var(--border);
+      border-radius: 16px; padding: 16px; max-width: 420px; width: 100%; }
+    .shelf-preview__hdr { display: flex; justify-content: space-between; align-items: center;
+      font-size: 12px; font-weight: 600; margin-bottom: 12px; color: var(--accent); }
+    .bin-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 8px; }
+    .bin-tile { background: rgba(13,17,23,.85); border: 1px solid var(--border);
+      border-radius: 10px; padding: 10px; font-size: 12px; }
+    .bin-tile.empty { border-color: var(--danger); cursor: pointer; }
+    .bin-tile.low { border-color: var(--warn); }
+    .bin-tile.ok { border-color: rgba(63,185,80,.45); }
+    .bin-tile__top { display: flex; justify-content: space-between; font-weight: 600; margin-bottom: 4px; }
+    .bin-tile__hint { font-size: 11px; color: var(--danger); margin-top: 4px; }
 
-    .card__note { margin-top: 10px; padding: 9px 12px; border-radius: 9px; font-size: 12px; line-height: 1.45; }
-    .card__note--danger { background: rgba(255, 68, 68, 0.10); border: 1px solid rgba(255, 68, 68, 0.65); color: #ff9b9b; }
-    .card__note--warn   { background: rgba(255, 170, 0, 0.10); border: 1px solid rgba(255, 170, 0, 0.65); color: #ffd28a; }
-    .card__note--ok     { background: rgba(0, 204, 136, 0.10); border: 1px solid rgba(0, 204, 136, 0.65); color: #8dffca; }
-    .card__note--accent { background: rgba(170, 68, 255, 0.10); border: 1px solid rgba(170, 68, 255, 0.55); color: #d9b3ff; }
+    /* Modal panel */
+    #ar-panel-backdrop { position: fixed; inset: 0; display: none; align-items: center;
+      justify-content: center; padding: 16px; z-index: 20; pointer-events: none; }
+    #ar-panel-backdrop.open { display: flex; pointer-events: auto; }
+    .card { background: var(--surface); border: 1px solid var(--border); backdrop-filter: blur(16px);
+      border-radius: 16px; max-width: 420px; width: 100%; padding: 18px;
+      box-shadow: 0 20px 48px rgba(0,0,0,.7); animation: cardPop .2s ease-out; }
+    .card--warn { border-color: var(--warn); }
+    .card--ok { border-color: var(--ok); }
+    .card--danger { border-color: var(--danger); }
+    .card--accent { border-color: var(--accent); }
+    @keyframes cardPop { from { opacity:0; transform: translateY(10px) scale(.98); } to { opacity:1; transform: none; } }
+    .card__header { display: flex; justify-content: space-between; align-items: center;
+      border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom: 12px; }
+    .card__title { font-size: 14px; font-weight: 700; }
+    .card__badge { font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 999px;
+      background: rgba(88,166,255,.16); color: var(--accent); }
+    .card__body { font-size: 13px; line-height: 1.55; }
+    .card__line { padding: 4px 0; font-size: 12.5px; }
+    .card__box { background: rgba(13,17,23,.85); border: 1px solid var(--border);
+      border-radius: 10px; padding: 10px 12px; margin: 10px 0; font-size: 12px; }
+    .card__row { display: flex; justify-content: space-between; padding: 3px 0; }
+    .card__actions { display: flex; gap: 10px; margin-top: 14px; }
+    .card__actions .btn { flex: 1; }
 
-    .card__actions { display: flex; gap: 8px; margin-top: 14px; }
-    .card__btn {
-      flex: 1; padding: 12px 10px; border: none; border-radius: 11px;
-      font-size: 14px; font-weight: 800; cursor: pointer; color: #fff;
-      transition: transform .1s ease, box-shadow .1s ease, filter .1s ease;
-    }
-    .card__btn:hover { filter: brightness(1.08); }
-    .card__btn:active { transform: scale(.97); }
-    .card__btn--primary { background: linear-gradient(135deg, #0066ff, #0044cc); box-shadow: 0 4px 16px rgba(0, 102, 255, 0.35); }
-    .card__btn--accent  { background: linear-gradient(135deg, #aa44ff, #7722cc); box-shadow: 0 4px 16px rgba(170, 68, 255, 0.35); }
-    .card__btn--success { background: linear-gradient(135deg, #00cc88, #008855); color: #04140d; box-shadow: 0 4px 16px rgba(0, 204, 136, 0.35); }
-    .card__btn--danger  { background: rgba(255, 68, 68, 0.10); border: 1px solid #ff4444; color: #ff8a8a; }
-    .card__btn--secondary { background: rgba(255, 255, 255, 0.05); border: 1px solid #333; color: #ccc; }
-
-    .card__close { margin-top: 10px; text-align: center; font-size: 11px; color: #7d8aa0; cursor: pointer; }
-    .card__close:hover { color: #c8d2e4; }
-
-    .card__state { text-align: center; padding: 22px 12px; }
-    .card__state-icon { font-size: 44px; line-height: 1; margin-bottom: 10px; }
-    .card__state-title { font-size: 18px; font-weight: 800; margin-bottom: 6px; }
-    .card__state-text { font-size: 13px; color: #b6c0d2; line-height: 1.5; }
-    .card__state--ok     .card__state-title { color: #5dffa8; }
-    .card__state--warn   .card__state-title { color: #ffc04d; }
-    .card__state--danger .card__state-title { color: #ff7b7b; }
-    .card__hint { margin-top: 12px; font-size: 11px; color: #7d8aa0; }
-
-    .card__mono {
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 12px; line-height: 2.1; color: #cbb2ee;
-      min-height: 40px;
-    }
-    .card__mono-line { opacity: 0; transform: translateY(4px); animation: lineIn .25s ease forwards; }
-    @keyframes lineIn { to { opacity: 1; transform: translateY(0); } }
-
-    .card__po {
-      margin-top: 14px; padding: 14px;
-      background: rgba(170, 68, 255, 0.08);
-      border: 2px solid #aa44ff; border-radius: 12px;
-    }
-    .card__po .card__title { color: #d9b3ff; }
-    .card__po-total {
-      display: flex; justify-content: space-between; align-items: baseline;
-      margin-top: 8px; font-size: 16px; font-weight: 900; color: #c98bff;
-    }
-
-    /* ── PINCH FEEDBACK ── */
-    .pinch-hint {
-      font-size: 11px; color: #6ea8ff; font-weight: 600; text-align: center;
-      transform-origin: center bottom;
-      transition: transform .18s cubic-bezier(.2,.9,.3,1.5), opacity .18s ease, color .18s ease, text-shadow .18s ease;
-      will-change: transform;
-    }
-    .pinch-hint.pinch-active {
-      transform: scale(1.18);
-      color: #d6e6ff;
-      text-shadow: 0 0 14px rgba(0, 102, 255, 0.95);
-    }
-    .pinch-indicator {
-      position: fixed; bottom: 132px; z-index: 300;
-      padding: 6px 13px; border-radius: 999px;
-      background: rgba(0, 10, 30, 0.55);
-      border: 1px solid rgba(80, 140, 255, 0.35);
-      backdrop-filter: blur(6px);
-      opacity: .75;
-      transition: opacity .2s ease, transform .18s cubic-bezier(.2,.9,.3,1.5), color .18s ease, text-shadow .18s ease;
-    }
-    .pinch-indicator--right { right: 18px; }
-    .pinch-indicator--left { left: 18px; }
-    body.panel-open .pinch-indicator { opacity: .12; }
-
-    /* ── MIC BUTTON ── */
-    #mic-btn {
-      position: fixed; bottom: 16px; right: 16px;
-      width: 44px; height: 44px; border-radius: 50%;
-      background: #aa44ff; border: none; color: #fff;
-      font-size: 18px; cursor: pointer; z-index: 500;
-      box-shadow: 0 4px 16px rgba(170, 68, 255, 0.5);
-      display: none; align-items: center; justify-content: center;
-      transition: transform .16s cubic-bezier(.2,.9,.3,1.4), box-shadow .2s ease, background .2s ease;
-    }
-    body.entered #mic-btn { display: flex; }
-    #mic-btn:hover { transform: translateY(-2px); }
-    #mic-btn:active { transform: scale(.92); }
-    #mic-btn.listening { background: #ff3333; animation: mic-pulse .8s ease-in-out infinite; }
-    @keyframes mic-pulse {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(255, 50, 50, 0.45); }
-      50%      { box-shadow: 0 0 0 12px rgba(255, 50, 50, 0); }
-    }
-
-    #mic-tooltip {
-      position: fixed; z-index: 600; display: none;
-      background: #161b22; border: 1px solid #30363d; border-radius: 10px;
-      padding: 12px 14px; color: #e6edf3; font-size: 12px; line-height: 1.4;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
-      pointer-events: none; max-width: 260px;
-    }
-    #mic-tooltip ul { margin: 6px 0 0 0; padding-left: 18px; color: #8b949e; font-size: 11px; line-height: 1.6; }
-    .mic-tooltip__title { font-weight: 800; color: #e6edf3; margin-bottom: 4px; }
-
-    /* ── RESET + TOAST ── */
-    #reset-btn {
-      position: fixed; top: 16px; right: 16px; z-index: 550;
-      padding: 8px 16px; background: #21262d; border: 1px solid #30363d;
-      color: #58a6ff; border-radius: 8px; font-size: 12px; font-weight: 800;
-      cursor: pointer; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
-      transition: background .15s ease, color .15s ease;
-    }
-    #reset-btn:hover { background: #30363d; color: #79c0ff; }
-
-    #completion-toast {
-      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-      z-index: 700; display: none; padding: 16px 26px;
-      background: #0d1117; border: 2px solid #238636; border-radius: 12px;
-      color: #3fb950; font-size: 14px; font-weight: 800; text-align: center;
-      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.8);
-    }
-
-    /* ── SHELF SCENE ── */
-    #ar-scene {
-      position: fixed; inset: 0; display: none; z-index: 10;
-      align-items: flex-end; justify-content: center; padding-bottom: 56px;
-    }
-    .shelf-unit {
-      width: 94vw; max-width: 520px;
-      background: linear-gradient(180deg, #1a1008 0%, #100a04 100%);
-      border: 2px solid #5a3a1a; border-radius: 12px;
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
-      overflow: visible;
-    }
-    .shelf-header {
-      background: linear-gradient(90deg, #2a1a08, #1a1008);
-      padding: 10px 16px; border-bottom: 1px solid #5a3a1a;
-      display: flex; align-items: center; justify-content: space-between;
-    }
-    .shelf-header-title { font-size: 13px; font-weight: 700; color: #cc8844; letter-spacing: 1px; }
-    .shelf-header-sub { font-size: 11px; color: #997755; }
-
-    .shelf-row {
-      display: flex; padding: 10px 8px 14px;
-      border-bottom: 3px solid #3a2010;
-      background: linear-gradient(180deg, #1e1208, #161008);
-    }
-    .shelf-row:last-child { border-bottom: none; }
-    .shelf-row.dim { opacity: .35; }
-
-    .bin {
-      flex: 1; padding: 4px; display: flex; flex-direction: column; align-items: center;
-      border-right: 1px solid #2a1808; position: relative;
-      cursor: pointer; transform-origin: center bottom;
-      transition: background .18s ease, transform .18s cubic-bezier(.2,.9,.3,1.5);
-    }
-    .bin:last-child { border-right: none; }
-    .bin:active { background: rgba(0, 102, 255, 0.14); transform: scale(1.05); }
-    /* While the shelf is 3D-rotated, a press-scale shifts the bin out from under
-       the cursor and mouseup lands on the row, so the bin's onclick never fires. */
-    .shelf-unit.is-rotated .bin:active { transform: none; }
-    .bin-spacer { height: 20px; }
-
-    .bin-bar-bg {
-      width: 26px; height: 60px; background: rgba(255, 255, 255, 0.05);
-      border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 3px;
-      display: flex; flex-direction: column; justify-content: flex-end;
-      overflow: hidden; margin-bottom: 4px;
-    }
-    .bin-bar-fill { width: 100%; border-radius: 2px 2px 0 0; transition: height .6s cubic-bezier(.2,.8,.3,1); }
-    .bin-bar-fill.full    { background: linear-gradient(180deg, #00ff88, #00cc66); height: 85%; }
-    .bin-bar-fill.medium  { background: linear-gradient(180deg, #44aaff, #2288dd); height: 55%; }
-    .bin-bar-fill.low     { background: linear-gradient(180deg, #ffaa00, #cc8800); height: 15%; }
-    .bin-bar-fill.empty   { background: linear-gradient(180deg, #ff4444, #cc2222); height: 4%; }
-    .bin-bar-fill.inbound { background: linear-gradient(180deg, #aa44ff, #8822cc); height: 30%; }
-
-    .bin-label { font-size: 9px; font-weight: 700; color: #a07a52; letter-spacing: .5px; }
-    .bin-qty { font-size: 11px; font-weight: 800; }
-    .bin-qty.full { color: #00cc66; }
-    .bin-qty.medium { color: #2288dd; }
-    .bin-qty.low { color: #ffaa00; }
-    .bin-qty.empty { color: #ff4444; }
-    .bin-qty.inbound { color: #aa44ff; font-size: 9px; }
-
-    .bin-alert {
-      width: 20px; height: 20px; margin-bottom: 2px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 16px; animation: triangle-pulse 1.2s ease-in-out infinite;
-    }
-    .bin-alert--inbound { animation: none; color: #aa44ff; }
-    .bin-alert--ok { animation: none; color: #00cc88; }
-    @keyframes triangle-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
-
-    /* ── INVOICE SCENE ── */
-    #invoice-scene {
-      position: fixed; inset: 0; display: none; z-index: 10;
-      align-items: center; justify-content: center; padding: 16px 16px 72px;
-    }
-    .invoice-paper {
-      width: 100%; max-width: 400px;
-      background: linear-gradient(180deg, #f8f6f0, #f0ece0);
-      border-radius: 8px; overflow: hidden;
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8); color: #1a1a1a;
-    }
-    .inv-top {
-      background: linear-gradient(90deg, #1a3a6a, #0d2444);
-      padding: 14px 20px; color: #fff;
-      display: flex; justify-content: space-between; align-items: center;
-    }
-    .inv-company { font-size: 16px; font-weight: 800; }
-    .inv-num { font-size: 11px; color: #8ab; }
-    .inv-meta { font-size: 11px; color: #8ab; text-align: right; }
-    .inv-row {
-      display: flex; justify-content: space-between;
-      padding: 6px 20px; font-size: 12px; border-bottom: 1px solid #e8e4d8;
-    }
-    .inv-row--last { border-bottom: none; }
-    .inv-row .lbl { color: #666; }
-    .inv-row .val { font-weight: 700; }
-    .inv-items-hdr {
-      background: #1a3a6a; color: #fff; padding: 7px 20px;
-      font-size: 10px; font-weight: 700; letter-spacing: 1px;
-      display: flex; justify-content: space-between;
-    }
-    .inv-line { display: flex; padding: 10px 20px; border-bottom: 1px solid #e8e4d8; font-size: 12px; align-items: center; }
-    .inv-line.alert { background: #fff8f0; border-left: 3px solid #ff6600; }
-    .inv-line .sku { flex: 2; font-weight: 700; }
-    .inv-line .qty { flex: 1; text-align: center; color: #446; }
-    .inv-line .price { flex: 1; text-align: center; color: #446; }
-    .inv-line .total { flex: 1; text-align: right; font-weight: 700; color: #1a3a6a; }
-    .inv-total {
-      background: #f0ece0; padding: 12px 20px;
-      display: flex; justify-content: space-between; align-items: center;
-    }
-    .inv-total-lbl { font-size: 13px; font-weight: 700; color: #446; }
-    .inv-total-val { font-size: 18px; font-weight: 900; color: #1a3a6a; }
-
-    /* ── SCENES + PANEL ── */
-    .scene { transition: opacity .25s ease, padding .25s ease; }
-    body.panel-open .scene { opacity: 1; pointer-events: none; }
-    /* Lift + shrink the shelf so it sits between the status pill and the card. */
-    body.panel-open #ar-scene { align-items: flex-start; padding-top: 52px; padding-bottom: 0; }
-    body.panel-open .shelf-unit { scale: .82; transform-origin: top center; }
-    @media (max-height: 660px) {
-      body.panel-open .shelf-unit { scale: .65; }
-    }
-
-    #ar-panel {
-      position: fixed; bottom: 84px; left: 50%;
-      transform: translateX(-50%);
-      width: 420px; max-width: 92vw; max-height: 40vh;
-      overflow-y: auto; overscroll-behavior: contain;
-      background: rgba(0, 8, 24, 0.96);
-      border-radius: 16px; border: 2px solid #aa44ff;
-      padding: 16px; z-index: 300; display: none;
-      box-shadow: 0 -4px 32px rgba(170, 68, 255, 0.3);
-      transition: border-color .2s ease, box-shadow .2s ease;
-    }
-    #ar-panel[data-accent="info"]   { border-top-color: #0066ff; box-shadow: 0 -4px 32px rgba(0, 102, 255, 0.35); }
-    #ar-panel[data-accent="ok"]     { border-top-color: #00cc88; box-shadow: 0 -4px 32px rgba(0, 204, 136, 0.35); }
-    #ar-panel[data-accent="warn"]   { border-top-color: #ffaa00; box-shadow: 0 -4px 32px rgba(255, 170, 0, 0.35); }
-    #ar-panel[data-accent="danger"] { border-top-color: #ff4444; box-shadow: 0 -4px 32px rgba(255, 68, 68, 0.35); }
-    #ar-panel[data-accent="accent"] { border-top-color: #aa44ff; }
-    #ar-panel.card--animated { animation: cardIn .26s cubic-bezier(.2,.8,.3,1); }
-    @keyframes cardIn {
-      from { opacity: 0; transform: translate(-50%, 16px) scale(.98); }
-      to   { opacity: 1; transform: translate(-50%, 0) scale(1); }
-    }
-
-    canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; }
+    .hud-bottom { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; }
+    .controls-row { display: flex; gap: 8px; max-width: 420px; width: 100%; }
+    .controls-row .btn { flex: 1; }
+    .voice-hints { font-size: 11px; color: var(--muted); text-align: center;
+      background: rgba(13,17,23,.8); padding: 6px 12px; border-radius: 999px;
+      border: 1px solid var(--border); }
   </style>
 </head>
-
 <body>
-  <canvas id="canvas"></canvas>
+  <canvas id="webgl-canvas"></canvas>
 
-  <div id="enter-screen">
-    <button id="enter-btn" onclick="enterAR()">🏭 Enter AR Walk</button>
-    <div id="enter-subtitle">Supply Chain AR · Hands-first · Meta Quest · IWSDK/WebXR</div>
-  </div>
+  <div id="overlay">
+    <div class="hud-top">
+      <div class="status-pill interactive" id="status-pill">
+        <span class="status-dot" id="status-dot"></span>
+        <span id="status-text">Supply Chain AR · Ready</span>
+      </div>
+      <div class="voice-feedback interactive" id="voice-feedback"></div>
+    </div>
 
-  <div id="status"></div>
-  <div id="voice-feedback" class="voice-feedback" role="status" aria-live="polite"></div>
+    <!-- 2D desktop / pre-AR fallback -->
+    <div id="ar-scene">
+      <div class="hero-card interactive">
+        <div class="hero-title">Supply Chain AR Walk</div>
+        <div class="hero-sub">Floor-Anchored 3D Shelf · WebXR Hit-Test · Muse AI</div>
+        <button class="btn btn-primary interactive" id="btn-enter-ar">🏭 Enter AR Walk</button>
+      </div>
+      <div class="shelf-preview interactive">
+        <div class="shelf-preview__hdr"><span>BAY A-14 · AISLE 3 (2D Preview)</span><span>Live Sync</span></div>
+        <div class="bin-grid" id="desktop-bin-grid"></div>
+      </div>
+    </div>
 
-  <!-- Shelf AR scene -->
-  <div id="ar-scene" class="scene">
-    <div class="shelf-unit">
-      <div class="shelf-header">
-        <div class="shelf-header-title">BAY A-14 · AISLE 3</div>
-        <div class="shelf-header-sub">Last scan: 3:20 AM</div>
+    <div class="hud-bottom">
+      <div class="controls-row">
+        <button class="btn btn-accent interactive" id="btn-mic">🎤 Voice</button>
+        <button class="btn btn-ghost interactive" id="btn-reset">🔄 Reset</button>
       </div>
-      <div class="shelf-row">
-        <div class="bin" id="bin-a" onclick="onShelfPinch()" title="Widget-A — pinch to scan">
-          <div class="bin-alert" id="alert-a">⚠️</div>
-          <div class="bin-bar-bg"><div class="bin-bar-fill empty" id="fill-a"></div></div>
-          <div class="bin-label">Widget-A</div>
-          <div class="bin-qty empty" id="qty-a">0 u</div>
-          <div class="pinch-hint" id="hint-a">👌 pinch to restock</div>
-        </div>
-        <div class="bin" title="Widget-B — 3 units">
-          <div class="bin-spacer"></div>
-          <div class="bin-bar-bg"><div class="bin-bar-fill low"></div></div>
-          <div class="bin-label">Widget-B</div>
-          <div class="bin-qty low">3 u</div>
-        </div>
-        <div class="bin" title="Widget-C — 18 units">
-          <div class="bin-spacer"></div>
-          <div class="bin-bar-bg"><div class="bin-bar-fill medium"></div></div>
-          <div class="bin-label">Widget-C</div>
-          <div class="bin-qty medium">18 u</div>
-        </div>
-        <div class="bin" title="Widget-D — 24 units">
-          <div class="bin-spacer"></div>
-          <div class="bin-bar-bg"><div class="bin-bar-fill full"></div></div>
-          <div class="bin-label">Widget-D</div>
-          <div class="bin-qty full">24 u</div>
-        </div>
-      </div>
-      <div class="shelf-row dim">
-        <div class="bin"><div class="bin-spacer"></div><div class="bin-bar-bg"><div class="bin-bar-fill full"></div></div><div class="bin-label">Widget-E</div><div class="bin-qty full">30 u</div></div>
-        <div class="bin"><div class="bin-spacer"></div><div class="bin-bar-bg"><div class="bin-bar-fill medium"></div></div><div class="bin-label">Widget-F</div><div class="bin-qty medium">12 u</div></div>
-        <div class="bin"><div class="bin-spacer"></div><div class="bin-bar-bg"><div class="bin-bar-fill full"></div></div><div class="bin-label">Widget-G</div><div class="bin-qty full">28 u</div></div>
-        <div class="bin"><div class="bin-spacer"></div><div class="bin-bar-bg"><div class="bin-bar-fill medium"></div></div><div class="bin-label">Widget-H</div><div class="bin-qty medium">9 u</div></div>
-      </div>
+      <div class="voice-hints">Say: "restock Widget-A" · "approve PO" · "pay invoice"</div>
     </div>
   </div>
 
-  <!-- Invoice AR scene -->
-  <div id="invoice-scene" class="scene">
-    <div class="invoice-paper">
-      <div class="inv-top">
-        <div>
-          <div class="inv-company">APEX LOGISTICS</div>
-          <div class="inv-num">INV-2026-847 · Nov 14, 2026</div>
-        </div>
-        <div class="inv-meta">NET 30<br>PENDING</div>
-      </div>
-      <div class="inv-row"><span class="lbl">Bill To</span><span class="val">Sovereign Supply Co.</span></div>
-      <div class="inv-row"><span class="lbl">Ship Via</span><span class="val">FedEx Ground · 3 days</span></div>
-      <div class="inv-row inv-row--last"><span class="lbl">PO Reference</span><span class="val">Pending approval</span></div>
-      <div class="inv-items-hdr"><span>ITEM</span><span>QTY</span><span>UNIT</span><span>TOTAL</span></div>
-      <div class="inv-line alert">
-        <span class="sku">Widget-A ⚠</span>
-        <span class="qty">500</span>
-        <span class="price">$8.20</span>
-        <span class="total">$4,100.00</span>
-      </div>
-      <div class="inv-total">
-        <span class="inv-total-lbl">TOTAL DUE</span>
-        <span class="inv-total-val">$4,100.00</span>
-      </div>
-      </div>
-      <div class="pinch-hint" style="text-align:center; padding:10px 0; font-size:12px; color:#aaa; cursor:pointer; background:none; border:none;" onclick="onInvoicePinch()">
-        👌 Pinch for SAM to validate invoice with the PO
-      </div>
-    </div>
+  <!-- Floating modal panel -->
+  <div id="ar-panel-backdrop">
+    <div id="ar-panel"></div>
   </div>
-
-  <!-- Floating AR result panel -->
-  <div id="ar-panel" role="dialog" aria-label="AR result"></div>
-
-  <!-- Hand-tracking pinch indicators removed - contextual hints shown inline -->
-
-  <!-- Mic: always floating, triggered by pinch or click -->
-  <button id="mic-btn" onclick="startVoiceListening()" title="Voice commands">🎤</button>
-
-  <div id="mic-tooltip">
-    <div class="mic-tooltip__title">Say:</div>
-    <ul>
-      <li>"restock Widget-A"</li>
-      <li>"approve PO"</li>
-      <li>"reject PO"</li>
-      <li>"pay invoice"</li>
-      <li>"show invoice"</li>
-    </ul>
-  </div>
-
-  <button id="reset-btn" onclick="resetDemo()">🔄 Reset Demo</button>
-  <div id="completion-toast"></div>
 
   <script>
-    const API_BASE = "";
-    const INTENT_LABELS = {
-      restock: "Restock Widget-A",
-      approve_po: "Approve PO",
-      reject_po: "Reject PO",
-      pay_invoice: "Pay Invoice",
-      show_invoice: "Show Widget-A Invoice",
-      unknown: "Unknown command",
-    };
-    const INTENTS = new Set(Object.keys(INTENT_LABELS));
+  // ── Fallback data ─────────────────────────────────────────────────────────
+  const FALLBACK_SHELF_SCAN = {
+    type:"shelf", summary:"Bay A-14: 2 of 4 SKUs need attention.", action_required:true,
+    zones:[
+      {sku:"Widget-A",qty:0, status:"empty",color:"#ff3333"},
+      {sku:"Widget-B",qty:3, status:"low",  color:"#ffaa00"},
+      {sku:"Widget-C",qty:18,status:"ok",   color:"#00ff88"},
+      {sku:"Widget-D",qty:24,status:"ok",   color:"#00ff88"}
+    ]
+  };
+  const FALLBACK_DRAFT_PO = {
+    po_id:"PO-2026-847", supplier:"Apex Logistics", sku:"Widget-A",
+    qty:500, unit_price:8.20, total:4100.00, delivery_days:3
+  };
+  const FALLBACK_INVOICE = {
+    type:"invoice", supplier:"Apex Logistics", dates:["2026-11-14","2026-11-17"],
+    items:[{sku:"Widget-A",qty:500,cost:"8.20"}], total:"$4,100.00",
+    draft_instruction:"Approve PO for 500x Widget-A from Apex Logistics at $8.20/unit. Delivery in 3 days."
+  };
+  const INITIAL_BINS = [
+    {sku:"Widget-A",qty:0, status:"empty",color:"#ff3333"},
+    {sku:"Widget-B",qty:3, status:"low",  color:"#ffaa00"},
+    {sku:"Widget-C",qty:18,status:"ok",   color:"#00ff88"},
+    {sku:"Widget-D",qty:24,status:"ok",   color:"#00ff88"},
+    {sku:"Widget-E",qty:30,status:"ok",   color:"#00ff88"},
+    {sku:"Widget-F",qty:12,status:"ok",   color:"#00ff88"},
+    {sku:"Widget-G",qty:28,status:"ok",   color:"#00ff88"},
+    {sku:"Widget-H",qty:9, status:"low",  color:"#ffaa00"}
+  ];
+  const INTENT_LABELS = {
+    restock:"Restock Widget-A (A2A)", approve_po:"Approve PO",
+    reject_po:"Reject PO", pay_invoice:"Pay Invoice",
+    show_invoice:"Open Invoice", unknown:"Unknown"
+  };
 
-    let mode = "shelf";
-    let scanning = false;
-    let restockTriggered = false;
-    let invoiceLocked = true;
-    let approvedPO = null;
-    let pendingPO = null;
-    let lastInvoice = null;
-    let widgetAOriginalQty = 50;
-    let xrSession = null, xrRefSpace = null, gl = null;
-    let handRight = null, handLeft = null;
-    let pinchWasDown = { left: false, right: false };
-    let recognition = null;
-    let panelToken = 0;
+  // ── App state ─────────────────────────────────────────────────────────────
+  let bins = JSON.parse(JSON.stringify(INITIAL_BINS));
+  let pendingPO = null, approvedPO = null, activeInvoice = null;
+  let invoiceLocked = true, isNegotiating = false;
 
-    // ── ENTRY ─────────────────────────────────────────────────────────────────────
-    async function enterAR() {
-      document.getElementById("enter-screen").style.display = "none";
-      document.getElementById("status").style.display = "block";
-      document.body.classList.add("entered");
-      showScene("shelf");
+  // ── Three.js setup ────────────────────────────────────────────────────────
+  const canvas = document.getElementById("webgl-canvas");
+  const renderer = new THREE.WebGLRenderer({canvas, alpha:true, antialias:true});
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.xr.enabled = true;
 
-      if (navigator.xr) {
-        const ok = await navigator.xr.isSessionSupported("immersive-ar").catch(() => false);
-        if (ok) { try { await startXRSession(); return; } catch (e) { /* fall back to DOM */ } }
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.01, 20);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.3));
+  const dir = new THREE.DirectionalLight(0xffffff, 1.0);
+  dir.position.set(1,3,2); scene.add(dir);
+
+  // Floor reticle (blue ring — only visible on horizontal surfaces)
+  const reticleGeo = new THREE.RingGeometry(0.12, 0.17, 32).rotateX(-Math.PI/2);
+  const reticle = new THREE.Mesh(reticleGeo,
+    new THREE.MeshBasicMaterial({color:0x0066ff, side:THREE.DoubleSide}));
+  reticle.matrixAutoUpdate = false;
+  reticle.visible = false;
+  scene.add(reticle);
+
+  // 3D shelf group (placed at floor hit-test position, stays in world space)
+  const shelfGroup = new THREE.Group();
+  shelfGroup.visible = false;
+  scene.add(shelfGroup);
+
+  let binMeshes = {};
+  let widgetAMesh = null;
+
+  function createLabelTexture(title, subtitle, bgColor, borderColor) {
+    const c = document.createElement("canvas");
+    c.width = 512; c.height = 192;
+    const ctx = c.getContext("2d");
+    ctx.fillStyle = bgColor || "#0d1117";
+    ctx.fillRect(0,0,512,192);
+    ctx.strokeStyle = borderColor || "#58a6ff";
+    ctx.lineWidth = 10;
+    ctx.strokeRect(5,5,502,182);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 44px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(title, 256, 78);
+    ctx.fillStyle = borderColor || "#58a6ff";
+    ctx.font = "600 34px sans-serif";
+    ctx.fillText(subtitle, 256, 138);
+    const tex = new THREE.CanvasTexture(c);
+    tex.needsUpdate = true;
+    return tex;
+  }
+
+  function build3DShelf() {
+    while (shelfGroup.children.length) shelfGroup.remove(shelfGroup.children[0]);
+    binMeshes = {}; widgetAMesh = null;
+
+    const W=1.1, H=1.45, D=0.38;
+    const postGeo = new THREE.BoxGeometry(0.035, H, 0.035);
+    const postMat = new THREE.MeshStandardMaterial({color:0x484f58, metalness:0.7, roughness:0.35});
+    [[-W/2,H/2,-D/2],[W/2,H/2,-D/2],[-W/2,H/2,D/2],[W/2,H/2,D/2]].forEach(([x,y,z])=>{
+      const p = new THREE.Mesh(postGeo, postMat);
+      p.position.set(x,y,z); shelfGroup.add(p);
+    });
+
+    // Header sign
+    const hdrTex = createLabelTexture("BAY A-14 · AISLE 3","Tap Widget-A to Restock","#0d1117","#58a6ff");
+    const hdr = new THREE.Mesh(new THREE.BoxGeometry(0.95,0.22,0.02),
+      new THREE.MeshBasicMaterial({map:hdrTex}));
+    hdr.position.set(0, H+0.14, 0); shelfGroup.add(hdr);
+
+    // 2 shelf planks + 8 SKU boxes
+    const plankGeo = new THREE.BoxGeometry(W+0.02, 0.025, D+0.02);
+    const plankMat = new THREE.MeshStandardMaterial({color:0x21262d, roughness:0.7});
+    [0.85, 0.32].forEach((sy, rowIdx) => {
+      const plank = new THREE.Mesh(plankGeo, plankMat);
+      plank.position.set(0, sy, 0); shelfGroup.add(plank);
+      for (let col=0; col<4; col++) {
+        const idx = rowIdx*4 + col;
+        const bin = bins[idx];
+        if (!bin) continue;
+        const bx = -0.39 + col*0.26;
+        const by = sy + 0.12;
+        const boxGeo = new THREE.BoxGeometry(0.21, 0.20, 0.28);
+        const col3 = new THREE.Color(bin.color);
+        const boxMat = new THREE.MeshStandardMaterial({
+          color: col3,
+          emissive: bin.sku==="Widget-A" ? col3 : new THREE.Color(0),
+          emissiveIntensity: bin.sku==="Widget-A" ? 0.35 : 0,
+          roughness: 0.45
+        });
+        const box = new THREE.Mesh(boxGeo, boxMat);
+        box.position.set(bx, by, 0);
+        box.userData = {sku: bin.sku};
+        const sub = bin.status==="empty" ? "0 u · TAP RESTOCK"
+                  : bin.status==="inbound" ? "500 u · INBOUND" : bin.qty+" u";
+        const labelTex = createLabelTexture(bin.sku, sub, "#0d1117", bin.color);
+        const label = new THREE.Mesh(new THREE.PlaneGeometry(0.19,0.08),
+          new THREE.MeshBasicMaterial({map:labelTex}));
+        label.position.set(0, 0, 0.142);
+        box.add(label); shelfGroup.add(box);
+        binMeshes[bin.sku] = {mesh:box, labelMesh:label};
+        if (bin.sku==="Widget-A") widgetAMesh = box;
       }
-      setStatus("👌 Pinch Widget-A · 🎤 for voice commands");
-    }
+    });
+  }
+  build3DShelf();
 
-    // ── PANEL ─────────────────────────────────────────────────────────────────────
-    function openPanel(html, accent) {
-      const panel = document.getElementById("ar-panel");
-      panel.innerHTML = html;
-      if (accent) { panel.setAttribute("data-accent", accent); } else { panel.removeAttribute("data-accent"); }
-      panel.style.display = "block";
-      panel.classList.remove("card--animated");
-      void panel.offsetWidth;
-      panel.classList.add("card--animated");
-      document.body.classList.add("panel-open");
-      panelToken++;
-      return panelToken;
-    }
+  function update3DBin(sku, newQty, newStatus, newColor) {
+    const entry = binMeshes[sku]; if (!entry) return;
+    const col3 = new THREE.Color(newColor);
+    entry.mesh.material.color.copy(col3);
+    entry.mesh.material.emissive.setHex(newStatus==="empty"?0xff3333:0);
+    entry.mesh.material.emissiveIntensity = newStatus==="empty"?0.35:0;
+    const sub = newStatus==="inbound" ? "500 u · INBOUND"
+              : newStatus==="empty" ? "0 u · TAP RESTOCK" : newQty+" u";
+    const tex = createLabelTexture(sku, sub, "#0d1117", newColor);
+    entry.labelMesh.material.map.dispose();
+    entry.labelMesh.material.map = tex;
+    entry.labelMesh.material.needsUpdate = true;
+  }
 
-    function closePanel() {
-      const panel = document.getElementById("ar-panel");
-      panel.style.display = "none";
-      panel.innerHTML = "";
-      panel.removeAttribute("data-accent");
-      document.body.classList.remove("panel-open");
-      panelToken++;
-    }
+  // ── WebXR hit-test state ──────────────────────────────────────────────────
+  let xrSession = null, xrRefSpace = null;
+  let hitTestSource = null, hitTestSourceRequested = false, shelfPlaced = false;
+  const raycaster = new THREE.Raycaster();
 
-    // ── SCENE SWITCHER ────────────────────────────────────────────────────────────
-    function showScene(scene) {
-      if (scene === "invoice" && invoiceLocked) {
-        setStatus("⚠️ Approve Widget-A PO first — supplier invoice pending");
-        return;
+  // Block DOM overlay touches from leaking to 3D select
+  document.querySelectorAll(".interactive").forEach(el => {
+    el.addEventListener("beforexrselect", ev => ev.preventDefault());
+  });
+
+  // On tap: first tap places shelf at reticle, subsequent taps raycast into shelf
+  function onXRSelect(event) {
+    if (!shelfPlaced) {
+      if (reticle.visible) {
+        // Lock shelf to this world-space floor position
+        shelfGroup.position.setFromMatrixPosition(reticle.matrix);
+        const camPos = new THREE.Vector3();
+        camera.getWorldPosition(camPos);
+        shelfGroup.lookAt(camPos.x, shelfGroup.position.y, camPos.z);
+        shelfGroup.visible = true;
+        shelfPlaced = true;
+        reticle.visible = false;
+        setStatus("Shelf anchored · Tap Widget-A to scan/restock");
       }
-      mode = scene;
-      document.getElementById("ar-scene").style.display = scene === "shelf" ? "flex" : "none";
-      document.getElementById("invoice-scene").style.display = scene === "invoice" ? "flex" : "none";
-      closePanel();
-      if (scene === "shelf") {
-        setStatus(invoiceLocked
-          ? "👌 Pinch Widget-A · 🎤 say 'restock Widget-A'"
-          : "👌 Pinch Widget-A to view the supplier invoice");
-      } else {
-        setStatus("👌 Pinch the invoice to extract · verify amounts");
-      }
+      return;
     }
+    // Raycast against shelf boxes
+    const frame = event.frame;
+    if (!frame || !xrRefSpace || !shelfGroup.visible) return;
+    const pose = frame.getPose(event.inputSource.targetRaySpace, xrRefSpace);
+    if (!pose) return;
+    const mat4 = new THREE.Matrix4().fromArray(pose.transform.matrix);
+    const origin = new THREE.Vector3().setFromMatrixPosition(mat4);
+    const quat = new THREE.Quaternion(
+      pose.transform.orientation.x, pose.transform.orientation.y,
+      pose.transform.orientation.z, pose.transform.orientation.w);
+    const fwd = new THREE.Vector3(0,0,-1).applyQuaternion(quat);
+    raycaster.set(origin, fwd);
+    const hits = raycaster.intersectObjects(shelfGroup.children, true);
+    if (hits.length > 0) onShelfPinch();
+  }
 
-    // ── MIC TOOLTIP ───────────────────────────────────────────────────────────────
-    (function initMicTooltip() {
-      const btn = document.getElementById("mic-btn");
-      const tip = document.getElementById("mic-tooltip");
-      if (!btn || !tip) return;
-      const show = () => {
-        const rect = btn.getBoundingClientRect();
-        tip.style.display = "block";
-        tip.style.left = Math.max(8, rect.left + rect.width / 2 - 130) + "px";
-        tip.style.top = (rect.top - tip.offsetHeight - 8) + "px";
-      };
-      const hide = () => { tip.style.display = "none"; };
-      btn.addEventListener("mouseenter", show);
-      btn.addEventListener("mouseleave", hide);
-      btn.addEventListener("focus", show);
-      btn.addEventListener("blur", hide);
-      document.addEventListener("mousedown", (e) => {
-        if (!btn.contains(e.target) && !tip.contains(e.target)) hide();
+  async function startARSession() {
+    if (!navigator.xr) {
+      setStatus("WebXR unavailable · 2D fallback mode", true); return;
+    }
+    try {
+      xrSession = await navigator.xr.requestSession("immersive-ar", {
+        requiredFeatures: ["hit-test","local-floor"],
+        optionalFeatures: ["dom-overlay","hand-tracking"],
+        domOverlay: {root: document.getElementById("overlay")}
       });
-    })();
-
-    // ── SHELF PINCH ───────────────────────────────────────────────────────────────
-    async function onShelfPinch() {
-      if (scanning) return;
-      if (!invoiceLocked) {
-        showScene("invoice");
-        setStatus("📄 Supplier invoice unlocked · pinch it to validate against the PO");
-        return;
-      }
-
-      scanning = true;
-      setStatus("🔬 SAM 3.1 analyzing bay A-14…");
-      await sleep(500);
-
-      let data;
-      try {
-        const res = await fetch(API_BASE + "/api/vr/shelf-scan/demo", { method: "POST" });
-        if (!res.ok) throw new Error("HTTP " + res.status);
-        data = await res.json();
-      } catch (e) {
-        data = FALLBACK_SHELF;
-      }
-      renderShelfResult(data);
-      scanning = false;
-      setStatus("⚠️ Widget-A empty · Restock to run A2A agents");
-    }
-
-    // ── INVOICE PINCH ─────────────────────────────────────────────────────────────
-    async function onInvoicePinch() {
-      if (scanning) return;
-      scanning = true;
-      setStatus("🔬 Muse Image extracting invoice fields…");
-      await sleep(700);
-
-      let data;
-      try {
-        const res = await fetch(API_BASE + "/api/vr/invoice-scan/demo", { method: "POST" });
-        if (!res.ok) throw new Error("HTTP " + res.status);
-        data = await res.json();
-      } catch (e) {
-        data = FALLBACK_INVOICE;
-      }
-      lastInvoice = data;
-      renderInvoiceResult(data);
-      scanning = false;
-      setStatus("📄 Invoice extracted · verify amounts · release payment");
-    }
-
-    // ── RENDER SHELF RESULT ───────────────────────────────────────────────────────
-    function renderShelfResult(data) {
-      const zones = (data.zones || []).map(z => {
-        const tone = z.status === "empty" ? "empty" : z.status === "low" ? "low" : "ok";
-        const label = z.status === "empty" ? "EMPTY"
-          : z.status === "low" ? "LOW — " + z.qty + " u"
-          : z.qty + " u";
-        return `
-      <div class="card__row">
-        <span class="card__label card__label--item"><span class="card__dot card__dot--${tone}"></span>${z.sku}</span>
-        <span class="card__data card__data--${tone}">${label}</span>
-      </div>`;
-      }).join("");
-
-      const attention = (data.zones || []).filter(z => z.status !== "ok").length;
-
-      openPanel(`
-    <div class="card card--primary card--elevated">
-      <div class="card__title">Bay A-14 Scan</div>
-      <div class="card__subtitle">SAM 3.1 · ${new Date().toLocaleTimeString()}</div>
-      <div class="card__note card__note--danger">⚠️ ${attention} SKUs require immediate action</div>
-      ${zones}
-      <div class="card__actions">
-        <button class="card__btn card__btn--primary" onclick="triggerAgentRestock()">🤖 Restock Widget-A — Run A2A Agents</button>
-      </div>
-      <div class="card__close" onclick="closePanel()">✕ close</div>
-    </div>`, "info");
-    }
-
-    // ── RENDER INVOICE RESULT ─────────────────────────────────────────────────────
-    function renderInvoiceResult(data) {
-      const items = (data.items || []).map(i => {
-        const cost = parseFloat(i.cost);
-        const total = (i.qty * (isNaN(cost) ? 0 : cost)).toLocaleString(undefined, { style: "currency", currency: "USD" });
-        return `
-      <div class="card__list-row">
-        <span class="card__label card__label--item">${i.sku}</span>
-        <span class="card__label">qty ${i.qty}</span>
-        <span class="card__data card__data--ok">${total}</span>
-      </div>`;
-      }).join("");
-
-      const contextNote = restockTriggered ? "" :
-        `<div class="card__note card__note--warn">💡 Scan the shelf first to trigger an automated restock PO</div>`;
-
-      let matchConfidence = 1.0;
-      let matchMsg = "All fields match PO #2026-847";
-      if (approvedPO) {
-        const poUnit = Number(approvedPO.unit_price || 0);
-        const invUnit = Number((data.items && data.items[0] ? data.items[0].cost : 0) || 0);
-        matchConfidence = Math.abs(invUnit - poUnit) < 0.001 ? 1.0 : 0.0;
-        if (matchConfidence < 1) {
-          matchMsg = `Delta: invoice $${invUnit.toFixed(2)}/unit vs PO $${poUnit.toFixed(2)}/unit`;
-        }
-      }
-      const matchTone = matchConfidence >= 1 ? "ok" : "warn";
-
-      openPanel(`
-    <div class="card card--success card--elevated">
-      <div class="card__title">Invoice Received</div>
-      <div class="card__subtitle">Verify amounts match and release payment</div>
-      ${contextNote}
-      <div class="card__row"><span class="card__label">Supplier</span><span class="card__data">${data.supplier}</span></div>
-      <div class="card__row"><span class="card__label">Delivery</span><span class="card__data">${(data.dates || []).join(" → ")}</span></div>
-      <div class="card__list">${items}</div>
-      <div class="card__note card__note--${matchTone}"><b>Match confidence:</b> ${Math.round(matchConfidence * 100)}% — ${matchMsg}</div>
-      <div class="card__note card__note--accent"><b>AI Draft:</b> ${data.draft_instruction}</div>
-      <div class="card__actions">
-        <button class="card__btn card__btn--success" onclick="verifyInvoicePayment()">✅ Verify &amp; Release Payment</button>
-        <button class="card__btn card__btn--danger" onclick="flagDiscrepancy()">⚠️ Flag Discrepancy</button>
-      </div>
-      <div class="card__close" onclick="closePanel()">✕ close</div>
-    </div>`, "ok");
-    }
-
-    // ── PAY / DISPUTE ─────────────────────────────────────────────────────────────
-    async function verifyInvoicePayment() {
-      if (!approvedPO) {
-        setStatus("⚠️ No approved PO on file — say 'restock Widget-A' first");
-        return;
-      }
-      const invoice = lastInvoice || FALLBACK_INVOICE;
-
-      let newQty = null;
-      try {
-        const pay = await fetch(API_BASE + "/api/vr/invoice-pay/demo", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ po: approvedPO, invoice }),
-        });
-        const result = await pay.json();
-        if (result.status === "paid" && result.newQty != null) {
-          newQty = result.newQty;
-        } else {
-          flagDiscrepancy();
-          return;
-        }
-      } catch (e) {
-        newQty = widgetAOriginalQty + (Number(approvedPO.qty) || 500);
-      }
-
-      const line = invoice.items && invoice.items[0] ? invoice.items[0] : {};
-      const qty = line.qty || approvedPO.qty || 500;
-      const sku = line.sku || approvedPO.sku || "Widget-A";
-      const token = openPanel(`
-    <div class="card__state card__state--ok">
-      <div class="card__state-icon">✅</div>
-      <div class="card__state-title">Payment Released</div>
-      <div class="card__state-text">${sku} × ${qty}<br>New stock: ${newQty} units</div>
-    </div>`, "ok");
-
-      setStatus("✅ Payment released · Widget-A restocked");
-      updateShelfToRestocked(newQty);
-      showCompletionToast(newQty);
-      setTimeout(() => { if (token === panelToken) { closePanel(); scanning = false; showScene("shelf"); } }, 3500);
-    }
-
-    function flagDiscrepancy() {
-      const token = openPanel(`
-    <div class="card__state card__state--warn">
-      <div class="card__state-icon">⚠️</div>
-      <div class="card__state-title">Pending Supplier Response</div>
-      <div class="card__state-text">Discrepancy flagged — Apex Logistics has been asked for a credit memo.</div>
-    </div>`, "warn");
-      setStatus("Pending Supplier Response for Discrepancy");
-      setTimeout(() => { if (token === panelToken) closePanel(); }, 4000);
-    }
-
-    // ── AGENT RESTOCK ─────────────────────────────────────────────────────────────
-    async function triggerAgentRestock() {
-      restockTriggered = true;
-      pendingPO = null;
-
-      const threadId = "vr-" + Date.now();
-      const steps = [
-        "🔍 Checking inventory — Widget-A: 0 units",
-        "🤝 Buyer agent: Sending RFQ to 3 suppliers",
-        "💬 Apex Logistics: $8.20/unit · 3 days",
-        "💬 Global Parts Co: $8.75/unit · 6 days",
-        "💬 FastShip Supply: $9.10/unit · 2 days",
-        "🧮 Optimizing: price vs delivery vs risk",
-        "✅ Best deal: Apex Logistics $8.20 · 3 days",
-      ];
-      const draftPo = {
-        supplier: "Apex Logistics",
-        sku: "Widget-A",
-        qty: 500,
-        unit_price: 8.20,
-        total: 4100,
-        lead_time: 3,
-        delivery_days: 3,
-      };
-
-      openPanel(`
-    <div class="card card--accent card--elevated">
-      <div class="card__title">🤖 Muse A2A Agents</div>
-      <div class="card__subtitle">Live negotiation · muse-spark-1.3</div>
-      <div id="agent-lines" class="card__mono"></div>
-      <div id="agent-po"></div>
-      <div class="card__close" onclick="closePanel()">✕ close</div>
-    </div>`, "accent");
-
-      setStatus("🤖 A2A agents negotiating…");
-
-      try {
-        await fetch(API_BASE + "/api/vr/agent-threads/" + threadId, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ transcript: steps, draft_po: draftPo }),
-        });
-      } catch (e) { /* backend down — local render still works */ }
-
-      let lineIndex = 0;
-      function appendNextLine() {
-        if (lineIndex >= steps.length) return;
-        const el = document.getElementById("agent-lines");
-        if (el) {
-          const d = document.createElement("div");
-          d.className = "card__mono-line";
-          d.textContent = steps[lineIndex];
-          el.appendChild(d);
-        }
-        lineIndex++;
-        setTimeout(appendNextLine, 500);
-      }
-      appendNextLine();
-
-      let polled = false;
-      async function pollStatus() {
-        if (polled) return;
-        try {
-          const res = await fetch(API_BASE + "/api/vr/agent-status/" + threadId);
-          if (res.ok) {
-            const data = await res.json();
-            if (data.done) { polled = true; renderPoCard(data.draft_po || draftPo); return; }
-          }
-        } catch (e) { /* backend down — fall through to local card */ }
-
-        if (lineIndex >= steps.length) { polled = true; renderPoCard(draftPo); return; }
-        setTimeout(pollStatus, 600);
-      }
-      setTimeout(pollStatus, steps.length * 500 + 300);
-    }
-
-    function renderPoCard(po) {
-      pendingPO = po;
-      const el = document.getElementById("agent-po");
-      if (!el) return;
-      const lead = po.lead_time != null ? po.lead_time : (po.delivery_days != null ? po.delivery_days : 3);
-      const total = Number(po.total || 0).toLocaleString();
-      const unit = Number(po.unit_price || 0).toFixed(2);
-      el.innerHTML = `
-    <div class="card__po">
-      <div class="card__title">Draft PO Ready</div>
-      <div class="card__row"><span class="card__label">Supplier</span><span class="card__data">${po.supplier}</span></div>
-      <div class="card__row"><span class="card__label">SKU</span><span class="card__data">${po.sku}</span></div>
-      <div class="card__row"><span class="card__label">Quantity</span><span class="card__data">${po.qty} units</span></div>
-      <div class="card__row"><span class="card__label">Unit price</span><span class="card__data">$${unit}</span></div>
-      <div class="card__row"><span class="card__label">Delivery</span><span class="card__data">${lead} days</span></div>
-      <div class="card__po-total"><span>Total</span><span>$${total}</span></div>
-      <div class="card__actions">
-        <button class="card__btn card__btn--accent" onclick="approveAgentPO()">👌 Pinch to Approve</button>
-        <button class="card__btn card__btn--danger" onclick="rejectAgentPO()">✕ Reject</button>
-      </div>
-    </div>`;
-      setStatus("Draft PO ready · Approve or Reject");
-    }
-
-    function approveAgentPO() {
-      if (!pendingPO) {
-        setStatus("⚠️ No draft PO to approve — say 'restock Widget-A' first");
-        return;
-      }
-      const po = pendingPO;
-      pendingPO = null;
-      approvedPO = Object.assign({}, po, { po_id: "PO #2026-847" });
-
-      const lead = po.lead_time != null ? po.lead_time : 3;
-      const token = openPanel(`
-    <div class="card__state card__state--ok">
-      <div class="card__state-icon">✅</div>
-      <div class="card__state-title">Approved!</div>
-      <div class="card__state-text">PO #2026-847 · ${po.qty}× ${po.sku}<br>${po.supplier} · ETA ${lead} days</div>
-      <div class="card__hint">Supplier invoice unlocked — pinch Widget-A again</div>
-    </div>`, "ok");
-
-      setStatus("✅ PO approved · Widget-A restocking · pinch Widget-A for the invoice");
-      updateShelfToInbound();
-      unlockInvoice();
-      setTimeout(() => { if (token === panelToken) { closePanel(); scanning = false; } }, 3500);
-    }
-
-    function rejectAgentPO() {
-      if (!pendingPO) {
-        setStatus("⚠️ No draft PO to reject");
-        return;
-      }
-      pendingPO = null;
-      restockTriggered = false;
-
-      openPanel(`
-    <div class="card__state card__state--danger">
-      <div class="card__state-icon">✕</div>
-      <div class="card__state-title">PO Rejected</div>
-      <div class="card__state-text">Widget-A restock paused.<br>Muse flagged for procurement review.</div>
-      <div class="card__hint">Use 🔄 Reset Demo to try the approval path again.</div>
-    </div>`, "danger");
-
-      setStatus("PO rejected — Widget-A restock paused. Muse flagged for procurement review.");
-      scanning = false;
-    }
-
-    // ── SHELF STATE ───────────────────────────────────────────────────────────────
-    function setBinAHint(text, visible) {
-      const hint = document.getElementById("hint-a");
-      if (!hint) return;
-      hint.textContent = text;
-      hint.classList.toggle("is-hidden", !visible);
-    }
-
-    function updateShelfToInbound() {
-      const fill = document.getElementById("fill-a");
-      const qty = document.getElementById("qty-a");
-      const alert = document.getElementById("alert-a");
-      if (fill) fill.className = "bin-bar-fill inbound";
-      if (qty) { qty.textContent = "⏳ inbound"; qty.className = "bin-qty inbound"; }
-      if (alert) { alert.textContent = "✓"; alert.className = "bin-alert bin-alert--inbound"; }
-      setBinAHint("👌 pinch for invoice", true);
-    }
-
-    function updateShelfToRestocked(newQty) {
-      const fill = document.getElementById("fill-a");
-      const qty = document.getElementById("qty-a");
-      const alert = document.getElementById("alert-a");
-      if (fill) fill.className = "bin-bar-fill full";
-      if (qty) { qty.textContent = newQty + " u"; qty.className = "bin-qty full"; }
-      if (alert) { alert.textContent = "✓"; alert.className = "bin-alert bin-alert--ok"; }
-      setBinAHint("", false);
-    }
-
-    function unlockInvoice() { invoiceLocked = false; }
-
-    // ── TOAST + RESET ─────────────────────────────────────────────────────────────
-    function showCompletionToast(newQty) {
-      const toast = document.getElementById("completion-toast");
-      toast.textContent = `✅ Demo complete — Widget-A restocked. ${newQty} units now in stock.`;
-      toast.style.display = "block";
-      setTimeout(() => { toast.style.display = "none"; }, 3000);
-    }
-
-    async function resetDemo() {
-      try { await fetch(API_BASE + "/api/vr/reset-demo", { method: "POST" }); } catch (e) { /* offline */ }
-
-      closePanel();
-      clearVoiceFeedback();
-      scanning = false;
-      restockTriggered = false;
-      approvedPO = null;
-      pendingPO = null;
-      lastInvoice = null;
-      invoiceLocked = true;
-
-      const fill = document.getElementById("fill-a");
-      const qty = document.getElementById("qty-a");
-      const alert = document.getElementById("alert-a");
-      if (fill) fill.className = "bin-bar-fill empty";
-      if (qty) { qty.textContent = "0 u"; qty.className = "bin-qty empty"; }
-      if (alert) { alert.textContent = "⚠️"; alert.className = "bin-alert"; }
-      setBinAHint("👌 pinch to restock", true);
-
-      document.getElementById("completion-toast").style.display = "none";
-      showScene("shelf");
-      setStatus("Demo ready — pinch Widget-A to begin");
-    }
-
-    // ── VOICE ─────────────────────────────────────────────────────────────────────
-    function startVoiceListening() {
-      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SR) { setStatus("🎤 Voice not supported in this browser — pinch to interact"); return; }
-
-      if (recognition) {
-        recognition.stop();
-        recognition = null;
-        resetMicBtn(true);
-        setStatus("🎤 Mic off");
-        return;
-      }
-
-      recognition = new SR();
-      recognition.continuous = false;
-      recognition.interimResults = false;
-      recognition.lang = "en-US";
-
-      recognition.onstart = () => {
-        clearVoiceFeedback();
-        document.getElementById("mic-btn").classList.add("listening");
-        document.getElementById("mic-btn").textContent = "🔴";
-        setStatus("🎤 Listening…");
-      };
-
-      recognition.onresult = async (e) => {
-        const transcript = e.results[e.results.length - 1][0].transcript.trim();
-        const intent = await resolveIntent(transcript);
-        const label = INTENT_LABELS[intent] || INTENT_LABELS.unknown;
-
-        showVoiceFeedback(transcript, intent, label);
-
-        await handleIntent(intent, transcript);
-      };
-
-      recognition.onerror = (e) => {
-        recognition = null;
-        if (e.error === "aborted") { resetMicBtn(false); return; }
-        resetMicBtn(true);
-        setStatus("🎤 " + e.error + " — try again");
-      };
-
-      recognition.onend = () => {
-        recognition = null;
-        resetMicBtn(false);
-      };
-
-      recognition.start();
-    }
-
-    function resetMicBtn(clearFeedback) {
-      const btn = document.getElementById("mic-btn");
-      if (btn) { btn.classList.remove("listening"); btn.textContent = "🎤"; }
-      if (clearFeedback) clearVoiceFeedback();
-    }
-
-    async function resolveIntent(transcript) {
-      try {
-        const r = await fetch(API_BASE + "/api/vr/interpret-voice", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ transcript }),
-        });
-        if (!r.ok) throw new Error("HTTP " + r.status);
-        const data = await r.json();
-        const parsed = typeof data === "string" ? JSON.parse(data) : data;
-        const intent = String((parsed && parsed.intent) || "").toLowerCase();
-        if (INTENTS.has(intent) && intent !== "unknown") return intent;
-        return fallbackIntent(transcript);
-      } catch (e) {
-        return fallbackIntent(transcript);
-      }
-    }
-
-    function fallbackIntent(transcript) {
-      const t = transcript.toLowerCase();
-      if (/\b(restock|re-?stock|order|buy|purchase|replenish)\b/.test(t)) return "restock";
-      if (/\b(approve|accept|confirm|yes|ok)\b/.test(t)) return "approve_po";
-      if (/\b(reject|deny|decline|cancel|no)\b/.test(t)) return "reject_po";
-      if (/\b(pay|payment|release|settle)\b/.test(t)) return "pay_invoice";
-      if (/\b(invoice|bill|bol|document)\b/.test(t)) return "show_invoice";
-      return "unknown";
-    }
-
-    async function handleIntent(intent, transcript) {
-      switch (intent) {
-        case "restock":
-          if (approvedPO) {
-            setStatus("✅ Widget-A restock already approved — pinch Widget-A for the invoice");
-            break;
-          }
-          if (mode !== "shelf") showScene("shelf");
-          await sleep(400);
-          triggerAgentRestock();
-          break;
-        case "approve_po":
-          approveAgentPO();
-          break;
-        case "reject_po":
-          rejectAgentPO();
-          break;
-        case "pay_invoice":
-          if (invoiceLocked) setStatus("⚠️ No approved PO — say 'restock Widget-A' first");
-          else verifyInvoicePayment();
-          break;
-        case "show_invoice":
-          if (invoiceLocked) setStatus("⚠️ Approve Widget-A PO first — supplier invoice pending");
-          else showScene("invoice");
-          break;
-        default:
-          setStatus('🎤 "' + transcript + '" — try: restock / approve / reject / pay invoice / show invoice');
-      }
-    }
-
-    function showVoiceFeedback(transcript, intent, intentLabel) {
-      const el = document.getElementById("voice-feedback");
-      if (!el) return;
-      const icon = intent === "unknown" ? "❓" : "✓";
-
-      el.innerHTML = "";
-
-      const heard = document.createElement("div");
-      heard.className = "voice-feedback-transcript";
-      heard.textContent = '🎤 Heard: "' + transcript + '"';
-
-      const line = document.createElement("div");
-      line.className = "voice-feedback-intent";
-      line.appendChild(document.createTextNode("🤖 Intent: " + intentLabel + " "));
-      const iconEl = document.createElement("span");
-      iconEl.className = "voice-feedback-icon";
-      iconEl.textContent = icon;
-      line.appendChild(iconEl);
-
-      const hint = document.createElement("div");
-      hint.className = "voice-feedback-hint";
-      hint.textContent = "👌 pinch mic to give another command";
-
-      el.append(heard, line, hint);
-      el.classList.add("visible");
-    }
-
-    function clearVoiceFeedback() {
-      const el = document.getElementById("voice-feedback");
-      if (!el) return;
-      el.classList.remove("visible");
-      el.innerHTML = "";
-    }
-
-    // ── XR SESSION ────────────────────────────────────────────────────────────────
-    async function startXRSession() {
-      // Try with hit-test first (true floor anchoring)
-      try {
-        xrSession = await navigator.xr.requestSession("immersive-ar", {
-          requiredFeatures: ["hit-test", "local-floor"],
-          optionalFeatures: ["hand-tracking", "dom-overlay"],
-          domOverlay: { root: document.body },
-        });
-        hitTestEnabled = true;
-      } catch (e) {
-        // hit-test not supported — fall back without it
-        xrSession = await navigator.xr.requestSession("immersive-ar", {
-          requiredFeatures: ["local-floor"],
-          optionalFeatures: ["hand-tracking", "dom-overlay"],
-          domOverlay: { root: document.body },
-        });
-        hitTestEnabled = false;
-      }
-      const canvas = document.getElementById("canvas");
-      gl = canvas.getContext("webgl2", { xrCompatible: true });
-      await gl.makeXRCompatible();
-      xrSession.updateRenderState({ baseLayer: new XRWebGLLayer(xrSession, gl) });
+      renderer.xr.setReferenceSpaceType("local-floor");
+      await renderer.xr.setSession(xrSession);
       xrRefSpace = await xrSession.requestReferenceSpace("local-floor");
+      xrSession.addEventListener("select", onXRSelect);
       xrSession.addEventListener("end", () => {
-        xrSession = null; hitTestSource = null; hitTestSourceRequested = false; shelfPlaced = false;
-        document.getElementById("ar-scene").style.display = "flex"; // restore on exit
+        xrSession = null; hitTestSource = null;
+        hitTestSourceRequested = false; shelfPlaced = false;
+        shelfGroup.visible = false; reticle.visible = false;
+        document.body.classList.remove("xr-active");
+        setStatus("Supply Chain AR · Ready");
       });
+      document.body.classList.add("xr-active");
+      setStatus("📱 Point at floor · tap when blue ring appears", true);
+      renderer.setAnimationLoop(onXRFrame);
+    } catch(err) {
+      console.error("XR failed:", err);
+      setStatus("AR unavailable · 2D fallback mode", true);
+    }
+  }
 
-      if (hitTestEnabled) {
-        // Hide shelf until floor is tapped
-        document.getElementById("ar-scene").style.display = "none";
-        document.getElementById("invoice-scene").style.display = "none";
-        setStatus("📱 Point at floor · tap to place shelf");
-        xrSession.addEventListener("select", onXRTap);
+  function onXRFrame(time, frame) {
+    if (!frame || !xrSession) return;
+
+    // Pulse Widget-A when empty
+    if (widgetAMesh && bins[0] && bins[0].status === "empty") {
+      widgetAMesh.material.emissiveIntensity = 0.25 + 0.35*Math.sin(time*0.006);
+    }
+
+    // Request hit-test source once per session
+    if (!hitTestSourceRequested) {
+      hitTestSourceRequested = true;
+      xrSession.requestReferenceSpace("viewer").then(viewerSpace => {
+        xrSession.requestHitTestSource({space: viewerSpace}).then(src => {
+          hitTestSource = src;
+        });
+      }).catch(()=>{});
+    }
+
+    // Show reticle only on horizontal floor surfaces (normalY > 0.75)
+    if (hitTestSource && !shelfPlaced && xrRefSpace) {
+      const hits = frame.getHitTestResults(hitTestSource);
+      if (hits.length > 0) {
+        const pose = hits[0].getPose(xrRefSpace);  // FIX: hits[0] not hits
+        if (pose && pose.transform.matrix[5] > 0.75) {  // FIX: matrix[5] not matrix
+          reticle.visible = true;
+          reticle.matrix.fromArray(pose.transform.matrix);
+          setStatus("🔵 Floor detected · Tap to place shelf");
+        } else {
+          reticle.visible = false;
+          setStatus("📱 Point at floor · tap when blue ring appears", true);
+        }
       } else {
-        // No hit-test — show shelf as HUD fallback
-        document.getElementById("ar-scene").style.display = "flex";
-        setStatus("👐 Pinch RIGHT on Widget-A · LEFT to switch shelf / invoice");
-      }
-
-      xrSession.requestAnimationFrame(onXRFrame);
-    }
-
-    let hitTestEnabled = false;
-    let hitTestSource = null;
-    let hitTestSourceRequested = false;
-    let shelfPlaced = false;
-
-    function onXRTap() {
-      if (shelfPlaced) return;
-      if (hitTestSource) {
-        // Place shelf at reticle — we don't have a 3D object but we lock the DOM overlay
-        shelfPlaced = true;
-        document.getElementById("ar-scene").style.display = "flex";
-        document.getElementById("placement-hint") && (document.getElementById("placement-hint").style.display = "none");
-        setStatus("👐 Pinch RIGHT on Widget-A · LEFT to switch shelf / invoice");
-      } else {
-        // Hit-test source not ready yet — just show shelf
-        shelfPlaced = true;
-        document.getElementById("ar-scene").style.display = "flex";
-        setStatus("👐 Pinch RIGHT on Widget-A · LEFT to switch shelf / invoice");
+        reticle.visible = false;
       }
     }
 
-    function onXRFrame(time, frame) {
-      if (!xrSession) return;
-      xrSession.requestAnimationFrame(onXRFrame);
-      const pose = frame.getViewerPose(xrRefSpace);
-      if (!pose) return;
+    renderer.render(scene, camera);
+  }
 
-      // ── HIT-TEST: request source once, then show reticle on floor ──
-      if (hitTestEnabled && !shelfPlaced) {
-        if (!hitTestSourceRequested) {
-          hitTestSourceRequested = true;
-          xrSession.requestReferenceSpace("viewer").then(viewerSpace => {
-            xrSession.requestHitTestSource({ space: viewerSpace }).then(src => { hitTestSource = src; });
-          }).catch(() => {});
-        }
-        if (hitTestSource) {
-          const hits = frame.getHitTestResults(hitTestSource);
-          if (hits.length > 0) {
-            const hitPose = hits[0].getPose(xrRefSpace);
-            if (hitPose) {
-              const normalY = hitPose.transform.matrix[5];
-              if (normalY > 0.75) {
-                setStatus("🔵 Floor detected · Tap to place shelf");
-              } else {
-                setStatus("📱 Point at floor · tap to place shelf");
-              }
-            }
-          } else {
-            setStatus("📱 Point at floor · tap to place shelf");
-          }
-        }
-      }
+  window.addEventListener("resize", () => {
+    camera.aspect = window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
 
-      for (const src of xrSession.inputSources) {
-        if (!src.hand) continue;
-        if (src.handedness === "right") handRight = src;
-        if (src.handedness === "left") handLeft = src;
-      }
+  // ── DOM references ────────────────────────────────────────────────────────
+  const statusText = document.getElementById("status-text");
+  const statusDot  = document.getElementById("status-dot");
+  const voiceFB    = document.getElementById("voice-feedback");
+  const panelBD    = document.getElementById("ar-panel-backdrop");
+  const arPanel    = document.getElementById("ar-panel");
+  const dbGrid     = document.getElementById("desktop-bin-grid");
 
-      const rP = detectPinch(frame, handRight);
-      const lP = detectPinch(frame, handLeft);
+  function setStatus(text, isWarn=false) {
+    statusText.textContent = text;
+    statusDot.classList.toggle("warn", isWarn);
+  }
 
-      if (rP && !pinchWasDown.right) {
-        pulseHaptic(handRight);
-        setPinchVisual("right", true);
-        if (!scanning) { mode === "shelf" ? onShelfPinch() : onInvoicePinch(); }
-      } else if (!rP && pinchWasDown.right) {
-        setPinchVisual("right", false);
-      }
+  // ── Desktop 2D fallback ───────────────────────────────────────────────────
+  function renderDesktopBins() {
+    dbGrid.innerHTML = bins.map(b => {
+      const hint = b.sku==="Widget-A"
+        ? (invoiceLocked ? "<div class='bin-tile__hint'>👆 Tap to restock</div>"
+                        : "<div class='bin-tile__hint'>🧾 Tap for invoice</div>")
+        : "";
+      const qty = b.status==="inbound" ? "500 u (Inbound)" : b.qty+" u";
+      return `<div class="bin-tile ${b.status}" data-sku="${b.sku}">
+        <div class="bin-tile__top"><span>${b.sku}</span><span style="color:${b.color}">${qty}</span></div>
+        ${hint}</div>`;
+    }).join("");
+    const tile = dbGrid.querySelector('[data-sku="Widget-A"]');
+    if (tile) tile.addEventListener("click", onShelfPinch);
+  }
+  renderDesktopBins();
 
-      if (lP && !pinchWasDown.left) {
-        pulseHaptic(handLeft);
-        setPinchVisual("left", true);
-        if (!scanning) {
-          if (mode === "shelf" && !invoiceLocked) showScene("invoice");
-          else if (mode === "invoice") showScene("shelf");
-          else setStatus("⚠️ Approve Widget-A PO first — supplier invoice pending");
-        }
-      } else if (!lP && pinchWasDown.left) {
-        setPinchVisual("left", false);
-      }
+  // ── Panel system ──────────────────────────────────────────────────────────
+  function openPanel(html, accent="accent") {
+    arPanel.innerHTML = `<div class="card card--${accent}">${html}</div>`;
+    panelBD.classList.add("open");
+    arPanel.querySelectorAll("button").forEach(btn =>
+      btn.addEventListener("beforexrselect", ev => ev.preventDefault()));
+  }
+  function closePanel() { panelBD.classList.remove("open"); }
 
-      pinchWasDown.right = rP;
-      pinchWasDown.left = lP;
+  // ── Supply chain workflows ────────────────────────────────────────────────
+  function onShelfPinch() {
+    if (!invoiceLocked) { onInvoicePinch(); return; }
+    triggerAgentRestock();
+  }
 
-      const bl = xrSession.renderState.baseLayer;
-      gl.bindFramebuffer(gl.FRAMEBUFFER, bl.framebuffer);
-      gl.clearColor(0, 0, 0, 0);
-      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    }
+  async function triggerAgentRestock() {
+    if (isNegotiating) return;
+    isNegotiating = true;
+    setStatus("A2A agents negotiating Widget-A...", true);
+    openPanel(`<div class="card__header">
+      <span class="card__title">🤖 A2A Procurement</span>
+      <span class="card__badge">muse-spark-1.3</span></div>
+      <div class="card__body">
+        <div class="card__line">🔍 Widget-A: 0 units</div>
+        <div class="card__line">🤝 Sending RFQ to 3 suppliers…</div>
+        <div class="card__line">💬 Apex Logistics: $8.20/unit · 3 days</div>
+        <div class="card__line">💬 Global Parts Co: $8.75/unit · 6 days</div>
+        <div class="card__line">✅ Best: Apex Logistics $8.20</div>
+      </div>`, "accent");
+    const threadId = "ar-"+Date.now();
+    try {
+      await fetch(`/api/vr/agent-threads/${threadId}`, {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({transcript:[], draft_po:FALLBACK_DRAFT_PO})
+      });
+      const res = await fetch(`/api/vr/agent-status/${threadId}`);
+      const data = await res.json();
+      pendingPO = data.draft_po || {...FALLBACK_DRAFT_PO};
+    } catch {
+      pendingPO = {...FALLBACK_DRAFT_PO};
+    } finally { isNegotiating = false; }
+    renderPoCard(pendingPO);
+    setStatus('PO ready · Approve or reject', true);
+  }
 
-    function detectPinch(frame, src) {
-      if (!src || !src.hand || !xrRefSpace) return false;
-      try {
-        const i = frame.getJointPose(src.hand.get("index-finger-tip"), xrRefSpace);
-        const t = frame.getJointPose(src.hand.get("thumb-tip"), xrRefSpace);
-        if (!i || !t) return false;
-        const p = i.transform.position, q = t.transform.position;
-        return Math.hypot(p.x - q.x, p.y - q.y, p.z - q.z) < 0.025;
-      } catch (e) { return false; }
-    }
+  function renderPoCard(po) {
+    openPanel(`<div class="card__header">
+      <span class="card__title">⏸ Purchase Order</span>
+      <span class="card__badge">${po.po_id||"PO-2026-847"}</span></div>
+      <div class="card__body">
+        <div class="card__box">
+          <div class="card__row"><span>Supplier</span><strong>${po.supplier}</strong></div>
+          <div class="card__row"><span>Item</span><strong>${po.sku} × ${po.qty} u</strong></div>
+          <div class="card__row"><span>Unit</span><strong>$${Number(po.unit_price).toFixed(2)}</strong></div>
+          <div class="card__row"><span>Total</span><strong style="color:var(--ok)">$${Number(po.total).toLocaleString()}</strong></div>
+          <div class="card__row"><span>Delivery</span><strong>${po.delivery_days} days</strong></div>
+        </div>
+        <div class="card__actions">
+          <button class="btn btn-primary interactive" id="btn-approve-po">✅ Approve PO</button>
+          <button class="btn btn-danger interactive" id="btn-reject-po">✗ Reject</button>
+        </div>
+      </div>`, "warn");
+    document.getElementById("btn-approve-po")?.addEventListener("click", approveAgentPO);
+    document.getElementById("btn-reject-po")?.addEventListener("click", rejectAgentPO);
+  }
 
-    function setPinchVisual(hand, active) {
-      const el = document.querySelector(hand === "right" ? ".pinch-indicator--right" : ".pinch-indicator--left");
-      if (el) el.classList.toggle("pinch-active", active);
-    }
+  function approveAgentPO() {
+    if (!pendingPO) return;
+    approvedPO = {...pendingPO}; pendingPO = null;
+    invoiceLocked = false;
+    bins[0].status = "inbound"; bins[0].color = "#aa44ff";
+    renderDesktopBins(); update3DBin("Widget-A", 500, "inbound", "#aa44ff");
+    setStatus("PO approved · Tap Widget-A for invoice");
+    openPanel(`<div class="card__header">
+      <span class="card__title">✅ PO Approved</span>
+      <span class="card__badge">DISPATCHED</span></div>
+      <div class="card__body">
+        <div class="card__line">Locked with <strong>${approvedPO.supplier}</strong> — 500× Widget-A</div>
+        <div class="card__line" style="color:var(--accent);margin-top:6px">
+          👉 Tap Widget-A again (or say "show invoice") to verify the incoming invoice.
+        </div>
+        <div class="card__actions">
+          <button class="btn btn-accent interactive" id="btn-open-inv">🧾 Open Invoice</button>
+          <button class="btn btn-ghost interactive" id="btn-close-after-approve">Close</button>
+        </div>
+      </div>`, "ok");
+    document.getElementById("btn-open-inv")?.addEventListener("click", onInvoicePinch);
+    document.getElementById("btn-close-after-approve")?.addEventListener("click", closePanel);
+  }
 
-    function pulseHaptic(src) {
-      try {
-        const actuator = src && src.gamepad && src.gamepad.hapticActuators && src.gamepad.hapticActuators[0];
-        if (actuator && actuator.pulse) actuator.pulse(0.6, 70);
-      } catch (e) { /* haptics unsupported */ }
-    }
+  function rejectAgentPO() {
+    pendingPO = null;
+    setStatus("PO rejected · Ready");
+    openPanel(`<div class="card__header">
+      <span class="card__title">❌ PO Rejected</span>
+      <span class="card__badge">CANCELLED</span></div>
+      <div class="card__body">
+        <div class="card__line">No order placed. Tap Widget-A to retry.</div>
+        <div class="card__actions">
+          <button class="btn btn-ghost interactive" id="btn-close-reject">Close</button>
+        </div>
+      </div>`, "danger");
+    document.getElementById("btn-close-reject")?.addEventListener("click", closePanel);
+  }
 
-    // ── FALLBACK DATA ─────────────────────────────────────────────────────────────
-    const FALLBACK_SHELF = {
-      type: "shelf", action_required: true,
-      summary: "Bay A-14: 2 of 4 SKUs require attention.",
-      zones: [
-        { sku: "Widget-A", qty: 0, status: "empty" },
-        { sku: "Widget-B", qty: 3, status: "low" },
-        { sku: "Widget-C", qty: 18, status: "ok" },
-        { sku: "Widget-D", qty: 24, status: "ok" },
-      ],
+  async function onInvoicePinch() {
+    if (invoiceLocked) { setStatus("Approve PO first", true); return; }
+    setStatus("Scanning invoice with Muse Image…");
+    try {
+      const res = await fetch("/api/vr/invoice-scan/demo", {method:"POST"});
+      activeInvoice = await res.json();
+    } catch { activeInvoice = {...FALLBACK_INVOICE}; }
+    openPanel(`<div class="card__header">
+      <span class="card__title">🧾 Invoice INV-2026-847</span>
+      <span class="card__badge">muse-image-1.0</span></div>
+      <div class="card__body">
+        <div class="card__box">
+          <div class="card__row"><span>Vendor</span><strong>${activeInvoice.supplier}</strong></div>
+          <div class="card__row"><span>Item</span><strong>500× Widget-A @ $8.20</strong></div>
+          <div class="card__row"><span>Total</span><strong style="color:var(--ok)">${activeInvoice.total}</strong></div>
+          <div class="card__row"><span>PO Match</span><strong style="color:var(--ok)">✓ 100%</strong></div>
+        </div>
+        <div class="card__actions">
+          <button class="btn btn-primary interactive" id="btn-pay-inv">💳 Verify & Pay</button>
+          <button class="btn btn-ghost interactive" id="btn-close-inv">Close</button>
+        </div>
+      </div>`, "accent");
+    document.getElementById("btn-pay-inv")?.addEventListener("click", verifyInvoicePayment);
+    document.getElementById("btn-close-inv")?.addEventListener("click", closePanel);
+  }
+
+  async function verifyInvoicePayment() {
+    if (!activeInvoice) await onInvoicePinch();
+    setStatus("Releasing payment…");
+    let newQty = 550;
+    try {
+      const res = await fetch("/api/vr/invoice-pay/demo", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({po:approvedPO||FALLBACK_DRAFT_PO, invoice:activeInvoice})
+      });
+      const data = await res.json();
+      if (data.newQty != null) newQty = data.newQty;
+    } catch {}
+    bins[0].qty = newQty; bins[0].status = "ok"; bins[0].color = "#00ff88";
+    renderDesktopBins(); update3DBin("Widget-A", newQty, "ok", "#00ff88");
+    setStatus(`✅ Paid · Widget-A: ${newQty} u`);
+    openPanel(`<div class="card__header">
+      <span class="card__title">💸 Payment Released</span>
+      <span class="card__badge">COMPLETE</span></div>
+      <div class="card__body">
+        <div class="card__line">3-way match verified — PO-2026-847.</div>
+        <div class="card__line" style="color:var(--ok);font-weight:600;margin-top:6px">
+          ✅ Widget-A updated to ${newQty} units.
+        </div>
+        <div class="card__actions">
+          <button class="btn btn-ghost interactive" id="btn-close-done">Done</button>
+        </div>
+      </div>`, "ok");
+    document.getElementById("btn-close-done")?.addEventListener("click", closePanel);
+  }
+
+  async function resetDemo() {
+    try { await fetch("/api/vr/reset-demo",{method:"POST"}); } catch {}
+    bins = JSON.parse(JSON.stringify(INITIAL_BINS));
+    pendingPO=null; approvedPO=null; activeInvoice=null;
+    invoiceLocked=true; isNegotiating=false;
+    clearVoiceFeedback(); closePanel();
+    renderDesktopBins();
+    build3DShelf(); // rebuild 3D shelf to initial state
+    setStatus("Demo reset · Ready");
+  }
+
+  // ── Voice ─────────────────────────────────────────────────────────────────
+  function showVoiceFeedback(transcript, intent, label) {
+    voiceFB.innerHTML = `<div class="voice-feedback__heard">🎙️ "${transcript}"</div>
+      <div class="voice-feedback__intent">⚡ ${label}</div>`;
+    voiceFB.classList.add("visible");
+  }
+  function clearVoiceFeedback() { voiceFB.classList.remove("visible"); voiceFB.innerHTML=""; }
+
+  function fallbackIntent(t) {
+    t = t.toLowerCase();
+    if (/approve|accept|confirm/.test(t)) return "approve_po";
+    if (/reject|cancel|decline/.test(t)) return "reject_po";
+    if (/pay|payment|release|settle/.test(t)) return "pay_invoice";
+    if (/invoice|bill/.test(t)) return "show_invoice";
+    if (/restock|widget|order|replenish/.test(t)) return "restock";
+    return "unknown";
+  }
+
+  async function resolveIntent(transcript) {
+    try {
+      const res = await fetch("/api/vr/interpret-voice",{
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({transcript})
+      });
+      const data = await res.json();
+      if (data?.intent && data.intent!=="unknown") return data.intent;
+    } catch {}
+    return fallbackIntent(transcript);
+  }
+
+  function handleIntent(intent) {
+    if (intent==="restock") triggerAgentRestock();
+    else if (intent==="approve_po") approveAgentPO();
+    else if (intent==="reject_po") rejectAgentPO();
+    else if (intent==="show_invoice") onInvoicePinch();
+    else if (intent==="pay_invoice") verifyInvoicePayment();
+  }
+
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let recognition=null, listening=false;
+  const btnMic = document.getElementById("btn-mic");
+  const btnReset = document.getElementById("btn-reset");
+
+  if (SR) {
+    recognition = new SR();
+    recognition.lang="en-US"; recognition.interimResults=false;
+    recognition.onstart = () => { listening=true; clearVoiceFeedback(); btnMic.textContent="⏹ Listening…"; };
+    recognition.onresult = async e => {
+      const transcript = e.results[e.results.length-1][0].transcript;
+      const intent = await resolveIntent(transcript);
+      showVoiceFeedback(transcript, intent, INTENT_LABELS[intent]||intent);
+      handleIntent(intent);
     };
-    const FALLBACK_INVOICE = {
-      type: "invoice", supplier: "Apex Logistics",
-      dates: ["2026-11-14", "2026-11-17"],
-      items: [{ sku: "Widget-A", qty: 500, cost: "8.20" }],
-      total: "$4,100.00",
-      draft_instruction: "Approve PO for 500× Widget-A from Apex Logistics at $8.20/unit. Delivery in 3 days.",
-    };
+    recognition.onend = () => { listening=false; btnMic.textContent="🎤 Voice"; };
+    recognition.onerror = () => { listening=false; btnMic.textContent="🎤 Voice"; };
+  }
 
-    function setStatus(m) {
-      const el = document.getElementById("status");
-      if (el) el.textContent = m;
-    }
-    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+  btnMic.addEventListener("click", () => {
+    if (!recognition) { triggerAgentRestock(); return; }
+    if (listening) { recognition.stop(); clearVoiceFeedback(); }
+    else recognition.start();
+  });
+  btnReset.addEventListener("click", resetDemo);
+  document.getElementById("btn-enter-ar").addEventListener("click", startARSession);
 
-    // ── DESKTOP 3D DRAG SIMULATION (non-XR only) ─────────────────────────────
-    // Drag left/right to rotate the shelf on Y, up/down to tilt on X.
-    // #ar-panel is a sibling of #ar-scene, so HUD cards stay flat in screen
-    // space — the same way a DOM-overlay HUD behaves in a real AR session.
-    (function initDragRotate() {
-      const scene = document.getElementById("ar-scene");
-      if (!scene) return;
-
-      const shelf = scene.querySelector(".shelf-unit");
-      if (!shelf) return;
-
-      scene.style.perspective = "900px";
-      scene.style.perspectiveOrigin = "50% 50%";
-      shelf.style.transformStyle = "preserve-3d";
-      shelf.style.transition = "none";
-
-      let dragging = false, moved = false, startX = 0, startY = 0, rotX = 0, rotY = 0;
-
-      scene.addEventListener("mousedown", (e) => {
-        if (e.button !== 0) return;
-        if (xrSession) return; // a live immersive session owns the view
-        dragging = true; moved = false;
-        startX = e.clientX; startY = e.clientY;
-        scene.style.cursor = "grabbing";
-      });
-
-      window.addEventListener("mousemove", (e) => {
-        if (!dragging) return;
-        rotY += (e.clientX - startX) * 0.4;
-        rotX -= (e.clientY - startY) * 0.4;
-        rotX = Math.max(-30, Math.min(30, rotX)); // clamp vertical
-        rotY = Math.max(-45, Math.min(45, rotY)); // clamp horizontal
-        if (Math.abs(e.clientX - startX) + Math.abs(e.clientY - startY) > 3) moved = true;
-        shelf.style.transform = `rotateX(${rotX}deg) rotateY(${rotY}deg)`;
-        shelf.classList.toggle("is-rotated", rotX !== 0 || rotY !== 0);
-        startX = e.clientX; startY = e.clientY;
-      });
-
-      window.addEventListener("mouseup", () => {
-        dragging = false;
-        scene.style.cursor = "grab";
-        if (!moved) return;
-        // A drag that ends on a bin must not fire its inline onclick (restock).
-        const swallow = (ev) => { ev.stopPropagation(); ev.preventDefault(); };
-        scene.addEventListener("click", swallow, true);
-        setTimeout(() => {
-          scene.removeEventListener("click", swallow, true);
-          moved = false;
-        }, 0);
-      });
-
-      scene.style.cursor = "grab";
-    })();
+  if (!navigator.xr) setStatus("2D Fallback · Tap Widget-A to begin");
   </script>
 </body>
-
 </html>
