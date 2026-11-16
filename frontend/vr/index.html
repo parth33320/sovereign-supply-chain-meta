@@ -1128,6 +1128,12 @@
       xrSession.updateRenderState({ baseLayer: new XRWebGLLayer(xrSession, gl) });
       xrRefSpace = await xrSession.requestReferenceSpace("local-floor");
       xrSession.addEventListener("end", () => { xrSession = null; });
+      document.body.style.display = "block"; // ensure DOM overlay root is visible
+      if (!xrSession.enabledFeatures?.includes("dom-overlay")) {
+        // DOM overlay not granted — force show shelf UI anyway
+        document.getElementById("ar-scene").style.display = "flex";
+        document.getElementById("status").style.display = "block";
+      }
       xrSession.requestAnimationFrame(onXRFrame);
       setStatus("👐 Pinch RIGHT on Widget-A · LEFT to switch shelf / invoice");
     }
