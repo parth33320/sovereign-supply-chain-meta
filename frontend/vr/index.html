@@ -341,17 +341,10 @@
     }
     .inv-total-lbl { font-size: 13px; font-weight: 700; color: #446; }
     .inv-total-val { font-size: 18px; font-weight: 900; color: #1a3a6a; }
-    .inv-pinch {
-      text-align: center; padding: 14px;
-      background: linear-gradient(90deg, #0d2444, #1a3a6a);
-      cursor: pointer; transition: filter .15s ease;
-    }
-    .inv-pinch:hover { filter: brightness(1.15); }
-    .inv-pinch span { font-size: 14px; font-weight: 700; color: #fff; }
 
     /* ── SCENES + PANEL ── */
     .scene { transition: opacity .25s ease; }
-    body.panel-open .scene { opacity: .14; pointer-events: none; }
+    body.panel-open .scene { opacity: 1; pointer-events: none; }
 
     #ar-panel {
       position: fixed; bottom: 84px; left: 50%;
@@ -406,7 +399,7 @@
           <div class="pinch-hint" id="hint-a">👌 pinch to restock</div>
         </div>
         <div class="bin" title="Widget-B — 3 units">
-          <div class="bin-alert">⚠️</div>
+          <div class="bin-spacer"></div>
           <div class="bin-bar-bg"><div class="bin-bar-fill low"></div></div>
           <div class="bin-label">Widget-B</div>
           <div class="bin-qty low">3 u</div>
@@ -457,8 +450,9 @@
         <span class="inv-total-lbl">TOTAL DUE</span>
         <span class="inv-total-val">$4,100.00</span>
       </div>
-      <div class="inv-pinch" onclick="onInvoicePinch()">
-        <span>👌 Pinch for SAM to validate invoice with the PO</span>
+      </div>
+      <div class="pinch-hint" style="text-align:center; padding:10px 0; font-size:12px; color:#aaa; cursor:pointer; background:none; border:none;" onclick="onInvoicePinch()">
+        👌 Pinch for SAM to validate invoice with the PO
       </div>
     </div>
   </div>
@@ -466,9 +460,7 @@
   <!-- Floating AR result panel -->
   <div id="ar-panel" role="dialog" aria-label="AR result"></div>
 
-  <!-- Hand-tracking pinch indicators -->
-  <div class="pinch-hint pinch-indicator pinch-indicator--right">👌 RIGHT pinch: interact</div>
-  <div class="pinch-hint pinch-indicator pinch-indicator--left">LEFT pinch: shelf / invoice</div>
+  <!-- Hand-tracking pinch indicators removed - contextual hints shown inline -->
 
   <!-- Mic: always floating, triggered by pinch or click -->
   <button id="mic-btn" onclick="startVoiceListening()" title="Voice commands">🎤</button>
@@ -751,7 +743,7 @@
       setStatus("✅ Payment released · Widget-A restocked");
       updateShelfToRestocked(newQty);
       showCompletionToast(newQty);
-      setTimeout(() => { if (token === panelToken) { closePanel(); scanning = false; } }, 3500);
+      setTimeout(() => { if (token === panelToken) { closePanel(); scanning = false; showScene("shelf"); } }, 3500);
     }
 
     function flagDiscrepancy() {
