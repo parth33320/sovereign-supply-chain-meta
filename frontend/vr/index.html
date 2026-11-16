@@ -1123,25 +1123,67 @@
 
     // ── XR SESSION ────────────────────────────────────────────────────────────────
     async function startXRSession() {
-      xrSession = await navigator.xr.requestSession("immersive-ar", {
-        requiredFeatures: ["local-floor"],
-        optionalFeatures: ["hand-tracking", "dom-overlay"],
-        domOverlay: { root: document.body },
-      });
+      // Try with hit-test first (true floor anchoring)
+      try {
+        xrSession = await navigator.xr.requestSession("immersive-ar", {
+          requiredFeatures: ["hit-test", "local-floor"],
+          optionalFeatures: ["hand-tracking", "dom-overlay"],
+          domOverlay: { root: document.body },
+        });
+        hitTestEnabled = true;
+      } catch (e) {
+        // hit-test not supported — fall back without it
+        xrSession = await navigator.xr.requestSession("immersive-ar", {
+          requiredFeatures: ["local-floor"],
+          optionalFeatures: ["hand-tracking", "dom-overlay"],
+          domOverlay: { root: document.body },
+        });
+        hitTestEnabled = false;
+      }
       const canvas = document.getElementById("canvas");
       gl = canvas.getContext("webgl2", { xrCompatible: true });
       await gl.makeXRCompatible();
       xrSession.updateRenderState({ baseLayer: new XRWebGLLayer(xrSession, gl) });
       xrRefSpace = await xrSession.requestReferenceSpace("local-floor");
-      xrSession.addEventListener("end", () => { xrSession = null; });
-      document.body.style.display = "block"; // ensure DOM overlay root is visible
-      if (!xrSession.enabledFeatures?.includes("dom-overlay")) {
-        // DOM overlay not granted — force show shelf UI anyway
+      xrSession.addEventListener("end", () => {
+        xrSession = null; hitTestSource = null; hitTestSourceRequested = false; shelfPlaced = false;
+        document.getElementById("ar-scene").style.display = "flex"; // restore on exit
+      });
+
+      if (hitTestEnabled) {
+        // Hide shelf until floor is tapped
+        document.getElementById("ar-scene").style.display = "none";
+        document.getElementById("invoice-scene").style.display = "none";
+        setStatus("📱 Point at floor · tap to place shelf");
+        xrSession.addEventListener("select", onXRTap);
+      } else {
+        // No hit-test — show shelf as HUD fallback
         document.getElementById("ar-scene").style.display = "flex";
-        document.getElementById("status").style.display = "block";
+        setStatus("👐 Pinch RIGHT on Widget-A · LEFT to switch shelf / invoice");
       }
+
       xrSession.requestAnimationFrame(onXRFrame);
-      setStatus("👐 Pinch RIGHT on Widget-A · LEFT to switch shelf / invoice");
+    }
+
+    let hitTestEnabled = false;
+    let hitTestSource = null;
+    let hitTestSourceRequested = false;
+    let shelfPlaced = false;
+
+    function onXRTap() {
+      if (shelfPlaced) return;
+      if (hitTestSource) {
+        // Place shelf at reticle — we don't have a 3D object but we lock the DOM overlay
+        shelfPlaced = true;
+        document.getElementById("ar-scene").style.display = "flex";
+        document.getElementById("placement-hint") && (document.getElementById("placement-hint").style.display = "none");
+        setStatus("👐 Pinch RIGHT on Widget-A · LEFT to switch shelf / invoice");
+      } else {
+        // Hit-test source not ready yet — just show shelf
+        shelfPlaced = true;
+        document.getElementById("ar-scene").style.display = "flex";
+        setStatus("👐 Pinch RIGHT on Widget-A · LEFT to switch shelf / invoice");
+      }
     }
 
     function onXRFrame(time, frame) {
@@ -1149,6 +1191,32 @@
       xrSession.requestAnimationFrame(onXRFrame);
       const pose = frame.getViewerPose(xrRefSpace);
       if (!pose) return;
+
+      // ── HIT-TEST: request source once, then show reticle on floor ──
+      if (hitTestEnabled && !shelfPlaced) {
+        if (!hitTestSourceRequested) {
+          hitTestSourceRequested = true;
+          xrSession.requestReferenceSpace("viewer").then(viewerSpace => {
+            xrSession.requestHitTestSource({ space: viewerSpace }).then(src => { hitTestSource = src; });
+          }).catch(() => {});
+        }
+        if (hitTestSource) {
+          const hits = frame.getHitTestResults(hitTestSource);
+          if (hits.length > 0) {
+            const hitPose = hits[0].getPose(xrRefSpace);
+            if (hitPose) {
+              const normalY = hitPose.transform.matrix[5];
+              if (normalY > 0.75) {
+                setStatus("🔵 Floor detected · Tap to place shelf");
+              } else {
+                setStatus("📱 Point at floor · tap to place shelf");
+              }
+            }
+          } else {
+            setStatus("📱 Point at floor · tap to place shelf");
+          }
+        }
+      }
 
       for (const src of xrSession.inputSources) {
         if (!src.hand) continue;
