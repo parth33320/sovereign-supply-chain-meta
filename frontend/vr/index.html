@@ -266,6 +266,9 @@
     }
     .bin:last-child { border-right: none; }
     .bin:active { background: rgba(0, 102, 255, 0.14); transform: scale(1.05); }
+    /* While the shelf is 3D-rotated, a press-scale shifts the bin out from under
+       the cursor and mouseup lands on the row, so the bin's onclick never fires. */
+    .shelf-unit.is-rotated .bin:active { transform: none; }
     .bin-spacer { height: 20px; }
 
     .bin-bar-bg {
@@ -1220,6 +1223,60 @@
       if (el) el.textContent = m;
     }
     function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    // ── DESKTOP 3D DRAG SIMULATION (non-XR only) ─────────────────────────────
+    // Drag left/right to rotate the shelf on Y, up/down to tilt on X.
+    // #ar-panel is a sibling of #ar-scene, so HUD cards stay flat in screen
+    // space — the same way a DOM-overlay HUD behaves in a real AR session.
+    (function initDragRotate() {
+      const scene = document.getElementById("ar-scene");
+      if (!scene) return;
+
+      const shelf = scene.querySelector(".shelf-unit");
+      if (!shelf) return;
+
+      scene.style.perspective = "900px";
+      scene.style.perspectiveOrigin = "50% 50%";
+      shelf.style.transformStyle = "preserve-3d";
+      shelf.style.transition = "none";
+
+      let dragging = false, moved = false, startX = 0, startY = 0, rotX = 0, rotY = 0;
+
+      scene.addEventListener("mousedown", (e) => {
+        if (e.button !== 0) return;
+        if (xrSession) return; // a live immersive session owns the view
+        dragging = true; moved = false;
+        startX = e.clientX; startY = e.clientY;
+        scene.style.cursor = "grabbing";
+      });
+
+      window.addEventListener("mousemove", (e) => {
+        if (!dragging) return;
+        rotY += (e.clientX - startX) * 0.4;
+        rotX -= (e.clientY - startY) * 0.4;
+        rotX = Math.max(-30, Math.min(30, rotX)); // clamp vertical
+        rotY = Math.max(-45, Math.min(45, rotY)); // clamp horizontal
+        if (Math.abs(e.clientX - startX) + Math.abs(e.clientY - startY) > 3) moved = true;
+        shelf.style.transform = `rotateX(${rotX}deg) rotateY(${rotY}deg)`;
+        shelf.classList.toggle("is-rotated", rotX !== 0 || rotY !== 0);
+        startX = e.clientX; startY = e.clientY;
+      });
+
+      window.addEventListener("mouseup", () => {
+        dragging = false;
+        scene.style.cursor = "grab";
+        if (!moved) return;
+        // A drag that ends on a bin must not fire its inline onclick (restock).
+        const swallow = (ev) => { ev.stopPropagation(); ev.preventDefault(); };
+        scene.addEventListener("click", swallow, true);
+        setTimeout(() => {
+          scene.removeEventListener("click", swallow, true);
+          moved = false;
+        }, 0);
+      });
+
+      scene.style.cursor = "grab";
+    })();
   </script>
 </body>
 
