@@ -365,6 +365,14 @@
       setStatus("WebXR unavailable · Check Quest browser version", true); return;
     }
 
+    // End any existing AR session before requesting a new one
+    if (xrSession) {
+      try {
+        await xrSession.end();
+        xrSession = null;
+      } catch(e) { console.warn("Could not end existing session:", e); }
+    }
+
     // Try with hit-test first (Quest 3, Android ARCore)
     // Fall back to local-floor only (Quest 2, devices without hit-test)
     let sessionOpts = null;
@@ -373,7 +381,8 @@
     const withHitTest = await navigator.xr.isSessionSupported("immersive-ar").catch(()=>false);
     if (withHitTest) {
       try {
-        await navigator.xr.requestSession("immersive-ar", {requiredFeatures:["hit-test","local-floor"]}).then(s=>{s.end();});
+        const testSess = await navigator.xr.requestSession("immersive-ar", {requiredFeatures:["hit-test","local-floor"]});
+        await testSess.end();
         hitTestSupported = true;
       } catch(e) { hitTestSupported = false; }
     }
