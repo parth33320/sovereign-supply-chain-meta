@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from backend.routers import chat, upload, voice, hitl, activity, inventory, manager, whatif
+from backend.routers import chat, upload, voice, hitl, activity, inventory, manager, whatif, vr
 import init_db
 
 @asynccontextmanager
@@ -35,6 +35,7 @@ app.include_router(activity.router, prefix="/api")
 app.include_router(inventory.router, prefix="/api")
 app.include_router(manager.router, prefix="/api")
 app.include_router(whatif.router, prefix="/api")
+app.include_router(vr.router, prefix="/api")
 
 @app.get("/health")
 async def health():
