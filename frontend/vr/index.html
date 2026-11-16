@@ -74,8 +74,8 @@
     .bin-tile__hint { font-size: 11px; color: var(--danger); margin-top: 4px; }
 
     /* Modal panel */
-    #ar-panel-backdrop { position: fixed; inset: 0; display: none; align-items: center;
-      justify-content: center; padding: 16px; z-index: 20; pointer-events: none; }
+    #ar-panel-backdrop { position: absolute; inset: 0; display: none; align-items: center;
+      justify-content: center; padding: 16px; pointer-events: none; }
     #ar-panel-backdrop.open { display: flex; pointer-events: auto; }
     .card { background: var(--surface); border: 1px solid var(--border); backdrop-filter: blur(16px);
       border-radius: 16px; max-width: 420px; width: 100%; padding: 18px;
@@ -140,7 +140,7 @@
     </div>
   </div>
 
-  <!-- Floating modal panel -->
+  <!-- Floating modal panel — inside #overlay so WebXR DOM overlay renders it -->
   <div id="ar-panel-backdrop">
     <div id="ar-panel"></div>
   </div>
