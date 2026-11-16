@@ -78,6 +78,16 @@ if os.path.exists(frontend_dist):
 else:
     print(f"[startup] WARNING: frontend/dist not found at {frontend_dist} — UI will not be served")
 
+    # Always serve the VR page directly from frontend/vr/index.html
+    vr_html = os.path.join(repo_root, "frontend", "vr", "index.html")
+
+    @app.get("/vr")
+    @app.get("/vr/")
+    async def serve_vr():
+        if os.path.exists(vr_html):
+            return FileResponse(vr_html, media_type="text/html")
+        return JSONResponse({"error": "VR page not found", "path": vr_html})
+
     @app.get("/")
     async def no_frontend():
-        return JSONResponse({"error": "Frontend not built", "hint": "Run: cd frontend && npm run build"})
+        return JSONResponse({"error": "Frontend not built", "hint": "Run: cd frontend && npm run build", "vr": "/vr"})
