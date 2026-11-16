@@ -326,25 +326,34 @@
 
   // On tap: first tap places shelf at reticle, subsequent taps raycast into shelf
   function onXRSelect(event) {
+    console.log("onXRSelect fired, shelfPlaced=", shelfPlaced, "reticle.visible=", reticle.visible);
     if (!shelfPlaced) {
       if (reticle.visible) {
         // Lock shelf to this world-space floor position
         shelfGroup.position.setFromMatrixPosition(reticle.matrix);
+        shelfGroup.position.y = 0; // FORCE to floor level (y=0) — hit-test may give wrong y
         const camPos = new THREE.Vector3();
         camera.getWorldPosition(camPos);
         shelfGroup.lookAt(camPos.x, shelfGroup.position.y, camPos.z);
         shelfGroup.visible = true;
         shelfPlaced = true;
         reticle.visible = false;
-        setStatus("Shelf anchored · Tap Widget-A to scan/restock");
+        console.log("Shelf placed at:", shelfGroup.position);
+        setStatus("Shelf anchored · Air-tap Widget-A to scan/restock");
       }
       return;
     }
     // Raycast against shelf boxes
     const frame = event.frame;
-    if (!frame || !xrRefSpace || !shelfGroup.visible) return;
+    if (!frame || !xrRefSpace || !shelfGroup.visible) {
+      console.log("Raycast skipped: frame=", !!frame, "xrRefSpace=", !!xrRefSpace, "shelfVisible=", shelfGroup.visible);
+      return;
+    }
     const pose = frame.getPose(event.inputSource.targetRaySpace, xrRefSpace);
-    if (!pose) return;
+    if (!pose) {
+      console.log("No pose from targetRaySpace");
+      return;
+    }
     const mat4 = new THREE.Matrix4().fromArray(pose.transform.matrix);
     const origin = new THREE.Vector3().setFromMatrixPosition(mat4);
     const quat = new THREE.Quaternion(
@@ -353,6 +362,7 @@
     const fwd = new THREE.Vector3(0,0,-1).applyQuaternion(quat);
     raycaster.set(origin, fwd);
     const hits = raycaster.intersectObjects(shelfGroup.children, true);
+    console.log("Raycast hit count:", hits.length);
     if (hits.length > 0) onShelfPinch();
   }
 
@@ -527,10 +537,14 @@
   function openPanel(html, accent="accent") {
     arPanel.innerHTML = `<div class="card card--${accent}">${html}</div>`;
     panelBD.classList.add("open");
+    console.log("Panel opened, panelBD visibility:", window.getComputedStyle(panelBD).visibility, "display:", window.getComputedStyle(panelBD).display);
     arPanel.querySelectorAll("button").forEach(btn =>
       btn.addEventListener("beforexrselect", ev => ev.preventDefault()));
   }
-  function closePanel() { panelBD.classList.remove("open"); }
+  function closePanel() { 
+    panelBD.classList.remove("open");
+    console.log("Panel closed");
+  }
 
   // ── Supply chain workflows ────────────────────────────────────────────────
   function onShelfPinch() {
