@@ -254,11 +254,6 @@
       p.position.set(x,y,z); shelfGroup.add(p);
     });
 
-    // Header panel: status text + Voice/Reset buttons (re-add from outer scope on rebuild)
-    if (typeof hdrPanel !== "undefined") {
-      shelfGroup.add(hdrPanel);
-    }
-
     // 2 shelf planks + 8 SKU boxes
     const plankGeo = new THREE.BoxGeometry(W+0.02, 0.025, D+0.02);
     const plankMat = new THREE.MeshStandardMaterial({color:0x21262d, roughness:0.7});
@@ -558,7 +553,7 @@
     if (!shelfPlaced) {
       if (reticle.visible) {
         shelfGroup.position.setFromMatrixPosition(reticle.matrix);
-        shelfGroup.position.y = 0; // Exact Guardian floor level (y = 0)
+        shelfGroup.position.y = 0;
         const camPos = new THREE.Vector3();
         camera.getWorldPosition(camPos);
         shelfGroup.lookAt(camPos.x, 0, camPos.z);
@@ -566,8 +561,10 @@
         shelfPlaced = true;
         reticle.visible = false;
         setStatus("Shelf anchored on floor · Pinch or touch Widget-A");
+        return;
       }
-      return;
+      // Auto-place mode: no reticle — fall through to shelf interaction if shelf is visible
+      if (!shelfGroup.visible) return;
     }
     const { origin, dir } = getControllerRay(ctrl);
     raycaster.set(origin, dir);
