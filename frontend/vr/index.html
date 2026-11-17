@@ -1,117 +1,424 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>Supply Chain XR Walk — Sovereign</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com"/>
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <style>
     :root {
-      --bg: #0d1117; --surface: rgba(22,27,34,0.92); --border: rgba(48,54,61,0.9);
-      --text: #e6edf3; --muted: #8b949e; --accent: #58a6ff;
-      --ok: #3fb950; --warn: #d29922; --danger: #f85149;
+      --bg: #0d1117;
+      --surface: rgba(22, 27, 34, 0.92);
+      --border: rgba(48, 54, 61, 0.9);
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --ok: #3fb950;
+      --warn: #d29922;
+      --danger: #f85149;
     }
-    * { box-sizing: border-box; margin: 0; padding: 0;
-        font-family: 'Inter', -apple-system, sans-serif; -webkit-font-smoothing: antialiased; }
-    body { background: var(--bg); color: var(--text); min-height: 100vh; overflow: hidden; }
 
-    #webgl-canvas { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Inter', -apple-system, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow: hidden;
+    }
+
+    #webgl-canvas {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+      pointer-events: none;
+    }
 
     /* DOM Overlay root — 2D HUD only, shelf is 3D WebGL */
-    #overlay { position: fixed; inset: 0; z-index: 10; pointer-events: none;
-      display: flex; flex-direction: column; justify-content: space-between; padding: 16px; }
-    .interactive { pointer-events: auto; }
+    #overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 16px;
+    }
 
-    .hud-top { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; }
-    .status-pill { background: var(--surface); border: 1px solid var(--border);
-      backdrop-filter: blur(12px); padding: 8px 14px; border-radius: 999px;
-      font-size: 12px; font-weight: 500; color: var(--text);
-      display: flex; align-items: center; gap: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.45); }
-    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
-    .status-dot.warn { background: var(--warn); }
+    .interactive {
+      pointer-events: auto;
+    }
 
-    .voice-feedback { background: rgba(13,17,23,.94); border: 1px solid var(--accent);
-      border-radius: 12px; padding: 10px 14px; max-width: 420px; width: 100%;
-      font-size: 12px; box-shadow: 0 10px 28px rgba(0,0,0,.55); display: none; }
-    .voice-feedback.visible { display: block; }
-    .voice-feedback__heard { color: var(--muted); margin-bottom: 4px; }
-    .voice-feedback__intent { color: var(--accent); font-weight: 600; }
+    .hud-top {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+    }
+
+    .status-pill {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      backdrop-filter: blur(12px);
+      padding: 8px 14px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, .45);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--ok);
+    }
+
+    .status-dot.warn {
+      background: var(--warn);
+    }
+
+    .voice-feedback {
+      background: rgba(13, 17, 23, .94);
+      border: 1px solid var(--accent);
+      border-radius: 12px;
+      padding: 10px 14px;
+      max-width: 420px;
+      width: 100%;
+      font-size: 12px;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, .55);
+      display: none;
+    }
+
+    .voice-feedback.visible {
+      display: block;
+    }
+
+    .voice-feedback__heard {
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    .voice-feedback__intent {
+      color: var(--accent);
+      font-weight: 600;
+    }
 
     /* 2D desktop fallback shelf */
-    #ar-scene { flex: 1; display: flex; flex-direction: column; align-items: center;
-      justify-content: center; gap: 16px; padding: 12px 0; }
-    body.xr-active #ar-scene { display: none !important; }
+    #ar-scene {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      padding: 12px 0;
+    }
 
-    .hero-card { background: var(--surface); border: 1px solid var(--border);
-      border-radius: 16px; padding: 20px; max-width: 420px; width: 100%;
-      text-align: center; box-shadow: 0 16px 40px rgba(0,0,0,.5); }
-    .hero-title { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
-    .hero-sub { font-size: 12px; color: var(--muted); margin-bottom: 16px; }
+    body.xr-active #ar-scene {
+      display: none !important;
+    }
 
-    .btn { border: none; border-radius: 10px; padding: 11px 16px; font-size: 13px; font-weight: 600;
-      cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
-      gap: 8px; transition: transform .12s ease, opacity .15s ease; }
-    .btn:active { transform: scale(.97); }
-    .btn-primary { background: #238636; color: #fff; width: 100%; }
-    .btn-accent { background: var(--accent); color: #0d1117; }
-    .btn-danger { background: #da3633; color: #fff; }
-    .btn-ghost { background: rgba(48,54,61,.65); color: var(--text); border: 1px solid var(--border); }
+    .hero-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 20px;
+      max-width: 420px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, .5);
+    }
 
-    .shelf-preview { background: var(--surface); border: 1px solid var(--border);
-      border-radius: 16px; padding: 16px; max-width: 420px; width: 100%; }
-    .shelf-preview__hdr { display: flex; justify-content: space-between; align-items: center;
-      font-size: 12px; font-weight: 600; margin-bottom: 12px; color: var(--accent); }
-    .bin-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 8px; }
-    .bin-tile { background: rgba(13,17,23,.85); border: 1px solid var(--border);
-      border-radius: 10px; padding: 10px; font-size: 12px; }
-    .bin-tile.empty { border-color: var(--danger); cursor: pointer; }
-    .bin-tile.low { border-color: var(--warn); }
-    .bin-tile.ok { border-color: rgba(63,185,80,.45); }
-    .bin-tile__top { display: flex; justify-content: space-between; font-weight: 600; margin-bottom: 4px; }
-    .bin-tile__hint { font-size: 11px; color: var(--danger); margin-top: 4px; }
+    .hero-title {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .hero-sub {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 16px;
+    }
+
+    .btn {
+      border: none;
+      border-radius: 10px;
+      padding: 11px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: transform .12s ease, opacity .15s ease;
+    }
+
+    .btn:active {
+      transform: scale(.97);
+    }
+
+    .btn-primary {
+      background: #238636;
+      color: #fff;
+      width: 100%;
+    }
+
+    .btn-accent {
+      background: var(--accent);
+      color: #0d1117;
+    }
+
+    .btn-danger {
+      background: #da3633;
+      color: #fff;
+    }
+
+    .btn-ghost {
+      background: rgba(48, 54, 61, .65);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .shelf-preview {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px;
+      max-width: 420px;
+      width: 100%;
+    }
+
+    .shelf-preview__hdr {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      color: var(--accent);
+    }
+
+    .bin-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+
+    .bin-tile {
+      background: rgba(13, 17, 23, .85);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px;
+      font-size: 12px;
+    }
+
+    .bin-tile.empty {
+      border-color: var(--danger);
+      cursor: pointer;
+    }
+
+    .bin-tile.low {
+      border-color: var(--warn);
+    }
+
+    .bin-tile.ok {
+      border-color: rgba(63, 185, 80, .45);
+    }
+
+    .bin-tile__top {
+      display: flex;
+      justify-content: space-between;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .bin-tile__hint {
+      font-size: 11px;
+      color: var(--danger);
+      margin-top: 4px;
+    }
 
     /* Modal panel */
-    #ar-panel-backdrop { position: absolute; inset: 0; display: flex; align-items: center;
-      justify-content: flex-end; padding: 16px; pointer-events: none;
-      visibility: hidden; }
-    #ar-panel-backdrop.open { visibility: visible; pointer-events: none; }
-    #ar-panel-backdrop.open .card { pointer-events: auto; }
+    #ar-panel-backdrop {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      padding: 16px;
+      pointer-events: none;
+      visibility: hidden;
+    }
+
+    #ar-panel-backdrop.open {
+      visibility: visible;
+      pointer-events: none;
+    }
+
+    #ar-panel-backdrop.open .card {
+      pointer-events: auto;
+    }
+
     /* On desktop/2D, panel slides to right so shelf stays visible */
     @media (min-width: 500px) {
-      #ar-panel-backdrop { align-items: flex-start; padding-top: 60px; }
+      #ar-panel-backdrop {
+        align-items: flex-start;
+        padding-top: 60px;
+      }
     }
-    .card { background: var(--surface); border: 1px solid var(--border); backdrop-filter: blur(16px);
-      border-radius: 16px; max-width: 420px; width: 100%; padding: 18px;
-      box-shadow: 0 20px 48px rgba(0,0,0,.7); animation: cardPop .2s ease-out; }
-    .card--warn { border-color: var(--warn); }
-    .card--ok { border-color: var(--ok); }
-    .card--danger { border-color: var(--danger); }
-    .card--accent { border-color: var(--accent); }
-    @keyframes cardPop { from { opacity:0; transform: translateY(10px) scale(.98); } to { opacity:1; transform: none; } }
-    .card__header { display: flex; justify-content: space-between; align-items: center;
-      border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom: 12px; }
-    .card__title { font-size: 14px; font-weight: 700; }
-    .card__badge { font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 999px;
-      background: rgba(88,166,255,.16); color: var(--accent); }
-    .card__body { font-size: 13px; line-height: 1.55; }
-    .card__line { padding: 4px 0; font-size: 12.5px; }
-    .card__box { background: rgba(13,17,23,.85); border: 1px solid var(--border);
-      border-radius: 10px; padding: 10px 12px; margin: 10px 0; font-size: 12px; }
-    .card__row { display: flex; justify-content: space-between; padding: 3px 0; }
-    .card__actions { display: flex; gap: 10px; margin-top: 14px; }
-    .card__actions .btn { flex: 1; }
 
-    .hud-bottom { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; position: relative; z-index: 20; }
-    .controls-row { display: flex; gap: 8px; max-width: 420px; width: 100%; }
-    .controls-row .btn { flex: 1; }
-    .voice-hints { font-size: 11px; color: var(--muted); text-align: center;
-      background: rgba(13,17,23,.8); padding: 6px 12px; border-radius: 999px;
-      border: 1px solid var(--border); }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      backdrop-filter: blur(16px);
+      border-radius: 16px;
+      max-width: 420px;
+      width: 100%;
+      padding: 18px;
+      box-shadow: 0 20px 48px rgba(0, 0, 0, .7);
+      animation: cardPop .2s ease-out;
+    }
+
+    .card--warn {
+      border-color: var(--warn);
+    }
+
+    .card--ok {
+      border-color: var(--ok);
+    }
+
+    .card--danger {
+      border-color: var(--danger);
+    }
+
+    .card--accent {
+      border-color: var(--accent);
+    }
+
+    @keyframes cardPop {
+      from {
+        opacity: 0;
+        transform: translateY(10px) scale(.98);
+      }
+
+      to {
+        opacity: 1;
+        transform: none;
+      }
+    }
+
+    .card__header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 10px;
+      margin-bottom: 12px;
+    }
+
+    .card__title {
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .card__badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: rgba(88, 166, 255, .16);
+      color: var(--accent);
+    }
+
+    .card__body {
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .card__line {
+      padding: 4px 0;
+      font-size: 12.5px;
+    }
+
+    .card__box {
+      background: rgba(13, 17, 23, .85);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin: 10px 0;
+      font-size: 12px;
+    }
+
+    .card__row {
+      display: flex;
+      justify-content: space-between;
+      padding: 3px 0;
+    }
+
+    .card__actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .card__actions .btn {
+      flex: 1;
+    }
+
+    .hud-bottom {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      position: relative;
+      z-index: 20;
+    }
+
+    .controls-row {
+      display: flex;
+      gap: 8px;
+      max-width: 420px;
+      width: 100%;
+    }
+
+    .controls-row .btn {
+      flex: 1;
+    }
+
+    .voice-hints {
+      font-size: 11px;
+      color: var(--muted);
+      text-align: center;
+      background: rgba(13, 17, 23, .8);
+      padding: 6px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+    }
   </style>
 </head>
+
 <body>
   <canvas id="webgl-canvas"></canvas>
 
@@ -143,7 +450,7 @@
         <button class="btn btn-ghost interactive" id="btn-reset">🔄 Reset Demo</button>
         <button class="btn btn-ghost interactive" id="btn-exit-ar" style="display:none;">🚪 Exit AR</button>
       </div>
-      <div class="voice-hints">Say: "restock Widget-A" · "approve PO" · "pay invoice"</div>
+      
     </div>
 
     <!-- Modal panel INSIDE #overlay — required for WebXR DOM overlay to render it -->
@@ -153,701 +460,705 @@
   </div>
 
   <script>
-  // ── Fallback data ─────────────────────────────────────────────────────────
-  const FALLBACK_SHELF_SCAN = {
-    type:"shelf", summary:"Bay A-14: 2 of 4 SKUs need attention.", action_required:true,
-    zones:[
-      {sku:"Widget-A",qty:0, status:"empty",color:"#ff3333"},
-      {sku:"Widget-B",qty:3, status:"low",  color:"#ffaa00"},
-      {sku:"Widget-C",qty:18,status:"ok",   color:"#00ff88"},
-      {sku:"Widget-D",qty:24,status:"ok",   color:"#00ff88"}
-    ]
-  };
-  const FALLBACK_DRAFT_PO = {
-    po_id:"PO-2026-847", supplier:"Apex Logistics", sku:"Widget-A",
-    qty:500, unit_price:8.20, total:4100.00, delivery_days:3
-  };
-  const FALLBACK_INVOICE = {
-    type:"invoice", supplier:"Apex Logistics", dates:["2026-11-14","2026-11-17"],
-    items:[{sku:"Widget-A",qty:500,cost:"8.20"}], total:"$4,100.00",
-    draft_instruction:"Approve PO for 500x Widget-A from Apex Logistics at $8.20/unit. Delivery in 3 days."
-  };
-  const INITIAL_BINS = [
-    {sku:"Widget-A",qty:0, status:"empty",color:"#ff3333"},
-    {sku:"Widget-B",qty:3, status:"low",  color:"#ffaa00"},
-    {sku:"Widget-C",qty:18,status:"ok",   color:"#00ff88"},
-    {sku:"Widget-D",qty:24,status:"ok",   color:"#00ff88"},
-    {sku:"Widget-E",qty:30,status:"ok",   color:"#00ff88"},
-    {sku:"Widget-F",qty:12,status:"ok",   color:"#00ff88"},
-    {sku:"Widget-G",qty:28,status:"ok",   color:"#00ff88"},
-    {sku:"Widget-H",qty:9, status:"low",  color:"#ffaa00"}
-  ];
-  const INTENT_LABELS = {
-    restock:"Restock Widget-A (A2A)", approve_po:"Approve PO",
-    reject_po:"Reject PO", pay_invoice:"Pay Invoice",
-    show_invoice:"Open Invoice", unknown:"Unknown"
-  };
+    // ── Fallback data ─────────────────────────────────────────────────────────
+    const FALLBACK_SHELF_SCAN = {
+      type: "shelf", summary: "Bay A-14: 2 of 4 SKUs need attention.", action_required: true,
+      zones: [
+        { sku: "Widget-A", qty: 0, status: "empty", color: "#ff3333" },
+        { sku: "Widget-B", qty: 3, status: "low", color: "#ffaa00" },
+        { sku: "Widget-C", qty: 18, status: "ok", color: "#00ff88" },
+        { sku: "Widget-D", qty: 24, status: "ok", color: "#00ff88" }
+      ]
+    };
+    const FALLBACK_DRAFT_PO = {
+      po_id: "PO-2026-847", supplier: "Apex Logistics", sku: "Widget-A",
+      qty: 500, unit_price: 8.20, total: 4100.00, delivery_days: 3
+    };
+    const FALLBACK_INVOICE = {
+      type: "invoice", supplier: "Apex Logistics", dates: ["2026-11-14", "2026-11-17"],
+      items: [{ sku: "Widget-A", qty: 500, cost: "8.20" }], total: "$4,100.00",
+      draft_instruction: "Approve PO for 500x Widget-A from Apex Logistics at $8.20/unit. Delivery in 3 days."
+    };
+    const INITIAL_BINS = [
+      { sku: "Widget-A", qty: 0, status: "empty", color: "#ff3333" },
+      { sku: "Widget-B", qty: 3, status: "low", color: "#ffaa00" },
+      { sku: "Widget-C", qty: 18, status: "ok", color: "#00ff88" },
+      { sku: "Widget-D", qty: 24, status: "ok", color: "#00ff88" },
+      { sku: "Widget-E", qty: 30, status: "ok", color: "#00ff88" },
+      { sku: "Widget-F", qty: 12, status: "ok", color: "#00ff88" },
+      { sku: "Widget-G", qty: 28, status: "ok", color: "#00ff88" },
+      { sku: "Widget-H", qty: 9, status: "low", color: "#ffaa00" }
+    ];
+    const INTENT_LABELS = {
+      restock: "Restock Widget-A (A2A)", approve_po: "Approve PO",
+      reject_po: "Reject PO", pay_invoice: "Pay Invoice",
+      show_invoice: "Open Invoice", unknown: "Unknown"
+    };
 
-  // ── App state ─────────────────────────────────────────────────────────────
-  let bins = JSON.parse(JSON.stringify(INITIAL_BINS));
-  let pendingPO = null, approvedPO = null, activeInvoice = null;
-let _prevHudHover = false;  // tracks if cursor was over mic button previous frame
-  let invoiceLocked = true, isNegotiating = false;
+    // ── App state ─────────────────────────────────────────────────────────────
+    let bins = JSON.parse(JSON.stringify(INITIAL_BINS));
+    let pendingPO = null, approvedPO = null, activeInvoice = null;
+    let _prevHudHover = false;  // tracks if cursor was over mic button previous frame
+    let invoiceLocked = true, isNegotiating = false;
 
-  // ── Three.js setup ────────────────────────────────────────────────────────
-  const canvas = document.getElementById("webgl-canvas");
-  const renderer = new THREE.WebGLRenderer({canvas, alpha:true, antialias:true});
-  renderer.setPixelRatio(window.devicePixelRatio);
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.xr.enabled = true;
-
-  const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.01, 20);
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.3));
-  const dir = new THREE.DirectionalLight(0xffffff, 1.0);
-  dir.position.set(1,3,2); scene.add(dir);
-
-  // Floor reticle (blue ring — only visible on horizontal surfaces)
-  const reticleGeo = new THREE.RingGeometry(0.12, 0.17, 32).rotateX(-Math.PI/2);
-  const reticle = new THREE.Mesh(reticleGeo,
-    new THREE.MeshBasicMaterial({color:0x0066ff, side:THREE.DoubleSide}));
-  reticle.matrixAutoUpdate = false;
-  reticle.visible = false;
-  scene.add(reticle);
-
-  // 3D shelf group (placed at floor hit-test position, stays in world space)
-  const shelfGroup = new THREE.Group();
-  shelfGroup.visible = false;
-  scene.add(shelfGroup);
-
-  let binMeshes = {};
-  let widgetAMesh = null;
-
-  function createLabelTexture(title, subtitle, bgColor, borderColor) {
-    const c = document.createElement("canvas");
-    c.width = 512; c.height = 192;
-    const ctx = c.getContext("2d");
-    ctx.fillStyle = bgColor || "#0d1117";
-    ctx.fillRect(0,0,512,192);
-    ctx.strokeStyle = borderColor || "#58a6ff";
-    ctx.lineWidth = 10;
-    ctx.strokeRect(5,5,502,182);
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 44px sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText(title, 256, 78);
-    ctx.fillStyle = borderColor || "#58a6ff";
-    ctx.font = "600 34px sans-serif";
-    ctx.fillText(subtitle, 256, 138);
-    const tex = new THREE.CanvasTexture(c);
-    tex.needsUpdate = true;
-    return tex;
-  }
-
-  function build3DShelf() {
-    while (shelfGroup.children.length) shelfGroup.remove(shelfGroup.children[0]);
-    binMeshes = {}; widgetAMesh = null;
-
-    const W=1.1, H=0.87, D=0.38;
-    const postGeo = new THREE.BoxGeometry(0.035, H, 0.035);
-    const postMat = new THREE.MeshStandardMaterial({color:0x484f58, metalness:0.7, roughness:0.35});
-    [[-W/2,H/2,-D/2],[W/2,H/2,-D/2],[-W/2,H/2,D/2],[W/2,H/2,D/2]].forEach(([x,y,z])=>{
-      const p = new THREE.Mesh(postGeo, postMat);
-      p.position.set(x,y,z); shelfGroup.add(p);
-    });
-
-    // 2 shelf planks + 8 SKU boxes
-    const plankGeo = new THREE.BoxGeometry(W+0.02, 0.025, D+0.02);
-    const plankMat = new THREE.MeshStandardMaterial({color:0x21262d, roughness:0.7});
-    [0.85, 0.32].forEach((sy, rowIdx) => {
-      const plank = new THREE.Mesh(plankGeo, plankMat);
-      plank.position.set(0, sy, 0); shelfGroup.add(plank);
-      for (let col=0; col<4; col++) {
-        const idx = rowIdx*4 + col;
-        const bin = bins[idx];
-        if (!bin) continue;
-        const bx = -0.39 + col*0.26;
-        const by = sy + 0.12;
-        const boxGeo = new THREE.BoxGeometry(0.21, 0.20, 0.28);
-        const col3 = new THREE.Color(bin.color);
-        const boxMat = new THREE.MeshStandardMaterial({
-          color: col3,
-          emissive: bin.sku==="Widget-A" ? col3 : new THREE.Color(0),
-          emissiveIntensity: bin.sku==="Widget-A" ? 0.35 : 0,
-          roughness: 0.45
-        });
-        const box = new THREE.Mesh(boxGeo, boxMat);
-        box.position.set(bx, by, 0);
-        box.userData = {sku: bin.sku};
-        const sub = bin.status==="empty" ? "0 u · TAP RESTOCK"
-                  : bin.status==="inbound" ? "500 u · INBOUND"
-                  : bin.status==="awaiting-invoice" ? "PO APPROVED · VALIDATE INV"
-                  : bin.qty+" u";
-        const labelTex = createLabelTexture(bin.sku, sub, "#0d1117", bin.color);
-        const label = new THREE.Mesh(new THREE.PlaneGeometry(0.19,0.08),
-          new THREE.MeshBasicMaterial({map:labelTex}));
-        label.position.set(0, 0, 0.142);
-        box.add(label); shelfGroup.add(box);
-        binMeshes[bin.sku] = {mesh:box, labelMesh:label};
-        if (bin.sku==="Widget-A") widgetAMesh = box;
-      }
-    });
-    // Re-attach header panel + spatial card + connector after shelf rebuild clears children
-    if (typeof hdrPanel !== "undefined") {
-      shelfGroup.add(hdrPanel);
-    }
-    if (typeof spatialCardGroup !== "undefined") {
-      shelfGroup.add(spatialCardGroup, connectorLine);
-    }
-  }
-
-  function update3DBin(sku, newQty, newStatus, newColor) {
-    const entry = binMeshes[sku]; if (!entry) return;
-    const col3 = new THREE.Color(newColor);
-    entry.mesh.material.color.copy(col3);
-    entry.mesh.material.emissive.setHex(newStatus==="empty"?0xff3333:0);
-    entry.mesh.material.emissiveIntensity = newStatus==="empty"?0.35:0;
-    const sub = newStatus==="inbound" ? "500 u · INBOUND"
-              : newStatus==="awaiting-invoice" ? "PO APPROVED · VALIDATE INV"
-              : newStatus==="empty" ? "0 u · TAP RESTOCK" : newQty+" u";
-    const tex = createLabelTexture(sku, sub, "#0d1117", newColor);
-    entry.labelMesh.material.map.dispose();
-    entry.labelMesh.material.map = tex;
-    entry.labelMesh.material.needsUpdate = true;
-  }
-
-  // ── Unified 3D Header Panel: Status + Voice + Reset (top of shelf, always visible in WebGL) ──
-  const hdrPanel = new THREE.Group();
-  hdrPanel.position.set(0, 1.92, 0);
-  shelfGroup.add(hdrPanel);
-
-  // Status text strip (top row)
-  const hudStatusCanvas = document.createElement("canvas");
-  hudStatusCanvas.width = 768; hudStatusCanvas.height = 80;
-  const hudStatusCtx = hudStatusCanvas.getContext("2d");
-  const hudStatusTex = new THREE.CanvasTexture(hudStatusCanvas);
-  const hudStatusMesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.84, 0.09),
-    new THREE.MeshBasicMaterial({ map: hudStatusTex, transparent: true, side: THREE.DoubleSide })
-  );
-  hudStatusMesh.position.set(0, 0.14, 0.01);
-  hdrPanel.add(hudStatusMesh);
-
-  function update3DHudStatus(msg, isListening=false) {
-    hudStatusCtx.clearRect(0, 0, 768, 80);
-    hudStatusCtx.fillStyle = "rgba(13,17,23,0.85)";
-    hudStatusCtx.beginPath();
-    hudStatusCtx.roundRect(4, 4, 760, 72, 12);
-    hudStatusCtx.fill();
-    hudStatusCtx.fillStyle = isListening ? "#ff7b72" : "#e6edf3";
-    hudStatusCtx.font = "600 26px sans-serif";
-    hudStatusCtx.textAlign = "center";
-    hudStatusCtx.fillText(String(msg || "Supply Chain XR · Ready").slice(0, 54), 384, 50);
-    hudStatusTex.needsUpdate = true;
-  }
-  update3DHudStatus("Supply Chain XR · Ready");
-
-  // Button row (below status strip)
-  const btn3DMicTex = createLabelTexture("🎤 Voice", "Pinch or Poke", "#0d1117", "#58a6ff");
-  const btn3DMic = new THREE.Mesh(
-    new THREE.BoxGeometry(0.38, 0.11, 0.025),
-    new THREE.MeshBasicMaterial({ map: btn3DMicTex })
-  );
-  btn3DMic.position.set(-0.21, 0, 0.01);
-  btn3DMic.userData = { hudAction: "voice" };
-  hdrPanel.add(btn3DMic);
-
-  const btn3DResetTex = createLabelTexture("🔄 Reset Demo", "Restore Initial State", "#0d1117", "#8b949e");
-  const btn3DReset = new THREE.Mesh(
-    new THREE.BoxGeometry(0.38, 0.11, 0.025),
-    new THREE.MeshBasicMaterial({ map: btn3DResetTex })
-  );
-  btn3DReset.position.set(0.21, 0, 0.01);
-  btn3DReset.userData = { hudAction: "reset" };
-  hdrPanel.add(btn3DReset);
-
-  function set3DMicListening(active) {
-    const tex = active
-      ? createLabelTexture("⏹ Listening...", "Speak command", "#2a1215", "#f85149")
-      : createLabelTexture("🎤 Voice", "Pinch or Poke", "#0d1117", "#58a6ff");
-    btn3DMic.material.map.dispose();
-    btn3DMic.material.map = tex;
-    btn3DMic.material.needsUpdate = true;
-  }
-  // hud3DGroup alias so existing references keep working
-  const hud3DGroup = hdrPanel;
-
-  // ── 3D Spatial Card (positioned directly above Widget-A with leader line) ──
-  const spatialCardGroup = new THREE.Group();
-  spatialCardGroup.visible = false;
-  shelfGroup.add(spatialCardGroup);
-
-  const connectorLineGeo = new THREE.BufferGeometry().setFromPoints([
-    new THREE.Vector3(-0.39, 1.07, 0.02),
-    new THREE.Vector3(-0.39, 1.24, 0.06)
-  ]);
-  const connectorLine = new THREE.Line(
-    connectorLineGeo,
-    new THREE.LineBasicMaterial({ color: 0x58a6ff })
-  );
-  connectorLine.visible = false;
-  shelfGroup.add(connectorLine);
-
-  build3DShelf();
-
-  const cardCanvas = document.createElement("canvas");
-  cardCanvas.width = 1024;
-  cardCanvas.height = 768;
-  const cardCtx = cardCanvas.getContext("2d");
-  const cardTex = new THREE.CanvasTexture(cardCanvas);
-  const cardPlane = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.72, 0.54),
-    new THREE.MeshBasicMaterial({ map: cardTex, side: THREE.DoubleSide })
-  );
-  spatialCardGroup.add(cardPlane);
-
-  // Interactive 3D hitboxes for Primary (left) and Secondary (right) card buttons
-  const cardBtnPrimary = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.30, 0.09),
-    new THREE.MeshBasicMaterial({ color: 0x238636, transparent: true, opacity: 0.01, side: THREE.DoubleSide })
-  );
-  cardBtnPrimary.position.set(-0.17, -0.19, 0.005);
-  cardBtnPrimary.userData = { action: null };
-  spatialCardGroup.add(cardBtnPrimary);
-  const cardBtnSecondary = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.30, 0.09),
-    new THREE.MeshBasicMaterial({ color: 0xda3633, transparent: true, opacity: 0.01, side: THREE.DoubleSide })
-  );
-  cardBtnSecondary.position.set(0.17, -0.19, 0.005);
-  cardBtnSecondary.userData = { action: null };
-  spatialCardGroup.add(cardBtnSecondary);
-
-  function renderSpatialCard(spec) {
-    if (!spec) {
-      spatialCardGroup.visible = false;
-      connectorLine.visible = false;
-      cardBtnPrimary.userData.action = null;
-      cardBtnSecondary.userData.action = null;
-      return;
-    }
-    const borderMap = { warn: "#d29922", ok: "#3fb950", danger: "#f85149", accent: "#58a6ff" };
-    const borderCol = borderMap[spec.accent || "accent"] || "#58a6ff";
-    cardCtx.fillStyle = "#0d1117";
-    cardCtx.fillRect(0, 0, 1024, 768);
-    cardCtx.strokeStyle = borderCol;
-    cardCtx.lineWidth = 14;
-    cardCtx.strokeRect(7, 7, 1010, 754);
-    // Header
-    cardCtx.fillStyle = "#161b22";
-    cardCtx.fillRect(14, 14, 996, 86);
-    cardCtx.fillStyle = "#ffffff";
-    cardCtx.font = "bold 36px sans-serif";
-    cardCtx.textAlign = "left";
-    cardCtx.fillText(spec.title || "Sovereign AI", 40, 68);
-    cardCtx.fillStyle = borderCol;
-    cardCtx.font = "bold 26px sans-serif";
-    cardCtx.textAlign = "right";
-    cardCtx.fillText(spec.badge || "", 984, 66);
-    // Body lines
-    cardCtx.textAlign = "left";
-    let y = 152;
-    (spec.lines || []).forEach(line => {
-      cardCtx.fillStyle = line.color || "#e6edf3";
-      cardCtx.font = line.bold ? "bold 28px sans-serif" : "26px sans-serif";
-      cardCtx.fillText(String(line.text || "").slice(0, 62), 42, y);
-      y += 44;
-    });
-    // Buttons
-    cardBtnPrimary.userData.action = spec.primaryAction || null;
-    cardBtnSecondary.userData.action = spec.secondaryAction || null;
-    if (spec.primaryLabel) {
-      cardCtx.fillStyle = spec.primaryColor || "#238636";
-      cardCtx.fillRect(48, 632, 430, 88);
-      cardCtx.fillStyle = "#ffffff";
-      cardCtx.font = "bold 30px sans-serif";
-      cardCtx.textAlign = "center";
-      cardCtx.fillText(spec.primaryLabel, 263, 686);
-    }
-    if (spec.secondaryLabel) {
-      cardCtx.fillStyle = spec.secondaryColor || "#30363d";
-      cardCtx.fillRect(546, 632, 430, 88);
-      cardCtx.fillStyle = "#ffffff";
-      cardCtx.font = "bold 30px sans-serif";
-      cardCtx.textAlign = "center";
-      cardCtx.fillText(spec.secondaryLabel, 761, 686);
-    }
-    cardTex.needsUpdate = true;
-    // Position spatial card directly above Widget-A (local x = -0.39, y = 1.50) so Widget-A stays clear
-    spatialCardGroup.position.set(-0.39, 1.50, 0.06);
-    spatialCardGroup.rotation.set(0, 0, 0);
-    spatialCardGroup.visible = true;
-    connectorLine.visible = true;
-  }
-
-  // ── Visible Quest-style Hands + Pointer Rays + Cursor Dot ─────────────────
-  const xrControllers = [renderer.xr.getController(0), renderer.xr.getController(1)];
-  const xrHands = [renderer.xr.getHand(0), renderer.xr.getHand(1)];
-  const handJointMeshes = [[], []];
-  let pokeCooldownUntil = 0;
-  const rayLineGeo = new THREE.BufferGeometry().setFromPoints([
-    new THREE.Vector3(0, 0, 0),
-    new THREE.Vector3(0, 0, -2.5)
-  ]);
-  const rayLineMat = new THREE.LineBasicMaterial({ color: 0x58a6ff, transparent: true, opacity: 0.85 });
-  const cursorDot = new THREE.Mesh(
-    new THREE.SphereGeometry(0.016, 16, 16),
-    new THREE.MeshBasicMaterial({ color: 0x00ff88 })
-  );
-  cursorDot.visible = false;
-  scene.add(cursorDot);
-  const jointSphereGeo = new THREE.SphereGeometry(0.0085, 10, 10);
-  const tipSphereGeo = new THREE.SphereGeometry(0.012, 12, 12);
-  xrControllers.forEach((ctrl, idx) => {
-    const line = new THREE.Line(rayLineGeo, rayLineMat);
-    line.name = "pointerRay";
-    ctrl.add(line);
-    scene.add(ctrl);
-    const hand = xrHands[idx];
-    for (let j = 0; j < 25; j++) {
-      const isTip = (j === 4 || j === 9); // thumb-tip or index-finger-tip
-      const m = new THREE.Mesh(
-        isTip ? tipSphereGeo : jointSphereGeo,
-        new THREE.MeshBasicMaterial({
-          color: isTip ? 0x00ff88 : 0x58a6ff,
-          transparent: true,
-          opacity: isTip ? 0.95 : 0.72
-        })
-      );
-      m.visible = false;
-      scene.add(m);
-      handJointMeshes[idx].push(m);
-    }
-    scene.add(hand);
-  });
-
-  // ── WebXR hit-test & floor-plane raycast state ────────────────────────────
-  let xrSession = null, xrRefSpace = null;
-  let hitTestSource = null, hitTestSourceRequested = false, shelfPlaced = false;
-  const raycaster = new THREE.Raycaster();
-  document.querySelectorAll(".interactive").forEach(el => {
-    el.addEventListener("beforexrselect", ev => ev.preventDefault());
-  });
-  function getControllerRay(ctrl) {
-    const tempMatrix = new THREE.Matrix4().identity().extractRotation(ctrl.matrixWorld);
-    const origin = new THREE.Vector3().setFromMatrixPosition(ctrl.matrixWorld);
-    const dir = new THREE.Vector3(0, 0, -1).applyMatrix4(tempMatrix).normalize();
-    // If controller matrix is identity (emulator / hand-tracking), fall back to camera gaze ray
-    if (origin.lengthSq() < 0.0001) {
-      camera.getWorldPosition(origin);
-      camera.getWorldDirection(dir);
-    }
-    return { origin, dir };
-  }
-  function handleSpatialCardHit(hitObj) {
-    if (!hitObj) return false;
-    if (hitObj === cardBtnPrimary && typeof cardBtnPrimary.userData.action === "function") {
-      cardBtnPrimary.userData.action();
-      return true;
-    }
-    if (hitObj === cardBtnSecondary && typeof cardBtnSecondary.userData.action === "function") {
-      cardBtnSecondary.userData.action();
-      return true;
-    }
-    return false;
-  }
-  function onXRSelect(event) {
-    const ctrl = event.target;
-    if (!shelfPlaced) {
-      if (reticle.visible) {
-        shelfGroup.position.setFromMatrixPosition(reticle.matrix);
-        shelfGroup.position.y = 0;
-        const camPos = new THREE.Vector3();
-        camera.getWorldPosition(camPos);
-        shelfGroup.lookAt(camPos.x, 0, camPos.z);
-        shelfGroup.visible = true;
-        shelfPlaced = true;
-        reticle.visible = false;
-setStatus("Shelf anchored on floor · Pinch or touch Widget-A");
-    setTimeout(() => update3DHudStatus(getVoiceTooltip()), 2000);
-        return;
-      }
-      // Auto-place mode: no reticle — fall through to shelf interaction if shelf is visible
-      if (!shelfGroup.visible) return;
-    }
-    const { origin, dir } = getControllerRay(ctrl);
-    raycaster.set(origin, dir);
-    // 1. Check 3D HUD Voice & Reset buttons
-    if (shelfGroup.visible) {
-      const hudHits = raycaster.intersectObjects([btn3DMic, btn3DReset], false);
-      if (hudHits.length > 0) {
-        const act = hudHits[0].object.userData.hudAction;
-        if (act === "voice") { btnMic.click(); return; }
-        if (act === "reset") { resetDemo(); return; }
-      }
-    }
-
-    // 2. Check 3D Spatial Card buttons when card is open
-    if (spatialCardGroup.visible) {
-      const cardHits = raycaster.intersectObjects([cardBtnPrimary, cardBtnSecondary], false);
-      if (cardHits.length > 0 && handleSpatialCardHit(cardHits[0].object)) {
-        return;
-      }
-    }
-
-    // 3. Check shelf / Widget-A (ignore header/pillars/hud3DGroup)
-    if (shelfGroup.visible && widgetAMesh) {
-      const shelfHits = raycaster.intersectObject(widgetAMesh, true);
-      if (shelfHits.length > 0) {
-        onShelfPinch();
-      }
-    }
-  }
-  let hitTestSupported = false;
-  async function startARSession() {
-    if (!navigator.xr) {
-      setStatus("WebXR unavailable · Check Quest browser version", true);
-      return;
-    }
-    if (xrSession) {
-      try { await xrSession.end(); xrSession = null; } catch(e) {}
-    }
-    hitTestSupported = false;
-    const withHitTest = await navigator.xr.isSessionSupported("immersive-ar").catch(() => false);
-    if (withHitTest) {
-      try {
-        const testSess = await navigator.xr.requestSession("immersive-ar", { requiredFeatures: ["hit-test", "local-floor"] });
-        await testSess.end();
-        hitTestSupported = true;
-      } catch(e) { hitTestSupported = false; }
-    }
-    const sessionOpts = hitTestSupported
-      ? { requiredFeatures: ["hit-test", "local-floor"],
-          optionalFeatures: ["hand-tracking", "dom-overlay"],
-          domOverlay: { root: document.getElementById("overlay") } }
-      : { requiredFeatures: ["local-floor"],
-          optionalFeatures: ["hand-tracking", "dom-overlay"],
-          domOverlay: { root: document.getElementById("overlay") } };
-    try {
-      xrSession = await navigator.xr.requestSession("immersive-ar", sessionOpts);
-      renderer.xr.setReferenceSpaceType("local-floor");
-      await renderer.xr.setSession(xrSession);
-      xrRefSpace = await xrSession.requestReferenceSpace("local-floor");
-      xrControllers.forEach(c => c.addEventListener("select", onXRSelect));
-      xrSession.addEventListener("end", () => {
-        xrControllers.forEach(c => c.removeEventListener("select", onXRSelect));
-        xrSession = null; hitTestSource = null;
-        hitTestSourceRequested = false; shelfPlaced = false; xrFrameCount = 0;
-        shelfGroup.visible = false; reticle.visible = false;
-        cursorDot.visible = false; spatialCardGroup.visible = false;
-        handJointMeshes.forEach(list => list.forEach(m => { m.visible = false; }));
-        document.body.classList.remove("xr-active");
-        document.getElementById("btn-exit-ar").style.display = "none";
-        setStatus("Supply Chain XR · Ready");
-      });
-      document.body.classList.add("xr-active");
-      document.getElementById("btn-exit-ar").style.display = "";
-      setStatus("🥽 Starting XR…", true);
-      setTimeout(() => update3DHudStatus(getVoiceTooltip()), 2500);
-      renderer.setAnimationLoop(onXRFrame);
-    } catch(err) {
-      setStatus("XR failed: " + (err?.message || "unknown error") + " · 2D mode", true);
-    }
-  }
-  function autoPlaceShelf() {
-    if (shelfPlaced) return;
-    const camPos = new THREE.Vector3();
-    camera.getWorldPosition(camPos);
-    const camDir = new THREE.Vector3();
-    camera.getWorldDirection(camDir);
-    camDir.y = 0; camDir.normalize();
-    shelfGroup.position.set(camPos.x + camDir.x * 1.35, 0, camPos.z + camDir.z * 1.35);
-    shelfGroup.lookAt(camPos.x, 0, camPos.z);
-    shelfGroup.visible = true;
-    shelfPlaced = true;
-    reticle.visible = false;
-setStatus("Shelf anchored on floor · Pinch or touch Widget-A");
-    setTimeout(() => update3DHudStatus(getVoiceTooltip()), 2000);
-  }
-  let xrFrameCount = 0;
-  function onXRFrame(time, frame) {
-    if (!frame || !xrSession) return;
-    if (!shelfPlaced) {
-      xrFrameCount++;
-      if (xrFrameCount < 60) return;
-      autoPlaceShelf();
-    }
-    // Pulse Widget-A when empty
-    if (widgetAMesh && bins[0] && bins[0].status === "empty") {
-      widgetAMesh.material.emissiveIntensity = 0.25 + 0.35 * Math.sin(time * 0.006);
-    }
-    // Update visible 3D hand joint spheres + check near-field index-finger poke
-    const widgetWorldPos = new THREE.Vector3();
-    if (widgetAMesh && shelfGroup.visible) widgetAMesh.getWorldPosition(widgetWorldPos);
-    xrHands.forEach((hand, hIdx) => {
-      const jointList = handJointMeshes[hIdx];
-      if (!hand || !hand.joints) {
-        jointList.forEach(m => { m.visible = false; });
-        return;
-      }
-      let jIdx = 0;
-      for (const jointName in hand.joints) {
-        const joint = hand.joints[jointName];
-        const mesh = jointList[jIdx++];
-        if (!mesh) break;
-        if (joint && joint.visible) {
-          mesh.visible = true;
-          mesh.position.copy(joint.position);
-          // Direct index-finger touch on 3D buttons or Widget-A
-          if (jointName === "index-finger-tip" && shelfPlaced && shelfGroup.visible && time > pokeCooldownUntil) {
-            const p = new THREE.Vector3();
-            btn3DMic.getWorldPosition(p);
-            if (joint.position.distanceTo(p) < 0.12) {
-              pokeCooldownUntil = time + 1200;
-              btnMic.click();
-              continue;
-            }
-            btn3DReset.getWorldPosition(p);
-            if (joint.position.distanceTo(p) < 0.12) {
-              pokeCooldownUntil = time + 1200;
-              resetDemo();
-              continue;
-            }
-            if (spatialCardGroup.visible) {
-              if (cardBtnPrimary.userData.action) {
-                cardBtnPrimary.getWorldPosition(p);
-                if (joint.position.distanceTo(p) < 0.13) {
-                  pokeCooldownUntil = time + 1200;
-                  cardBtnPrimary.userData.action();
-                  continue;
-                }
-              }
-              if (cardBtnSecondary.userData.action) {
-                cardBtnSecondary.getWorldPosition(p);
-                if (joint.position.distanceTo(p) < 0.13) {
-                  pokeCooldownUntil = time + 1200;
-                  cardBtnSecondary.userData.action();
-                  continue;
-                }
-              }
-            }
-            if (joint.position.distanceTo(widgetWorldPos) < 0.15) {
-              pokeCooldownUntil = time + 1200;
-              onShelfPinch();
-            }
-          }
-        } else {
-          mesh.visible = false;
-        }
-      }
-    });
-    // Update pointer ray & cursor dot from primary active controller/hand
-    cursorDot.visible = false;
-    const activeCtrl = xrControllers.find(c => c.visible) || xrControllers[0];
-    if (activeCtrl) {
-      const { origin, dir } = getControllerRay(activeCtrl);
-      raycaster.set(origin, dir);
-      {
-        const targets = [];
-        // HUD buttons first (priority over shelf geometry)
-        if (shelfGroup.visible) targets.push(btn3DMic, btn3DReset);
-        if (spatialCardGroup.visible) targets.push(cardBtnPrimary, cardBtnSecondary);
-        if (shelfGroup.visible) targets.push(...shelfGroup.children);
-        const hits = raycaster.intersectObjects(targets, true);
-        if (hits.length > 0) {
-          cursorDot.visible = true;
-          cursorDot.position.copy(hits[0].point);
-          // gaze-based HUD update removed — tooltip driven by workflow state changes instead
-        } else if (_prevHudHover) {
-          _prevHudHover = false;
-        }
-      }
-    }
-    renderer.render(scene, camera);
-  }
-
-  window.addEventListener("resize", () => {
-    camera.aspect = window.innerWidth/window.innerHeight;
-    camera.updateProjectionMatrix();
+    // ── Three.js setup ────────────────────────────────────────────────────────
+    const canvas = document.getElementById("webgl-canvas");
+    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(window.innerWidth, window.innerHeight);
-  });
+    renderer.xr.enabled = true;
 
-  // ── DOM references ────────────────────────────────────────────────────────
-  const statusText = document.getElementById("status-text");
-  const statusDot  = document.getElementById("status-dot");
-  const voiceFB    = document.getElementById("voice-feedback");
-  const panelBD    = document.getElementById("ar-panel-backdrop");
-  const arPanel    = document.getElementById("ar-panel");
-  const dbGrid     = document.getElementById("desktop-bin-grid");
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.3));
+    const dir = new THREE.DirectionalLight(0xffffff, 1.0);
+    dir.position.set(1, 3, 2); scene.add(dir);
 
-  function setStatus(text, isWarn=false) {
-    statusText.textContent = text;
-    statusDot.classList.toggle("warn", isWarn);
-    if (typeof update3DHudStatus === "function") update3DHudStatus(text, false);
-  }
+    // Floor reticle (blue ring — only visible on horizontal surfaces)
+    const reticleGeo = new THREE.RingGeometry(0.12, 0.17, 32).rotateX(-Math.PI / 2);
+    const reticle = new THREE.Mesh(reticleGeo,
+      new THREE.MeshBasicMaterial({ color: 0x0066ff, side: THREE.DoubleSide }));
+    reticle.matrixAutoUpdate = false;
+    reticle.visible = false;
+    scene.add(reticle);
 
-  // ── Desktop 2D fallback ───────────────────────────────────────────────────
-  function renderDesktopBins() {
-    dbGrid.innerHTML = bins.map(b => {
-      const hint = b.sku==="Widget-A"
-        ? (invoiceLocked ? "<div class='bin-tile__hint'>👆 Tap to restock</div>"
-                        : "<div class='bin-tile__hint'>🧾 Tap for invoice</div>")
-        : "";
-      const qty = b.status==="inbound" ? "500 u · Inbound"
-              : b.status==="awaiting-invoice" ? "Validate Invoice →"
-              : b.qty+" u";
-      return `<div class="bin-tile ${b.status}" data-sku="${b.sku}">
+    // 3D shelf group (placed at floor hit-test position, stays in world space)
+    const shelfGroup = new THREE.Group();
+    shelfGroup.visible = false;
+    scene.add(shelfGroup);
+
+    let binMeshes = {};
+    let widgetAMesh = null;
+
+    function createLabelTexture(title, subtitle, bgColor, borderColor) {
+      const c = document.createElement("canvas");
+      c.width = 512; c.height = 192;
+      const ctx = c.getContext("2d");
+      ctx.fillStyle = bgColor || "#0d1117";
+      ctx.fillRect(0, 0, 512, 192);
+      ctx.strokeStyle = borderColor || "#58a6ff";
+      ctx.lineWidth = 10;
+      ctx.strokeRect(5, 5, 502, 182);
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 44px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(title, 256, 78);
+      ctx.fillStyle = borderColor || "#58a6ff";
+      ctx.font = "600 34px sans-serif";
+      ctx.fillText(subtitle, 256, 138);
+      const tex = new THREE.CanvasTexture(c);
+      tex.needsUpdate = true;
+      return tex;
+    }
+
+    function build3DShelf() {
+      while (shelfGroup.children.length) shelfGroup.remove(shelfGroup.children[0]);
+      binMeshes = {}; widgetAMesh = null;
+
+      const W = 1.1, H = 0.87, D = 0.38;
+      const postGeo = new THREE.BoxGeometry(0.035, H, 0.035);
+      const postMat = new THREE.MeshStandardMaterial({ color: 0x484f58, metalness: 0.7, roughness: 0.35 });
+      [[-W / 2, H / 2, -D / 2], [W / 2, H / 2, -D / 2], [-W / 2, H / 2, D / 2], [W / 2, H / 2, D / 2]].forEach(([x, y, z]) => {
+        const p = new THREE.Mesh(postGeo, postMat);
+        p.position.set(x, y, z); shelfGroup.add(p);
+      });
+
+      // 2 shelf planks + 8 SKU boxes
+      const plankGeo = new THREE.BoxGeometry(W + 0.02, 0.025, D + 0.02);
+      const plankMat = new THREE.MeshStandardMaterial({ color: 0x21262d, roughness: 0.7 });
+      [0.85, 0.32].forEach((sy, rowIdx) => {
+        const plank = new THREE.Mesh(plankGeo, plankMat);
+        plank.position.set(0, sy, 0); shelfGroup.add(plank);
+        for (let col = 0; col < 4; col++) {
+          const idx = rowIdx * 4 + col;
+          const bin = bins[idx];
+          if (!bin) continue;
+          const bx = -0.39 + col * 0.26;
+          const by = sy + 0.12;
+          const boxGeo = new THREE.BoxGeometry(0.21, 0.20, 0.28);
+          const col3 = new THREE.Color(bin.color);
+          const boxMat = new THREE.MeshStandardMaterial({
+            color: col3,
+            emissive: bin.sku === "Widget-A" ? col3 : new THREE.Color(0),
+            emissiveIntensity: bin.sku === "Widget-A" ? 0.35 : 0,
+            roughness: 0.45
+          });
+          const box = new THREE.Mesh(boxGeo, boxMat);
+          box.position.set(bx, by, 0);
+          box.userData = { sku: bin.sku };
+          const sub = bin.status === "empty" ? "0 u · TAP RESTOCK"
+            : bin.status === "inbound" ? "500 u · INBOUND"
+              : bin.status === "awaiting-invoice" ? "PO APPROVED · VALIDATE INV"
+                : bin.qty + " u";
+          const labelTex = createLabelTexture(bin.sku, sub, "#0d1117", bin.color);
+          const label = new THREE.Mesh(new THREE.PlaneGeometry(0.19, 0.08),
+            new THREE.MeshBasicMaterial({ map: labelTex }));
+          label.position.set(0, 0, 0.142);
+          box.add(label); shelfGroup.add(box);
+          binMeshes[bin.sku] = { mesh: box, labelMesh: label };
+          if (bin.sku === "Widget-A") widgetAMesh = box;
+        }
+      });
+      // Re-attach header panel + spatial card + connector after shelf rebuild clears children
+      if (typeof hdrPanel !== "undefined") {
+        shelfGroup.add(hdrPanel);
+      }
+      if (typeof spatialCardGroup !== "undefined") {
+        shelfGroup.add(spatialCardGroup, connectorLine);
+      }
+    }
+
+    function update3DBin(sku, newQty, newStatus, newColor) {
+      const entry = binMeshes[sku]; if (!entry) return;
+      const col3 = new THREE.Color(newColor);
+      entry.mesh.material.color.copy(col3);
+      entry.mesh.material.emissive.setHex(newStatus === "empty" ? 0xff3333 : 0);
+      entry.mesh.material.emissiveIntensity = newStatus === "empty" ? 0.35 : 0;
+      const sub = newStatus === "inbound" ? "500 u · INBOUND"
+        : newStatus === "awaiting-invoice" ? "PO APPROVED · VALIDATE INV"
+          : newStatus === "empty" ? "0 u · TAP RESTOCK" : newQty + " u";
+      const tex = createLabelTexture(sku, sub, "#0d1117", newColor);
+      entry.labelMesh.material.map.dispose();
+      entry.labelMesh.material.map = tex;
+      entry.labelMesh.material.needsUpdate = true;
+    }
+
+    // ── Unified 3D Header Panel: Status + Voice + Reset (top of shelf, always visible in WebGL) ──
+    const hdrPanel = new THREE.Group();
+    hdrPanel.position.set(0, 1.92, 0);
+    shelfGroup.add(hdrPanel);
+
+    // Status text strip (top row)
+    const hudStatusCanvas = document.createElement("canvas");
+    hudStatusCanvas.width = 768; hudStatusCanvas.height = 80;
+    const hudStatusCtx = hudStatusCanvas.getContext("2d");
+    const hudStatusTex = new THREE.CanvasTexture(hudStatusCanvas);
+    const hudStatusMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.84, 0.09),
+      new THREE.MeshBasicMaterial({ map: hudStatusTex, transparent: true, side: THREE.DoubleSide })
+    );
+    hudStatusMesh.position.set(0, 0.14, 0.01);
+    hdrPanel.add(hudStatusMesh);
+
+    function update3DHudStatus(msg, isListening = false) {
+      hudStatusCtx.clearRect(0, 0, 768, 80);
+      hudStatusCtx.fillStyle = "rgba(13,17,23,0.85)";
+      hudStatusCtx.beginPath();
+      hudStatusCtx.roundRect(4, 4, 760, 72, 12);
+      hudStatusCtx.fill();
+      hudStatusCtx.fillStyle = isListening ? "#ff7b72" : "#e6edf3";
+      hudStatusCtx.font = "600 26px sans-serif";
+      hudStatusCtx.textAlign = "center";
+      hudStatusCtx.fillText(String(msg || "Supply Chain XR · Ready").slice(0, 54), 384, 50);
+      hudStatusTex.needsUpdate = true;
+    }
+    update3DHudStatus("Supply Chain XR · Ready");
+
+    // Button row (below status strip)
+    const btn3DMicTex = createLabelTexture("🎤 Voice", "Pinch or Poke", "#0d1117", "#58a6ff");
+    const btn3DMic = new THREE.Mesh(
+      new THREE.BoxGeometry(0.38, 0.11, 0.025),
+      new THREE.MeshBasicMaterial({ map: btn3DMicTex })
+    );
+    btn3DMic.position.set(-0.21, 0, 0.01);
+    btn3DMic.userData = { hudAction: "voice" };
+    hdrPanel.add(btn3DMic);
+
+    const btn3DResetTex = createLabelTexture("🔄 Reset Demo", "Restore Initial State", "#0d1117", "#8b949e");
+    const btn3DReset = new THREE.Mesh(
+      new THREE.BoxGeometry(0.38, 0.11, 0.025),
+      new THREE.MeshBasicMaterial({ map: btn3DResetTex })
+    );
+    btn3DReset.position.set(0.21, 0, 0.01);
+    btn3DReset.userData = { hudAction: "reset" };
+    hdrPanel.add(btn3DReset);
+
+    function set3DMicListening(active) {
+      const tex = active
+        ? createLabelTexture("⏹ Listening...", "Speak command", "#2a1215", "#f85149")
+        : createLabelTexture("🎤 Voice", "Pinch or Poke", "#0d1117", "#58a6ff");
+      btn3DMic.material.map.dispose();
+      btn3DMic.material.map = tex;
+      btn3DMic.material.needsUpdate = true;
+    }
+    // hud3DGroup alias so existing references keep working
+    const hud3DGroup = hdrPanel;
+
+    // ── 3D Spatial Card (positioned directly above Widget-A with leader line) ──
+    const spatialCardGroup = new THREE.Group();
+    spatialCardGroup.visible = false;
+    shelfGroup.add(spatialCardGroup);
+
+    const connectorLineGeo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(-0.39, 1.07, 0.02),
+      new THREE.Vector3(-0.39, 1.24, 0.06)
+    ]);
+    const connectorLine = new THREE.Line(
+      connectorLineGeo,
+      new THREE.LineBasicMaterial({ color: 0x58a6ff })
+    );
+    connectorLine.visible = false;
+    shelfGroup.add(connectorLine);
+
+    build3DShelf();
+
+    const cardCanvas = document.createElement("canvas");
+    cardCanvas.width = 1024;
+    cardCanvas.height = 768;
+    const cardCtx = cardCanvas.getContext("2d");
+    const cardTex = new THREE.CanvasTexture(cardCanvas);
+    const cardPlane = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.72, 0.54),
+      new THREE.MeshBasicMaterial({ map: cardTex, side: THREE.DoubleSide })
+    );
+    spatialCardGroup.add(cardPlane);
+
+    // Interactive 3D hitboxes for Primary (left) and Secondary (right) card buttons
+    const cardBtnPrimary = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.30, 0.09),
+      new THREE.MeshBasicMaterial({ color: 0x238636, transparent: true, opacity: 0.01, side: THREE.DoubleSide })
+    );
+    cardBtnPrimary.position.set(-0.17, -0.19, 0.005);
+    cardBtnPrimary.userData = { action: null };
+    spatialCardGroup.add(cardBtnPrimary);
+    const cardBtnSecondary = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.30, 0.09),
+      new THREE.MeshBasicMaterial({ color: 0xda3633, transparent: true, opacity: 0.01, side: THREE.DoubleSide })
+    );
+    cardBtnSecondary.position.set(0.17, -0.19, 0.005);
+    cardBtnSecondary.userData = { action: null };
+    spatialCardGroup.add(cardBtnSecondary);
+
+    function renderSpatialCard(spec) {
+      if (!spec) {
+        spatialCardGroup.visible = false;
+        connectorLine.visible = false;
+        cardBtnPrimary.userData.action = null;
+        cardBtnSecondary.userData.action = null;
+        return;
+      }
+      const borderMap = { warn: "#d29922", ok: "#3fb950", danger: "#f85149", accent: "#58a6ff" };
+      const borderCol = borderMap[spec.accent || "accent"] || "#58a6ff";
+      cardCtx.fillStyle = "#0d1117";
+      cardCtx.fillRect(0, 0, 1024, 768);
+      cardCtx.strokeStyle = borderCol;
+      cardCtx.lineWidth = 14;
+      cardCtx.strokeRect(7, 7, 1010, 754);
+      // Header
+      cardCtx.fillStyle = "#161b22";
+      cardCtx.fillRect(14, 14, 996, 86);
+      cardCtx.fillStyle = "#ffffff";
+      cardCtx.font = "bold 36px sans-serif";
+      cardCtx.textAlign = "left";
+      cardCtx.fillText(spec.title || "Sovereign AI", 40, 68);
+      cardCtx.fillStyle = borderCol;
+      cardCtx.font = "bold 26px sans-serif";
+      cardCtx.textAlign = "right";
+      cardCtx.fillText(spec.badge || "", 984, 66);
+      // Body lines
+      cardCtx.textAlign = "left";
+      let y = 152;
+      (spec.lines || []).forEach(line => {
+        cardCtx.fillStyle = line.color || "#e6edf3";
+        cardCtx.font = line.bold ? "bold 28px sans-serif" : "26px sans-serif";
+        cardCtx.fillText(String(line.text || "").slice(0, 62), 42, y);
+        y += 44;
+      });
+      // Buttons
+      cardBtnPrimary.userData.action = spec.primaryAction || null;
+      cardBtnSecondary.userData.action = spec.secondaryAction || null;
+      if (spec.primaryLabel) {
+        cardCtx.fillStyle = spec.primaryColor || "#238636";
+        cardCtx.fillRect(48, 632, 430, 88);
+        cardCtx.fillStyle = "#ffffff";
+        cardCtx.font = "bold 30px sans-serif";
+        cardCtx.textAlign = "center";
+        cardCtx.fillText(spec.primaryLabel, 263, 686);
+      }
+      if (spec.secondaryLabel) {
+        cardCtx.fillStyle = spec.secondaryColor || "#30363d";
+        cardCtx.fillRect(546, 632, 430, 88);
+        cardCtx.fillStyle = "#ffffff";
+        cardCtx.font = "bold 30px sans-serif";
+        cardCtx.textAlign = "center";
+        cardCtx.fillText(spec.secondaryLabel, 761, 686);
+      }
+      cardTex.needsUpdate = true;
+      // Position spatial card directly above Widget-A (local x = -0.39, y = 1.50) so Widget-A stays clear
+      spatialCardGroup.position.set(-0.39, 1.50, 0.06);
+      spatialCardGroup.rotation.set(0, 0, 0);
+      spatialCardGroup.visible = true;
+      connectorLine.visible = true;
+    }
+
+    // ── Visible Quest-style Hands + Pointer Rays + Cursor Dot ─────────────────
+    const xrControllers = [renderer.xr.getController(0), renderer.xr.getController(1)];
+    const xrHands = [renderer.xr.getHand(0), renderer.xr.getHand(1)];
+    const handJointMeshes = [[], []];
+    let pokeCooldownUntil = 0;
+    const rayLineGeo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(0, 0, 0),
+      new THREE.Vector3(0, 0, -2.5)
+    ]);
+    const rayLineMat = new THREE.LineBasicMaterial({ color: 0x58a6ff, transparent: true, opacity: 0.85 });
+    const cursorDot = new THREE.Mesh(
+      new THREE.SphereGeometry(0.016, 16, 16),
+      new THREE.MeshBasicMaterial({ color: 0x00ff88 })
+    );
+    cursorDot.visible = false;
+    scene.add(cursorDot);
+    const jointSphereGeo = new THREE.SphereGeometry(0.0085, 10, 10);
+    const tipSphereGeo = new THREE.SphereGeometry(0.012, 12, 12);
+    xrControllers.forEach((ctrl, idx) => {
+      const line = new THREE.Line(rayLineGeo, rayLineMat);
+      line.name = "pointerRay";
+      ctrl.add(line);
+      scene.add(ctrl);
+      const hand = xrHands[idx];
+      for (let j = 0; j < 25; j++) {
+        const isTip = (j === 4 || j === 9); // thumb-tip or index-finger-tip
+        const m = new THREE.Mesh(
+          isTip ? tipSphereGeo : jointSphereGeo,
+          new THREE.MeshBasicMaterial({
+            color: isTip ? 0x00ff88 : 0x58a6ff,
+            transparent: true,
+            opacity: isTip ? 0.95 : 0.72
+          })
+        );
+        m.visible = false;
+        scene.add(m);
+        handJointMeshes[idx].push(m);
+      }
+      scene.add(hand);
+    });
+
+    // ── WebXR hit-test & floor-plane raycast state ────────────────────────────
+    let xrSession = null, xrRefSpace = null;
+    let hitTestSource = null, hitTestSourceRequested = false, shelfPlaced = false;
+    const raycaster = new THREE.Raycaster();
+    document.querySelectorAll(".interactive").forEach(el => {
+      el.addEventListener("beforexrselect", ev => ev.preventDefault());
+    });
+    function getControllerRay(ctrl) {
+      const tempMatrix = new THREE.Matrix4().identity().extractRotation(ctrl.matrixWorld);
+      const origin = new THREE.Vector3().setFromMatrixPosition(ctrl.matrixWorld);
+      const dir = new THREE.Vector3(0, 0, -1).applyMatrix4(tempMatrix).normalize();
+      // If controller matrix is identity (emulator / hand-tracking), fall back to camera gaze ray
+      if (origin.lengthSq() < 0.0001) {
+        camera.getWorldPosition(origin);
+        camera.getWorldDirection(dir);
+      }
+      return { origin, dir };
+    }
+    function handleSpatialCardHit(hitObj) {
+      if (!hitObj) return false;
+      if (hitObj === cardBtnPrimary && typeof cardBtnPrimary.userData.action === "function") {
+        cardBtnPrimary.userData.action();
+        return true;
+      }
+      if (hitObj === cardBtnSecondary && typeof cardBtnSecondary.userData.action === "function") {
+        cardBtnSecondary.userData.action();
+        return true;
+      }
+      return false;
+    }
+    function onXRSelect(event) {
+      const ctrl = event.target;
+      if (!shelfPlaced) {
+        if (reticle.visible) {
+          shelfGroup.position.setFromMatrixPosition(reticle.matrix);
+          shelfGroup.position.y = 0;
+          const camPos = new THREE.Vector3();
+          camera.getWorldPosition(camPos);
+          shelfGroup.lookAt(camPos.x, 0, camPos.z);
+          shelfGroup.visible = true;
+          shelfPlaced = true;
+          reticle.visible = false;
+          setStatus("Shelf anchored on floor · Pinch or touch Widget-A");
+          setTimeout(() => update3DHudStatus(getVoiceTooltip()), 2000);
+          return;
+        }
+        // Auto-place mode: no reticle — fall through to shelf interaction if shelf is visible
+        if (!shelfGroup.visible) return;
+      }
+      const { origin, dir } = getControllerRay(ctrl);
+      raycaster.set(origin, dir);
+      // 1. Check 3D HUD Voice & Reset buttons
+      if (shelfGroup.visible) {
+        const hudHits = raycaster.intersectObjects([btn3DMic, btn3DReset], false);
+        if (hudHits.length > 0) {
+          const act = hudHits[0].object.userData.hudAction;
+          if (act === "voice") { btnMic.click(); return; }
+          if (act === "reset") { resetDemo(); return; }
+        }
+      }
+
+      // 2. Check 3D Spatial Card buttons when card is open
+      if (spatialCardGroup.visible) {
+        const cardHits = raycaster.intersectObjects([cardBtnPrimary, cardBtnSecondary], false);
+        if (cardHits.length > 0 && handleSpatialCardHit(cardHits[0].object)) {
+          return;
+        }
+      }
+
+      // 3. Check shelf / Widget-A (ignore header/pillars/hud3DGroup)
+      if (shelfGroup.visible && widgetAMesh) {
+        const shelfHits = raycaster.intersectObject(widgetAMesh, true);
+        if (shelfHits.length > 0) {
+          onShelfPinch();
+        }
+      }
+    }
+    let hitTestSupported = false;
+    async function startARSession() {
+      if (!navigator.xr) {
+        setStatus("WebXR unavailable · Check Quest browser version", true);
+        return;
+      }
+      if (xrSession) {
+        try { await xrSession.end(); xrSession = null; } catch (e) { }
+      }
+      hitTestSupported = false;
+      const withHitTest = await navigator.xr.isSessionSupported("immersive-ar").catch(() => false);
+      if (withHitTest) {
+        try {
+          const testSess = await navigator.xr.requestSession("immersive-ar", { requiredFeatures: ["hit-test", "local-floor"] });
+          await testSess.end();
+          hitTestSupported = true;
+        } catch (e) { hitTestSupported = false; }
+      }
+      const sessionOpts = hitTestSupported
+        ? {
+          requiredFeatures: ["hit-test", "local-floor"],
+          optionalFeatures: ["hand-tracking", "dom-overlay"],
+          domOverlay: { root: document.getElementById("overlay") }
+        }
+        : {
+          requiredFeatures: ["local-floor"],
+          optionalFeatures: ["hand-tracking", "dom-overlay"],
+          domOverlay: { root: document.getElementById("overlay") }
+        };
+      try {
+        xrSession = await navigator.xr.requestSession("immersive-ar", sessionOpts);
+        renderer.xr.setReferenceSpaceType("local-floor");
+        await renderer.xr.setSession(xrSession);
+        xrRefSpace = await xrSession.requestReferenceSpace("local-floor");
+        xrControllers.forEach(c => c.addEventListener("select", onXRSelect));
+        xrSession.addEventListener("end", () => {
+          xrControllers.forEach(c => c.removeEventListener("select", onXRSelect));
+          xrSession = null; hitTestSource = null;
+          hitTestSourceRequested = false; shelfPlaced = false; xrFrameCount = 0;
+          shelfGroup.visible = false; reticle.visible = false;
+          cursorDot.visible = false; spatialCardGroup.visible = false;
+          handJointMeshes.forEach(list => list.forEach(m => { m.visible = false; }));
+          document.body.classList.remove("xr-active");
+          document.getElementById("btn-exit-ar").style.display = "none";
+          setStatus("Supply Chain XR · Ready");
+        });
+        document.body.classList.add("xr-active");
+        document.getElementById("btn-exit-ar").style.display = "";
+        setStatus("🥽 Starting XR…", true);
+        setTimeout(() => update3DHudStatus(getVoiceTooltip()), 2500);
+        renderer.setAnimationLoop(onXRFrame);
+      } catch (err) {
+        setStatus("XR failed: " + (err?.message || "unknown error") + " · 2D mode", true);
+      }
+    }
+    function autoPlaceShelf() {
+      if (shelfPlaced) return;
+      const camPos = new THREE.Vector3();
+      camera.getWorldPosition(camPos);
+      const camDir = new THREE.Vector3();
+      camera.getWorldDirection(camDir);
+      camDir.y = 0; camDir.normalize();
+      shelfGroup.position.set(camPos.x + camDir.x * 1.35, 0, camPos.z + camDir.z * 1.35);
+      shelfGroup.lookAt(camPos.x, 0, camPos.z);
+      shelfGroup.visible = true;
+      shelfPlaced = true;
+      reticle.visible = false;
+      setStatus("Shelf anchored on floor · Pinch or touch Widget-A");
+      setTimeout(() => update3DHudStatus(getVoiceTooltip()), 2000);
+    }
+    let xrFrameCount = 0;
+    function onXRFrame(time, frame) {
+      if (!frame || !xrSession) return;
+      if (!shelfPlaced) {
+        xrFrameCount++;
+        if (xrFrameCount < 60) return;
+        autoPlaceShelf();
+      }
+      // Pulse Widget-A when empty
+      if (widgetAMesh && bins[0] && bins[0].status === "empty") {
+        widgetAMesh.material.emissiveIntensity = 0.25 + 0.35 * Math.sin(time * 0.006);
+      }
+      // Update visible 3D hand joint spheres + check near-field index-finger poke
+      const widgetWorldPos = new THREE.Vector3();
+      if (widgetAMesh && shelfGroup.visible) widgetAMesh.getWorldPosition(widgetWorldPos);
+      xrHands.forEach((hand, hIdx) => {
+        const jointList = handJointMeshes[hIdx];
+        if (!hand || !hand.joints) {
+          jointList.forEach(m => { m.visible = false; });
+          return;
+        }
+        let jIdx = 0;
+        for (const jointName in hand.joints) {
+          const joint = hand.joints[jointName];
+          const mesh = jointList[jIdx++];
+          if (!mesh) break;
+          if (joint && joint.visible) {
+            mesh.visible = true;
+            mesh.position.copy(joint.position);
+            // Direct index-finger touch on 3D buttons or Widget-A
+            if (jointName === "index-finger-tip" && shelfPlaced && shelfGroup.visible && time > pokeCooldownUntil) {
+              const p = new THREE.Vector3();
+              btn3DMic.getWorldPosition(p);
+              if (joint.position.distanceTo(p) < 0.12) {
+                pokeCooldownUntil = time + 1200;
+                btnMic.click();
+                continue;
+              }
+              btn3DReset.getWorldPosition(p);
+              if (joint.position.distanceTo(p) < 0.12) {
+                pokeCooldownUntil = time + 1200;
+                resetDemo();
+                continue;
+              }
+              if (spatialCardGroup.visible) {
+                if (cardBtnPrimary.userData.action) {
+                  cardBtnPrimary.getWorldPosition(p);
+                  if (joint.position.distanceTo(p) < 0.13) {
+                    pokeCooldownUntil = time + 1200;
+                    cardBtnPrimary.userData.action();
+                    continue;
+                  }
+                }
+                if (cardBtnSecondary.userData.action) {
+                  cardBtnSecondary.getWorldPosition(p);
+                  if (joint.position.distanceTo(p) < 0.13) {
+                    pokeCooldownUntil = time + 1200;
+                    cardBtnSecondary.userData.action();
+                    continue;
+                  }
+                }
+              }
+              if (joint.position.distanceTo(widgetWorldPos) < 0.15) {
+                pokeCooldownUntil = time + 1200;
+                onShelfPinch();
+              }
+            }
+          } else {
+            mesh.visible = false;
+          }
+        }
+      });
+      // Update pointer ray & cursor dot from primary active controller/hand
+      cursorDot.visible = false;
+      const activeCtrl = xrControllers.find(c => c.visible) || xrControllers[0];
+      if (activeCtrl) {
+        const { origin, dir } = getControllerRay(activeCtrl);
+        raycaster.set(origin, dir);
+        {
+          const targets = [];
+          // HUD buttons first (priority over shelf geometry)
+          if (shelfGroup.visible) targets.push(btn3DMic, btn3DReset);
+          if (spatialCardGroup.visible) targets.push(cardBtnPrimary, cardBtnSecondary);
+          if (shelfGroup.visible) targets.push(...shelfGroup.children);
+          const hits = raycaster.intersectObjects(targets, true);
+          if (hits.length > 0) {
+            cursorDot.visible = true;
+            cursorDot.position.copy(hits[0].point);
+            // gaze-based HUD update removed — tooltip driven by workflow state changes instead
+          } else if (_prevHudHover) {
+            _prevHudHover = false;
+          }
+        }
+      }
+      renderer.render(scene, camera);
+    }
+
+    window.addEventListener("resize", () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // ── DOM references ────────────────────────────────────────────────────────
+    const statusText = document.getElementById("status-text");
+    const statusDot = document.getElementById("status-dot");
+    const voiceFB = document.getElementById("voice-feedback");
+    const panelBD = document.getElementById("ar-panel-backdrop");
+    const arPanel = document.getElementById("ar-panel");
+    const dbGrid = document.getElementById("desktop-bin-grid");
+
+    function setStatus(text, isWarn = false) {
+      statusText.textContent = text;
+      statusDot.classList.toggle("warn", isWarn);
+      if (typeof update3DHudStatus === "function") update3DHudStatus(text, false);
+    }
+
+    // ── Desktop 2D fallback ───────────────────────────────────────────────────
+    function renderDesktopBins() {
+      dbGrid.innerHTML = bins.map(b => {
+        const hint = b.sku === "Widget-A"
+          ? (invoiceLocked ? "<div class='bin-tile__hint'>👆 Tap to restock</div>"
+            : "<div class='bin-tile__hint'>🧾 Tap for invoice</div>")
+          : "";
+        const qty = b.status === "inbound" ? "500 u · Inbound"
+          : b.status === "awaiting-invoice" ? "Validate Invoice →"
+            : b.qty + " u";
+        return `<div class="bin-tile ${b.status}" data-sku="${b.sku}">
         <div class="bin-tile__top"><span>${b.sku}</span><span style="color:${b.color}">${qty}</span></div>
         ${hint}</div>`;
-    }).join("");
-    const tile = dbGrid.querySelector('[data-sku="Widget-A"]');
-    if (tile) tile.addEventListener("click", onShelfPinch);
-  }
-  renderDesktopBins();
+      }).join("");
+      const tile = dbGrid.querySelector('[data-sku="Widget-A"]');
+      if (tile) tile.addEventListener("click", onShelfPinch);
+    }
+    renderDesktopBins();
 
-  // ── Panel system (2D DOM + 3D WebGL Spatial Card for Quest 2) ─────────────
-  function openPanel(html, accent="accent", spatialSpec=null) {
-    arPanel.innerHTML = `<div class="card card--${accent}">${html}</div>`;
-    panelBD.classList.add("open");
-    arPanel.querySelectorAll("button").forEach(btn =>
-      btn.addEventListener("beforexrselect", ev => ev.preventDefault()));
-    renderSpatialCard(spatialSpec);
-  }
-  function closePanel() {
-    panelBD.classList.remove("open");
-    renderSpatialCard(null);
-  }
+    // ── Panel system (2D DOM + 3D WebGL Spatial Card for Quest 2) ─────────────
+    function openPanel(html, accent = "accent", spatialSpec = null) {
+      arPanel.innerHTML = `<div class="card card--${accent}">${html}</div>`;
+      panelBD.classList.add("open");
+      arPanel.querySelectorAll("button").forEach(btn =>
+        btn.addEventListener("beforexrselect", ev => ev.preventDefault()));
+      renderSpatialCard(spatialSpec);
+    }
+    function closePanel() {
+      panelBD.classList.remove("open");
+      renderSpatialCard(null);
+    }
 
-  // ── Supply chain workflows ────────────────────────────────────────────────
-  function onShelfPinch() {
-    if (!invoiceLocked) { onInvoicePinch(); return; }
-    triggerAgentRestock();
-  }
+    // ── Supply chain workflows ────────────────────────────────────────────────
+    function onShelfPinch() {
+      if (!invoiceLocked) { onInvoicePinch(); return; }
+      triggerAgentRestock();
+    }
 
-  // A2A negotiation log — populated from /api/vr/negotiate (Muse or fallback)
-  let a2aLog = [
-    {icon:"🔍", text:"Widget-A: <strong>0 units</strong> — restock triggered"},
-    {icon:"📡", text:"RFQ broadcast to 3 registered suppliers"},
-    {icon:"💬", text:"Apex Logistics bid: <strong>$8.20/u · 3 days</strong>"},
-    {icon:"💬", text:"Global Parts Co bid: <strong>$8.75/u · 6 days</strong>"},
-    {icon:"💬", text:"FastShip Inc bid: <strong>$9.10/u · 2 days</strong>"},
-    {icon:"🧠", text:"Muse evaluated: cost vs lead-time vs reliability"},
-    {icon:"✅", text:"Selected: <strong>Apex Logistics</strong> — best score"},
-  ];
+    // A2A negotiation log — populated from /api/vr/negotiate (Muse or fallback)
+    let a2aLog = [
+      { icon: "🔍", text: "Widget-A: <strong>0 units</strong> — restock triggered" },
+      { icon: "📡", text: "RFQ broadcast to 3 registered suppliers" },
+      { icon: "💬", text: "Apex Logistics bid: <strong>$8.20/u · 3 days</strong>" },
+      { icon: "💬", text: "Global Parts Co bid: <strong>$8.75/u · 6 days</strong>" },
+      { icon: "💬", text: "FastShip Inc bid: <strong>$9.10/u · 2 days</strong>" },
+      { icon: "🧠", text: "Muse evaluated: cost vs lead-time vs reliability" },
+      { icon: "✅", text: "Selected: <strong>Apex Logistics</strong> — best score" },
+    ];
 
-  function a2aLogHTML() {
-    return `<div style="margin-bottom:10px;">
+    function a2aLogHTML() {
+      return `<div style="margin-bottom:10px;">
       <div style="font-size:11px;font-weight:700;color:var(--accent);letter-spacing:.05em;margin-bottom:6px;">A2A NEGOTIATION LOG · muse-spark-1.3</div>
-      ${a2aLog.map(l=>`<div style="font-size:11.5px;padding:3px 0;display:flex;gap:7px;border-bottom:1px solid rgba(48,54,61,.5);">
+      ${a2aLog.map(l => `<div style="font-size:11.5px;padding:3px 0;display:flex;gap:7px;border-bottom:1px solid rgba(48,54,61,.5);">
         <span>${l.icon}</span><span>${l.text}</span></div>`).join("")}
     </div>`;
-  }
+    }
 
-  async function triggerAgentRestock() {
-    if (isNegotiating) return;
-    isNegotiating = true;
-    setStatus("SAM negotiating with suppliers…", true);
-    // Show spinner while SAM/Muse evaluates bids
-    openPanel(`<div class="card__header">
+    async function triggerAgentRestock() {
+      if (isNegotiating) return;
+      isNegotiating = true;
+      setStatus("SAM negotiating with suppliers…", true);
+      // Show spinner while SAM/Muse evaluates bids
+      openPanel(`<div class="card__header">
       <span class="card__title">🤖 A2A Procurement</span>
       <span class="card__badge">SAM · muse-spark-1.3</span></div>
       <div class="card__body">
@@ -855,41 +1166,41 @@ setStatus("Shelf anchored on floor · Pinch or touch Widget-A");
           ⏳ SAM broadcasting RFQ to suppliers…
         </div>
       </div>`, "accent", {
-      title: "🤖 A2A Procurement",
-      badge: "SAM · muse-spark-1.3",
-      accent: "accent",
-      lines: [
-        { text: "Widget-A: 0 units — stockout detected", color: "#f85149", bold: true },
-        { text: "Broadcasting RFQ to 3 suppliers..." },
-        { text: "Evaluating cost, lead time & reliability..." }
-      ]
-    });
-    let negotiation = null;
-    try {
-      const res = await fetch("/api/vr/negotiate", {
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({sku:"Widget-A", qty:500})
+        title: "🤖 A2A Procurement",
+        badge: "SAM · muse-spark-1.3",
+        accent: "accent",
+        lines: [
+          { text: "Widget-A: 0 units — stockout detected", color: "#f85149", bold: true },
+          { text: "Broadcasting RFQ to 3 suppliers..." },
+          { text: "Evaluating cost, lead time & reliability..." }
+        ]
       });
-      negotiation = await res.json();
-      // Update A2A log from server response (real Muse or fallback)
-      if (negotiation.log) a2aLog = negotiation.log;
-      if (negotiation.draft_po) pendingPO = negotiation.draft_po;
-      else pendingPO = {...FALLBACK_DRAFT_PO};
-    } catch {
-      pendingPO = {...FALLBACK_DRAFT_PO};
-    } finally { isNegotiating = false; }
-    const badge = negotiation?.powered_by_muse ? "SAM · Muse Live 🟢" : "SAM · muse-spark-1.3";
-    renderPoCard(pendingPO, badge);
-    setStatus('PO ready · Approve or reject', true);
-    update3DHudStatus(getVoiceTooltip());
-  }
+      let negotiation = null;
+      try {
+        const res = await fetch("/api/vr/negotiate", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sku: "Widget-A", qty: 500 })
+        });
+        negotiation = await res.json();
+        // Update A2A log from server response (real Muse or fallback)
+        if (negotiation.log) a2aLog = negotiation.log;
+        if (negotiation.draft_po) pendingPO = negotiation.draft_po;
+        else pendingPO = { ...FALLBACK_DRAFT_PO };
+      } catch {
+        pendingPO = { ...FALLBACK_DRAFT_PO };
+      } finally { isNegotiating = false; }
+      const badge = negotiation?.powered_by_muse ? "SAM · Muse Live 🟢" : "SAM · muse-spark-1.3";
+      renderPoCard(pendingPO, badge);
+      setStatus('PO ready · Approve or reject', true);
+      update3DHudStatus(getVoiceTooltip());
+    }
 
-  function renderPoCard(po, badge) {
-    badge = badge || "SAM · muse-spark-1.3";
-    // A2A log stays visible above the PO
-    openPanel(`<div class="card__header">
+    function renderPoCard(po, badge) {
+      badge = badge || "SAM · muse-spark-1.3";
+      // A2A log stays visible above the PO
+      openPanel(`<div class="card__header">
       <span class="card__title">⏸ Purchase Order</span>
-      <span class="card__badge">${po.po_id||"PO-2026-847"}</span></div>
+      <span class="card__badge">${po.po_id || "PO-2026-847"}</span></div>
       <div class="card__body">
         ${a2aLogHTML()}
         <div class="card__box">
@@ -904,74 +1215,74 @@ setStatus("Shelf anchored on floor · Pinch or touch Widget-A");
           <button class="btn btn-danger interactive" id="btn-reject-po">✗ Reject</button>
         </div>
       </div>`, "warn", {
-      title: "⏸ Purchase Order Approval",
-      badge: po.po_id || "PO-2026-847",
-      accent: "warn",
-      lines: [
-        { text: `Winner: ${po.supplier} (Best Score)`, color: "#3fb950", bold: true },
-        { text: `Item: ${po.sku} × ${po.qty} units` },
-        { text: `Unit Price: $${Number(po.unit_price).toFixed(2)} · Delivery: ${po.delivery_days} days` },
-        { text: `Total Cost: $${Number(po.total).toLocaleString()}`, color: "#58a6ff", bold: true },
-        { text: "Pinch Approve PO below to authorize:", color: "#8b949e" }
-      ],
-      primaryLabel: "✅ Approve PO",
-      primaryColor: "#238636",
-      primaryAction: approveAgentPO,
-      secondaryLabel: "✗ Reject",
-      secondaryColor: "#da3633",
-      secondaryAction: rejectAgentPO
-    });
-    document.getElementById("btn-approve-po")?.addEventListener("click", approveAgentPO);
-    document.getElementById("btn-reject-po")?.addEventListener("click", rejectAgentPO);
+        title: "⏸ Purchase Order Approval",
+        badge: po.po_id || "PO-2026-847",
+        accent: "warn",
+        lines: [
+          { text: `Winner: ${po.supplier} (Best Score)`, color: "#3fb950", bold: true },
+          { text: `Item: ${po.sku} × ${po.qty} units` },
+          { text: `Unit Price: $${Number(po.unit_price).toFixed(2)} · Delivery: ${po.delivery_days} days` },
+          { text: `Total Cost: $${Number(po.total).toLocaleString()}`, color: "#58a6ff", bold: true },
+          { text: "Pinch Approve PO below to authorize:", color: "#8b949e" }
+        ],
+        primaryLabel: "✅ Approve PO",
+        primaryColor: "#238636",
+        primaryAction: approveAgentPO,
+        secondaryLabel: "✗ Reject",
+        secondaryColor: "#da3633",
+        secondaryAction: rejectAgentPO
+      });
+      document.getElementById("btn-approve-po")?.addEventListener("click", approveAgentPO);
+      document.getElementById("btn-reject-po")?.addEventListener("click", rejectAgentPO);
 
-    // Remove old a2aLog mesh if exists
-    const oldLog = spatialCardGroup.getObjectByName("a2aLogMesh");
-    if (oldLog) {
-      if (oldLog.material.map) oldLog.material.map.dispose();
-      oldLog.material.dispose();
-      spatialCardGroup.remove(oldLog);
+      // Remove old a2aLog mesh if exists
+      const oldLog = spatialCardGroup.getObjectByName("a2aLogMesh");
+      if (oldLog) {
+        if (oldLog.material.map) oldLog.material.map.dispose();
+        oldLog.material.dispose();
+        spatialCardGroup.remove(oldLog);
+      }
+
+      // Create a2a log panel to the LEFT of PO card
+      const logCanvas = document.createElement("canvas");
+      logCanvas.width = 512; logCanvas.height = 320;
+      const logCtx = logCanvas.getContext("2d");
+      // Draw dark background with rounded corners
+      logCtx.fillStyle = "#0d1117";
+      logCtx.beginPath();
+      logCtx.roundRect(0, 0, 512, 320, 16);
+      logCtx.fill();
+      // Draw header
+      logCtx.fillStyle = "#58a6ff";
+      logCtx.font = "bold 20px monospace";
+      logCtx.textAlign = "left";
+      logCtx.fillText("A2A NEGOTIATION LOG · muse-spark-1.3", 16, 36);
+      // Draw log entries
+      logCtx.font = "16px monospace";
+      logCtx.fillStyle = "#c9d1d9";
+      a2aLog.forEach((l, i) => {
+        logCtx.fillText(l.icon + " " + l.text.replace(/<[^>]+>/g, ""), 16, 70 + i * 36);
+      });
+      const logTex = new THREE.CanvasTexture(logCanvas);
+      const logMat = new THREE.MeshBasicMaterial({ map: logTex, transparent: true, side: THREE.DoubleSide });
+      const logMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.32), logMat);
+      logMesh.name = "a2aLogMesh";
+      logMesh.position.set(-0.72, 0, 0.01);  // 0.72m left clears 0.78/2=0.39m half-width of PO card
+      spatialCardGroup.add(logMesh);
     }
 
-    // Create a2a log panel to the LEFT of PO card
-    const logCanvas = document.createElement("canvas");
-    logCanvas.width = 512; logCanvas.height = 320;
-    const logCtx = logCanvas.getContext("2d");
-    // Draw dark background with rounded corners
-    logCtx.fillStyle = "#0d1117";
-    logCtx.beginPath();
-    logCtx.roundRect(0, 0, 512, 320, 16);
-    logCtx.fill();
-    // Draw header
-    logCtx.fillStyle = "#58a6ff";
-    logCtx.font = "bold 20px monospace";
-    logCtx.textAlign = "left";
-    logCtx.fillText("A2A NEGOTIATION LOG · muse-spark-1.3", 16, 36);
-    // Draw log entries
-    logCtx.font = "16px monospace";
-    logCtx.fillStyle = "#c9d1d9";
-    a2aLog.forEach((l, i) => {
-      logCtx.fillText(l.icon + " " + l.text.replace(/<[^>]+>/g, ""), 16, 70 + i * 36);
-    });
-    const logTex = new THREE.CanvasTexture(logCanvas);
-    const logMat = new THREE.MeshBasicMaterial({ map: logTex, transparent: true, side: THREE.DoubleSide });
-    const logMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.32), logMat);
-    logMesh.name = "a2aLogMesh";
-    logMesh.position.set(-0.72, 0, 0.01);  // 0.72m left clears 0.78/2=0.39m half-width of PO card
-    spatialCardGroup.add(logMesh);
-  }
-
-  function approveAgentPO() {
-    if (!pendingPO) return;
-    approvedPO = {...pendingPO}; pendingPO = null;
-    invoiceLocked = false;
-    // Widget-A stays EMPTY visually until invoice is verified & paid
-    // Just show "awaiting invoice" hint on the bin
-    bins[0].status = "awaiting-invoice"; bins[0].color = "#aa44ff";
-    renderDesktopBins();
-    update3DBin("Widget-A", 0, "awaiting-invoice", "#aa44ff");
-    setStatus("PO approved · Tap Widget-A to validate invoice");
-    update3DHudStatus(getVoiceTooltip());
-    openPanel(`<div class="card__header">
+    function approveAgentPO() {
+      if (!pendingPO) return;
+      approvedPO = { ...pendingPO }; pendingPO = null;
+      invoiceLocked = false;
+      // Widget-A stays EMPTY visually until invoice is verified & paid
+      // Just show "awaiting invoice" hint on the bin
+      bins[0].status = "awaiting-invoice"; bins[0].color = "#aa44ff";
+      renderDesktopBins();
+      update3DBin("Widget-A", 0, "awaiting-invoice", "#aa44ff");
+      setStatus("PO approved · Tap Widget-A to validate invoice");
+      update3DHudStatus(getVoiceTooltip());
+      openPanel(`<div class="card__header">
       <span class="card__title">✅ PO Approved</span>
       <span class="card__badge">AWAITING DELIVERY</span></div>
       <div class="card__body">
@@ -987,29 +1298,29 @@ setStatus("Shelf anchored on floor · Pinch or touch Widget-A");
           <button class="btn btn-ghost interactive" id="btn-close-after-approve">Close</button>
         </div>
       </div>`, "ok", {
-      title: "✅ PO Approved",
-      badge: "AWAITING INVOICE",
-      accent: "ok",
-      lines: [
-        { text: `Locked with ${approvedPO.supplier} — 500× Widget-A`, bold: true },
-        { text: "Widget-A awaits invoice verification.", color: "#d29922" },
-        { text: "Pinch Validate Invoice or Widget-A next.", color: "#58a6ff" }
-      ],
-      primaryLabel: "🧾 Validate Invoice",
-      primaryColor: "#1f6feb",
-      primaryAction: onInvoicePinch,
-      secondaryLabel: "Close",
-      secondaryColor: "#30363d",
-      secondaryAction: closePanel
-    });
-    document.getElementById("btn-open-inv")?.addEventListener("click", onInvoicePinch);
-    document.getElementById("btn-close-after-approve")?.addEventListener("click", closePanel);
-  }
+        title: "✅ PO Approved",
+        badge: "AWAITING INVOICE",
+        accent: "ok",
+        lines: [
+          { text: `Locked with ${approvedPO.supplier} — 500× Widget-A`, bold: true },
+          { text: "Widget-A awaits invoice verification.", color: "#d29922" },
+          { text: "Pinch Validate Invoice or Widget-A next.", color: "#58a6ff" }
+        ],
+        primaryLabel: "🧾 Validate Invoice",
+        primaryColor: "#1f6feb",
+        primaryAction: onInvoicePinch,
+        secondaryLabel: "Close",
+        secondaryColor: "#30363d",
+        secondaryAction: closePanel
+      });
+      document.getElementById("btn-open-inv")?.addEventListener("click", onInvoicePinch);
+      document.getElementById("btn-close-after-approve")?.addEventListener("click", closePanel);
+    }
 
-  function rejectAgentPO() {
-    pendingPO = null;
-    setStatus("PO rejected · Ready");
-    openPanel(`<div class="card__header">
+    function rejectAgentPO() {
+      pendingPO = null;
+      setStatus("PO rejected · Ready");
+      openPanel(`<div class="card__header">
       <span class="card__title">❌ PO Rejected</span>
       <span class="card__badge">CANCELLED</span></div>
       <div class="card__body">
@@ -1018,28 +1329,28 @@ setStatus("Shelf anchored on floor · Pinch or touch Widget-A");
           <button class="btn btn-ghost interactive" id="btn-close-reject">Close</button>
         </div>
       </div>`, "danger", {
-      title: "❌ PO Rejected",
-      badge: "CANCELLED",
-      accent: "danger",
-      lines: [
-        { text: "No order placed. Tap Widget-A to retry." }
-      ],
-      primaryLabel: "Close",
-      primaryColor: "#30363d",
-      primaryAction: closePanel
-    });
-    document.getElementById("btn-close-reject")?.addEventListener("click", closePanel);
-  }
+        title: "❌ PO Rejected",
+        badge: "CANCELLED",
+        accent: "danger",
+        lines: [
+          { text: "No order placed. Tap Widget-A to retry." }
+        ],
+        primaryLabel: "Close",
+        primaryColor: "#30363d",
+        primaryAction: closePanel
+      });
+      document.getElementById("btn-close-reject")?.addEventListener("click", closePanel);
+    }
 
-  async function onInvoicePinch() {
-    if (invoiceLocked) { setStatus("Approve PO first", true); return; }
-    setStatus("Scanning invoice with Muse Image…");
-    update3DHudStatus(getVoiceTooltip());
-    try {
-      const res = await fetch("/api/vr/invoice-scan/demo", {method:"POST"});
-      activeInvoice = await res.json();
-    } catch { activeInvoice = {...FALLBACK_INVOICE}; }
-    openPanel(`<div class="card__header">
+    async function onInvoicePinch() {
+      if (invoiceLocked) { setStatus("Approve PO first", true); return; }
+      setStatus("Scanning invoice with Muse Image…");
+      update3DHudStatus(getVoiceTooltip());
+      try {
+        const res = await fetch("/api/vr/invoice-scan/demo", { method: "POST" });
+        activeInvoice = await res.json();
+      } catch { activeInvoice = { ...FALLBACK_INVOICE }; }
+      openPanel(`<div class="card__header">
       <span class="card__title">🧾 Invoice INV-2026-847</span>
       <span class="card__badge">muse-image-1.0</span></div>
       <div class="card__body">
@@ -1054,44 +1365,44 @@ setStatus("Shelf anchored on floor · Pinch or touch Widget-A");
           <button class="btn btn-ghost interactive" id="btn-close-inv">Close</button>
         </div>
       </div>`, "accent", {
-      title: "🧾 Invoice INV-2026-847",
-      badge: "muse-image-1.0",
-      accent: "accent",
-      lines: [
-        { text: `Vendor: ${activeInvoice.supplier}`, bold: true },
-        { text: "Item: 500× Widget-A @ $8.20" },
-        { text: `Total: ${activeInvoice.total} · PO Match: 100%`, color: "#3fb950", bold: true }
-      ],
-      primaryLabel: "💳 Verify & Pay",
-      primaryColor: "#238636",
-      primaryAction: verifyInvoicePayment,
-      secondaryLabel: "Close",
-      secondaryColor: "#30363d",
-      secondaryAction: closePanel
-    });
-    document.getElementById("btn-pay-inv")?.addEventListener("click", verifyInvoicePayment);
-    document.getElementById("btn-close-inv")?.addEventListener("click", closePanel);
-  }
-
-  async function verifyInvoicePayment() {
-    if (!activeInvoice) await onInvoicePinch();
-    setStatus("Releasing payment…");
-    // Show inbound state while "payment clears"
-    bins[0].status = "inbound"; bins[0].color = "#aa44ff";
-    renderDesktopBins(); update3DBin("Widget-A", 500, "inbound", "#aa44ff");
-    let newQty = 500; // correct: ordered 500, receive 500
-    try {
-      const res = await fetch("/api/vr/invoice-pay/demo", {
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({po:approvedPO||FALLBACK_DRAFT_PO, invoice:activeInvoice})
+        title: "🧾 Invoice INV-2026-847",
+        badge: "muse-image-1.0",
+        accent: "accent",
+        lines: [
+          { text: `Vendor: ${activeInvoice.supplier}`, bold: true },
+          { text: "Item: 500× Widget-A @ $8.20" },
+          { text: `Total: ${activeInvoice.total} · PO Match: 100%`, color: "#3fb950", bold: true }
+        ],
+        primaryLabel: "💳 Verify & Pay",
+        primaryColor: "#238636",
+        primaryAction: verifyInvoicePayment,
+        secondaryLabel: "Close",
+        secondaryColor: "#30363d",
+        secondaryAction: closePanel
       });
-      const data = await res.json();
-      if (data.newQty != null) newQty = data.newQty;
-    } catch {}
-    bins[0].qty = newQty; bins[0].status = "ok"; bins[0].color = "#00ff88";
-    renderDesktopBins(); update3DBin("Widget-A", newQty, "ok", "#00ff88");
-    setStatus(`✅ Paid · Delivery inbound · Widget-A: ${newQty} u`);
-    openPanel(`<div class="card__header">
+      document.getElementById("btn-pay-inv")?.addEventListener("click", verifyInvoicePayment);
+      document.getElementById("btn-close-inv")?.addEventListener("click", closePanel);
+    }
+
+    async function verifyInvoicePayment() {
+      if (!activeInvoice) await onInvoicePinch();
+      setStatus("Releasing payment…");
+      // Show inbound state while "payment clears"
+      bins[0].status = "inbound"; bins[0].color = "#aa44ff";
+      renderDesktopBins(); update3DBin("Widget-A", 500, "inbound", "#aa44ff");
+      let newQty = 500; // correct: ordered 500, receive 500
+      try {
+        const res = await fetch("/api/vr/invoice-pay/demo", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ po: approvedPO || FALLBACK_DRAFT_PO, invoice: activeInvoice })
+        });
+        const data = await res.json();
+        if (data.newQty != null) newQty = data.newQty;
+      } catch { }
+      bins[0].qty = newQty; bins[0].status = "ok"; bins[0].color = "#00ff88";
+      renderDesktopBins(); update3DBin("Widget-A", newQty, "ok", "#00ff88");
+      setStatus(`✅ Paid · Delivery inbound · Widget-A: ${newQty} u`);
+      openPanel(`<div class="card__header">
       <span class="card__title">💸 Payment Released</span>
       <span class="card__badge">COMPLETE</span></div>
       <div class="card__body">
@@ -1105,142 +1416,143 @@ setStatus("Shelf anchored on floor · Pinch or touch Widget-A");
           <button class="btn btn-ghost interactive" id="btn-close-done">Done</button>
         </div>
       </div>`, "ok", {
-      title: "💸 Payment Released",
-      badge: "COMPLETE",
-      accent: "ok",
-      lines: [
-        { text: "✅ 3-way match: PO ↔ Invoice ↔ GRN verified", color: "#3fb950", bold: true },
-        { text: "PO-2026-847 · Apex Logistics · $4,100.00" },
-        { text: `📦 Widget-A Stock Updated: ${newQty} units`, color: "#3fb950", bold: true }
-      ],
-      primaryLabel: "Done",
-      primaryColor: "#238636",
-      primaryAction: closePanel
-    });
-    document.getElementById("btn-close-done")?.addEventListener("click", closePanel);
-  }
-
-  async function resetDemo() {
-    closePanel(); // always close any open panel first
-    // If an XR session is active, force shelf to re-anchor 1.35m in front of
-    // the user's current position on the next XR frame
-    if (xrSession) shelfPlaced = false;
-    try { await fetch("/api/vr/reset-demo",{method:"POST"}); } catch {}
-    bins = JSON.parse(JSON.stringify(INITIAL_BINS));
-    pendingPO=null; approvedPO=null; activeInvoice=null;
-    invoiceLocked=true; isNegotiating=false;
-    clearVoiceFeedback(); closePanel();
-    renderDesktopBins();
-    build3DShelf(); // rebuild 3D shelf to initial state
-    setStatus("Demo reset · Ready");
-    update3DHudStatus(getVoiceTooltip());
-  }
-
-  // ── Voice ─────────────────────────────────────────────────────────────────
-  function showVoiceFeedback(transcript, intent, label) {
-    voiceFB.innerHTML = `<div class="voice-feedback__heard">🎙️ "${transcript}"</div>
-      <div class="voice-feedback__intent">⚡ ${label}</div>`;
-    voiceFB.classList.add("visible");
-    if (typeof update3DHudStatus === "function") { update3DHudStatus(`🎙️ "${transcript}" → ${label}`, false); }
-  }
-  function clearVoiceFeedback() { voiceFB.classList.remove("visible"); voiceFB.innerHTML=""; }
-
-  function fallbackIntent(t) {
-    t = t.toLowerCase();
-    if (/approve|accept|confirm/.test(t)) return "approve_po";
-    if (/reject|cancel|decline/.test(t)) return "reject_po";
-    if (/pay|payment|release|settle/.test(t)) return "pay_invoice";
-    if (/invoice|bill/.test(t)) return "show_invoice";
-    if (/restock|widget|order|replenish/.test(t)) return "restock";
-    return "unknown";
-  }
-
-  async function resolveIntent(transcript) {
-    try {
-      const res = await fetch("/api/vr/interpret-voice",{
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({
-          transcript,
-          workflow_state: {
-            pending_po: !!pendingPO,
-            approved_po: !!approvedPO,
-            active_invoice: !!activeInvoice,
-            bin_status: bins[0]?.status
-          }
-        })
+        title: "💸 Payment Released",
+        badge: "COMPLETE",
+        accent: "ok",
+        lines: [
+          { text: "✅ 3-way match: PO ↔ Invoice ↔ GRN verified", color: "#3fb950", bold: true },
+          { text: "PO-2026-847 · Apex Logistics · $4,100.00" },
+          { text: `📦 Widget-A Stock Updated: ${newQty} units`, color: "#3fb950", bold: true }
+        ],
+        primaryLabel: "Done",
+        primaryColor: "#238636",
+        primaryAction: closePanel
       });
-      const data = await res.json();
-      if (data?.intent && data.intent!=="unknown") return data.intent;
-    } catch {}
-    return fallbackIntent(transcript);
-  }
+      document.getElementById("btn-close-done")?.addEventListener("click", closePanel);
+    }
 
-  function handleIntent(intent) {
-    if (intent==="restock") triggerAgentRestock();
-    else if (intent==="approve_po") approveAgentPO();
-    else if (intent==="reject_po") rejectAgentPO();
-    else if (intent==="show_invoice") onInvoicePinch();
-    else if (intent==="pay_invoice") verifyInvoicePayment();
-  }
+    async function resetDemo() {
+      closePanel(); // always close any open panel first
+      // If an XR session is active, force shelf to re-anchor 1.35m in front of
+      // the user's current position on the next XR frame
+      if (xrSession) shelfPlaced = false;
+      try { await fetch("/api/vr/reset-demo", { method: "POST" }); } catch { }
+      bins = JSON.parse(JSON.stringify(INITIAL_BINS));
+      pendingPO = null; approvedPO = null; activeInvoice = null;
+      invoiceLocked = true; isNegotiating = false;
+      clearVoiceFeedback(); closePanel();
+      renderDesktopBins();
+      build3DShelf(); // rebuild 3D shelf to initial state
+      setStatus("Demo reset · Ready");
+      update3DHudStatus(getVoiceTooltip());
+    }
 
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  let recognition=null, listening=false;
-  const btnMic = document.getElementById("btn-mic");
-  const btnReset = document.getElementById("btn-reset");
+    // ── Voice ─────────────────────────────────────────────────────────────────
+    function showVoiceFeedback(transcript, intent, label) {
+      voiceFB.innerHTML = `<div class="voice-feedback__heard">🎙️ "${transcript}"</div>
+      <div class="voice-feedback__intent">⚡ ${label}</div>`;
+      voiceFB.classList.add("visible");
+      if (typeof update3DHudStatus === "function") { update3DHudStatus(`🎙️ "${transcript}" → ${label}`, false); }
+    }
+    function clearVoiceFeedback() { voiceFB.classList.remove("visible"); voiceFB.innerHTML = ""; }
 
-  function getVoiceTooltip() {
-    if (!pendingPO && (!bins[0] || bins[0].status === "empty"))
-      return 'Say: "restock Widget-A" to trigger A2A procurement';
-    if (pendingPO && !approvedPO)
-      return 'Say: "approve PO" or "reject PO"';
-    if (approvedPO && !activeInvoice)
-      return 'Say: "open invoice" to validate delivery';
-    if (activeInvoice)
-      return 'Say: "pay invoice" to complete payment';
-    return 'Say: "restock Widget-A" to restart demo';
-  }
+    function fallbackIntent(t) {
+      t = t.toLowerCase();
+      if (/approve|accept|confirm/.test(t)) return "approve_po";
+      if (/reject|cancel|decline/.test(t)) return "reject_po";
+      if (/pay|payment|release|settle/.test(t)) return "pay_invoice";
+      if (/invoice|bill/.test(t)) return "show_invoice";
+      if (/restock|widget|order|replenish/.test(t)) return "restock";
+      return "unknown";
+    }
 
-  if (SR) {
-    recognition = new SR();
-    recognition.lang="en-US"; recognition.interimResults=false;
-    recognition.onstart = () => { listening=true; clearVoiceFeedback(); btnMic.textContent="⏹ Listening…"; set3DMicListening(true); update3DHudStatus("🎙️ Listening… speak command", true); };
-    recognition.onresult = async e => {
-      const transcript = e.results[e.results.length-1][0].transcript;
-      const intent = await resolveIntent(transcript);
-      showVoiceFeedback(transcript, intent, INTENT_LABELS[intent]||intent);
-      handleIntent(intent);
-      // Update HUD with next-step hint
-      setTimeout(() => update3DHudStatus(getVoiceTooltip()), 1500);
-    };
-    recognition.onend = () => { listening=false; btnMic.textContent="🎤 Voice"; set3DMicListening(false); };
-    recognition.onerror = () => { listening=false; btnMic.textContent="🎤 Voice"; set3DMicListening(false); };
-  }
+    async function resolveIntent(transcript) {
+      try {
+        const res = await fetch("/api/vr/interpret-voice", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            transcript,
+            workflow_state: {
+              pending_po: !!pendingPO,
+              approved_po: !!approvedPO,
+              active_invoice: !!activeInvoice,
+              bin_status: bins[0]?.status
+            }
+          })
+        });
+        const data = await res.json();
+        if (data?.intent && data.intent !== "unknown") return data.intent;
+      } catch { }
+      return fallbackIntent(transcript);
+    }
 
-  let tooltipEl = null;
-  btnMic.addEventListener("mouseenter", () => {
-    tooltipEl = document.createElement("div");
-    tooltipEl.style.cssText = "position:absolute;bottom:60px;left:50%;transform:translateX(-50%);background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:8px;padding:8px 12px;font-size:12px;white-space:nowrap;z-index:999;pointer-events:none;";
-    tooltipEl.textContent = getVoiceTooltip();
-    btnMic.style.position = "relative";
-    btnMic.parentElement.style.position = "relative";
-    btnMic.parentElement.appendChild(tooltipEl);
-  });
-  btnMic.addEventListener("mouseleave", () => {
-    if (tooltipEl) { tooltipEl.remove(); tooltipEl = null; }
-  });
+    function handleIntent(intent) {
+      if (intent === "restock") triggerAgentRestock();
+      else if (intent === "approve_po") approveAgentPO();
+      else if (intent === "reject_po") rejectAgentPO();
+      else if (intent === "show_invoice") onInvoicePinch();
+      else if (intent === "pay_invoice") verifyInvoicePayment();
+    }
 
-  btnMic.addEventListener("click", () => {
-    if (!recognition) { triggerAgentRestock(); return; }
-    if (listening) { recognition.stop(); clearVoiceFeedback(); }
-    else recognition.start();
-  });
-  btnReset.addEventListener("click", resetDemo);
-  document.getElementById("btn-enter-ar").addEventListener("click", startARSession);
-  document.getElementById("btn-exit-ar").addEventListener("click", async () => {
-    if (xrSession) { try { await xrSession.end(); } catch(e) {} }
-  });
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let recognition = null, listening = false;
+    const btnMic = document.getElementById("btn-mic");
+    const btnReset = document.getElementById("btn-reset");
 
-  if (!navigator.xr) setStatus("2D Fallback · Tap Widget-A to begin");
+    function getVoiceTooltip() {
+      if (!pendingPO && (!bins[0] || bins[0].status === "empty"))
+        return 'Say: "restock Widget-A" or pinch Widget-A to trigger A2A procurement';
+      if (pendingPO && !approvedPO)
+        return 'Say or pinch: "approve PO" or "reject PO"';
+      if (approvedPO && !activeInvoice)
+        return 'Say or pinch: "open invoice" to validate delivery';
+      if (activeInvoice)
+        return 'Say or pinch: "pay invoice" to complete payment';
+      return 'Say: "restock Widget-A" or pinch Widget-A to restart demo';
+    }
+
+    if (SR) {
+      recognition = new SR();
+      recognition.lang = "en-US"; recognition.interimResults = false;
+      recognition.onstart = () => { listening = true; clearVoiceFeedback(); btnMic.textContent = "⏹ Listening…"; set3DMicListening(true); update3DHudStatus("🎙️ Listening… speak command", true); };
+      recognition.onresult = async e => {
+        const transcript = e.results[e.results.length - 1][0].transcript;
+        const intent = await resolveIntent(transcript);
+        showVoiceFeedback(transcript, intent, INTENT_LABELS[intent] || intent);
+        handleIntent(intent);
+        // Update HUD with next-step hint
+        setTimeout(() => update3DHudStatus(getVoiceTooltip()), 1500);
+      };
+      recognition.onend = () => { listening = false; btnMic.textContent = "🎤 Voice"; set3DMicListening(false); };
+      recognition.onerror = () => { listening = false; btnMic.textContent = "🎤 Voice"; set3DMicListening(false); };
+    }
+
+    let tooltipEl = null;
+    btnMic.addEventListener("mouseenter", () => {
+      tooltipEl = document.createElement("div");
+      tooltipEl.style.cssText = "position:absolute;bottom:60px;left:50%;transform:translateX(-50%);background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:8px;padding:8px 12px;font-size:12px;white-space:nowrap;z-index:999;pointer-events:none;";
+      tooltipEl.textContent = getVoiceTooltip();
+      btnMic.style.position = "relative";
+      btnMic.parentElement.style.position = "relative";
+      btnMic.parentElement.appendChild(tooltipEl);
+    });
+    btnMic.addEventListener("mouseleave", () => {
+      if (tooltipEl) { tooltipEl.remove(); tooltipEl = null; }
+    });
+
+    btnMic.addEventListener("click", () => {
+      if (!recognition) { triggerAgentRestock(); return; }
+      if (listening) { recognition.stop(); clearVoiceFeedback(); }
+      else recognition.start();
+    });
+    btnReset.addEventListener("click", resetDemo);
+    document.getElementById("btn-enter-ar").addEventListener("click", startARSession);
+    document.getElementById("btn-exit-ar").addEventListener("click", async () => {
+      if (xrSession) { try { await xrSession.end(); } catch (e) { } }
+    });
+
+    if (!navigator.xr) setStatus("2D Fallback · Tap Widget-A to begin");
   </script>
 </body>
+
 </html>
