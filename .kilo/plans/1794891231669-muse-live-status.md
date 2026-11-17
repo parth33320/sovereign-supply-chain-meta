@@ -60,9 +60,10 @@ UI shows GREEN only when a live Meta Muse key works. Otherwise AMBER.
 
 **Changes**:
 - Keep banner text exactly as-is (green/amber/catch branches unchanged)
-- Change condition from `if (data.muse_active)` to `if (data.state === "live")`
+- Change condition from `if (data.muse_active)` to `if (data.state === "live")` (in the fetch script at ~lines 1563-1585)
 - All other states (including `demo`, `no_key`, `invalid_key`, `unreachable`, `error`) use amber branch
 - Catch branch stays as-is
+- **Fetch script update**: After setting the HTML banner, also call `updateMuseBanner3D(text, isLive)` with same text and colors for the 3D XR banner
 
 **3D XR Banner (new)**:
 - Add a 3D text panel in the Three.js scene, placed directly above the existing HUD panel (hdrPanel at y=1.92)
@@ -72,13 +73,18 @@ UI shows GREEN only when a live Meta Muse key works. Otherwise AMBER.
 - Update it from the same `muse-status` fetch result that drives the 2D banner
 - Keep the 2D HTML banner at the top of the page
 - Both 2D and 3D banners must show the same state at all times
-- Implementation: reuse the same `update3DHudStatus` pattern but for a new "museBannerMesh" in the scene
+- Implementation: reuse the same `update3DHudStatus` pattern but for a new "museBanner3DMesh" in the scene (placed after line 692: `const hud3DGroup = hdrPanel;`)
+- **Variable naming**: Use consistent `museBanner3D*` prefix for all variables (canvas, ctx, tex, mesh, update function)
+- **Canvas**: 768×80, **PlaneGeometry**: 0.84×0.09, **Position**: y ≈ 0.28 (above hudStatusMesh at y=0.14)
+- **Function**: `updateMuseBanner3D(text, isLive)` — draws rounded rect with green/amber colors, same text as 2D banner
 - **Visibility management**:
   - The 3D muse banner mesh starts hidden (`mesh.visible = false`)
   - Set `mesh.visible = true` when an immersive XR session is active — this includes both real Quest 2 sessions and the Chrome XR Simulator (which fires `xrsessionstart` when "Enter XR" is clicked)
   - Set `mesh.visible = false` inside the `xrsessionend` event handler (when XR session ends)
   - The HTML banner always shows in 2D mode regardless of XR state
   - The condition to show the 3D panel is: an immersive XR session is active (`xrSession` is truthy), whether real Quest 2 or Chrome XR Simulator
+- **Fetch script update** (lines ~1563-1585): After setting the HTML banner, also call `updateMuseBanner3D(text, isLive)` with same text and colors
+- **XR session handlers**: Add `museBanner3DMesh.visible = true` in `xrsessionstart` handler; add `museBanner3DMesh.visible = false` in `xrsessionend` handler
 
 ### 3. Frontend React: Dynamic "Meta Muse" Labels
 
@@ -137,14 +143,14 @@ UI shows GREEN only when a live Meta Muse key works. Otherwise AMBER.
 
 | File | Changes |
 |------|---------|
-| `backend/routers/vr.py` | Update `muse_status` with live check + cache; keep richer system prompt |
-| `frontend/vr/index.html` | Update banner script condition to `data.state === "live"`; add 3D XR banner mesh |
-| `frontend/src/components/HITLCard.jsx` | Dynamic label based on Muse status |
-| `frontend/src/pages/Analytics.jsx` | Dynamic label |
-| `frontend/src/pages/Orchestrator.jsx` | Dynamic labels + demo PO label |
-| `frontend/src/App.jsx` or new component | Add status banner to main app |
-| `frontend/src/hooks/useMuseStatus.js` (new) | Shared hook for fetching status |
-| `tests/test_muse_status.py` (new) | 5+ test cases |
+| `backend/routers/vr.py` | Update `muse_status` with live check + cache; keep richer system prompt; import `get_llm` at module level for testability |
+| `frontend/vr/index.html` | Update banner condition to `data.state === "live"`; add 3D XR banner mesh (canvas 768×80, PlaneGeometry 0.84×0.09, y≈0.28); `updateMuseBanner3D()` function; visibility management in XR session start/end |
+| `frontend/src/components/HITLCard.jsx` | Dynamic label based on Muse status (`useMuseStatus` hook) |
+| `frontend/src/pages/Analytics.jsx` | Dynamic label (`useMuseStatus` hook) |
+| `frontend/src/pages/Orchestrator.jsx` | Dynamic labels + demo PO label (`useMuseStatus` hook) |
+| `frontend/src/App.jsx` | Add status banner to main content area (`useMuseStatus` hook) |
+| `frontend/src/hooks/useMuseStatus.js` (new) | Shared hook for fetching status + `museStatusLabel()` utility |
+| `tests/test_muse_status.py` (new) | 7 test cases: no_key, demo, invalid_key, unreachable, live_success, cache_behavior, key_leakage |
 
 ---
 
@@ -167,7 +173,7 @@ UI shows GREEN only when a live Meta Muse key works. Otherwise AMBER.
 5. **Cache**: Two rapid calls to `/vr/muse-status` → second returns cached
 6. **React labels**: HITLCard, Analytics, Orchestrator show "Demo" when not live
 7. **Main app banner**: Shows in header area
-8. **Tests pass**: All 5 test cases pass
+8. **Tests pass**: All 7 test cases pass
 9. **3D XR banner**: In XR mode (real Quest 2 or Chrome XR Simulator), banner appears above HUD panel, mirrors 2D banner state exactly; hidden in 2D mode (mesh.visible=false until immersive session starts, then false again on session end)
 
 ---
