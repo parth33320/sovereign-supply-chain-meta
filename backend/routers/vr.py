@@ -6,7 +6,12 @@ from pydantic import BaseModel
 from typing import Optional
 from langchain_core.messages import SystemMessage, HumanMessage
 
+from llm_client import get_llm
+
 router = APIRouter()
+
+# Muse status cache
+_muse_cache = None
 
 # ── Hardcoded fallback data (used when no Muse key or DEMO_MODE=1) ────────────
 
@@ -245,8 +250,44 @@ Valid intents: restock, approve_po, reject_po, show_invoice, pay_invoice, unknow
 
 @router.get("/vr/muse-status")
 async def muse_status():
-    """Reports whether a real Muse API key is configured."""
-    has_key = bool((os.environ.get("META_API_KEY") or os.environ.get("OPENAI_API_KEY") or "").strip())
+    """Reports whether a real Muse API key is configured and working."""
+    import time
+    global _muse_cache
+    now = time.time()
+
+    # Check cache first
+    if _muse_cache and now < _muse_cache.get("expires", 0):
+        return _muse_cache["data"]
+
+    # No cache or expired
     demo = os.environ.get("DEMO_MODE") == "1"
-    active = has_key and not demo
-    return {"muse_active": active}
+    if demo:
+        result = {"muse_active": False, "state": "demo"}
+        _muse_cache = {"data": result, "expires": now + 300}
+        return result
+
+    api_key = (os.environ.get("META_API_KEY") or os.environ.get("OPENAI_API_KEY") or "").strip()
+    if not api_key:
+        result = {"muse_active": False, "state": "no_key"}
+        _muse_cache = {"data": result, "expires": now + 300}
+        return result
+
+    # Live check: make a tiny API call
+    try:
+        llm = get_llm()
+        response = await llm.ainvoke("ping")
+        # Success
+        result = {"muse_active": True, "state": "live", "model": "muse-spark-1.3"}
+        _muse_cache = {"data": result, "expires": now + 300}
+        return result
+    except Exception as e:
+        # Classify the error
+        error_str = str(e).lower()
+        if any(kw in error_str for kw in ["401", "403", "auth", "unauthorized", "forbidden", "invalid", "api key", "apikey", "permission"]):
+            result = {"muse_active": False, "state": "invalid_key"}
+        elif any(kw in error_str for kw in ["timeout", "timed out", "connection", "network", "unreachable", "refused", "no route", "host"]):
+            result = {"muse_active": False, "state": "unreachable"}
+        else:
+            result = {"muse_active": False, "state": "error"}
+        _muse_cache = {"data": result, "expires": now + 300}
+        return result

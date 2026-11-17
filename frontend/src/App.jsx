@@ -3,6 +3,7 @@ import Sidebar from './components/Sidebar'
 import Orchestrator from './pages/Orchestrator'
 import ManagerApprovals from './pages/ManagerApprovals'
 import Analytics from './pages/Analytics'
+import { useMuseStatus } from './hooks/useMuseStatus'
 
 const params = new URLSearchParams(window.location.search)
 const devMode = params.get('dev') === '1'
@@ -48,6 +49,7 @@ export default function App() {
     if (path.includes('manager')) return 'manager'
     return 'orchestrator'
   })
+  const museStatus = useMuseStatus()
 
   const handleNavigate = (page) => {
     setActivePage(page)
@@ -66,15 +68,30 @@ export default function App() {
         activePage={activePage}
         onNavigate={handleNavigate}
       />
-      <main className="flex-1 overflow-y-auto">
-        {activePage === 'manager' && role === 'manager' ? (
-          <ManagerApprovals />
-        ) : activePage === 'analytics' ? (
-          <Analytics />
-        ) : (
-          <Orchestrator />
-        )}
-      </main>
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Muse Status Banner */}
+        <div
+          className={`text-center text-xs font-semibold py-1.5 border-b ${
+            museStatus.isLive
+              ? 'bg-[#0d1f0d] text-[#3fb950] border-[#238636]'
+              : 'bg-[#1a1200] text-[#d29922] border-[#9e6a03]'
+          }`}
+          style={{ letterSpacing: '0.03em' }}
+        >
+          {museStatus.isLive
+            ? '🟢 Meta Muse AI Agent active · muse-spark-1.3'
+            : '⚠️ Mock AI agent demo active · Set META_API_KEY env var to enable Muse'}
+        </div>
+        <main className="flex-1 overflow-y-auto">
+          {activePage === 'manager' && role === 'manager' ? (
+            <ManagerApprovals />
+          ) : activePage === 'analytics' ? (
+            <Analytics />
+          ) : (
+            <Orchestrator />
+          )}
+        </main>
+      </div>
     </div>
     </ErrorBoundary>
   )

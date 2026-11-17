@@ -8,6 +8,7 @@ import { sendChatStream, cancelChat, uploadFile, sendVoice,
          createActivityStream, friendlyError } from '../api/client'
 import { v4 as uuidv4 } from 'uuid'
 import { AlertTriangle, RefreshCw } from 'lucide-react'
+import { useMuseStatus, museStatusLabel } from '../hooks/useMuseStatus'
 
 // Demo-mode pending PO shown when backend returns no pending_po
 const DEMO_PENDING_PO = {
@@ -58,6 +59,7 @@ export default function Orchestrator() {
   const [disruptionAlert, setDisruptionAlert] = useState(null)
   const [lastUserMessage, setLastUserMessage] = useState(null)
   const [hasError, setHasError] = useState(false)
+  const museStatus = useMuseStatus()
   const [duplicateWarning, setDuplicateWarning] = useState(null)
   const [voiceWarning, setVoiceWarning] = useState(null)
   const [prefilledInput, setPrefilledInput] = useState(null)
@@ -184,10 +186,11 @@ export default function Orchestrator() {
     const fname = (file.name || '').toLowerCase()
     const isShelf = fname.includes('shelf')
     const isInvoice = fname.includes('invoice') || file.type === 'application/pdf'
+    const museLabel = museStatusLabel(museStatus)
     const spinnerText = isShelf
-      ? 'Analyzing with Meta SAM 3.1...'
+      ? `Analyzing with ${museLabel}...`
       : isInvoice
-      ? 'Extracting with muse-image-1.0...'
+      ? `Extracting with ${museLabel} Image...`
       : 'Processing file...'
 
     const tempId = `temp-upload-${Date.now()}`
@@ -218,7 +221,7 @@ export default function Orchestrator() {
           `${s.status || 'unknown'}`
         ).join('\n')
         addMsg('assistant',
-          `📦 Warehouse Shelf Analysis (Meta SAM 3.1):\n` +
+          `📦 Warehouse Shelf Analysis (${museStatusLabel(museStatus)}):\n` +
           (lines || res.analysis?.summary || JSON.stringify(res.analysis, null, 2)))
         const lowItems = segs
           .filter(s => (s.status || '').toUpperCase() === 'LOW' || (s.status || '').toUpperCase() === 'EMPTY')
@@ -240,7 +243,7 @@ export default function Orchestrator() {
           items ? `Line Items:\n${items}` : null
         ].filter(Boolean).join('\n')
         addMsg('assistant',
-          `📄 Document Extraction (Meta Muse Image 1.0):\n` +
+          `📄 Document Extraction (${museStatusLabel(museStatus)} Image):\n` +
           (lines || JSON.stringify(e, null, 2)))
         const supplier = e.supplier || 'supplier'
         const total = e.total || 'quoted amount'

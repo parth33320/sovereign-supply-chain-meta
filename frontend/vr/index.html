@@ -691,6 +691,33 @@
     // hud3DGroup alias so existing references keep working
     const hud3DGroup = hdrPanel;
 
+    // ── 3D XR Muse Banner (visible in XR mode only, positioned above hdrPanel) ──
+    const museBannerCanvas = document.createElement("canvas");
+    museBannerCanvas.width = 768; museBannerCanvas.height = 60;
+    const museBannerCtx = museBannerCanvas.getContext("2d");
+    const museBannerTex = new THREE.CanvasTexture(museBannerCanvas);
+    const museBannerMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.84, 0.07),
+      new THREE.MeshBasicMaterial({ map: museBannerTex, transparent: true, side: THREE.DoubleSide })
+    );
+    museBannerMesh.position.set(0, 2.15, 0.01);  // Above hdrPanel (y=1.92)
+    museBannerMesh.visible = false;  // Hidden in 2D mode
+    shelfGroup.add(museBannerMesh);
+
+    function update3DMuseBanner(msg, isLive = false) {
+      museBannerCtx.clearRect(0, 0, 768, 60);
+      museBannerCtx.fillStyle = isLive ? "rgba(13,31,13,0.9)" : "rgba(26,18,0,0.9)";
+      museBannerCtx.beginPath();
+      museBannerCtx.roundRect(4, 4, 760, 52, 12);
+      museBannerCtx.fill();
+      museBannerCtx.fillStyle = isLive ? "#3fb950" : "#d29922";
+      museBannerCtx.font = "600 24px sans-serif";
+      museBannerCtx.textAlign = "center";
+      museBannerCtx.fillText(String(msg || "Checking...").slice(0, 52), 384, 38);
+      museBannerTex.needsUpdate = true;
+    }
+    update3DMuseBanner("⏳ Checking AI agent status…", false);
+
     // ── 3D Spatial Card (positioned directly above Widget-A with leader line) ──
     const spatialCardGroup = new THREE.Group();
     spatialCardGroup.visible = false;
@@ -960,10 +987,12 @@
           handJointMeshes.forEach(list => list.forEach(m => { m.visible = false; }));
           document.body.classList.remove("xr-active");
           document.getElementById("btn-exit-ar").style.display = "none";
+          museBannerMesh.visible = false;  // Hide 3D banner when XR session ends
           setStatus("Supply Chain XR · Ready");
         });
         document.body.classList.add("xr-active");
         document.getElementById("btn-exit-ar").style.display = "";
+        museBannerMesh.visible = true;  // Show 3D banner when immersive XR session is active
         setStatus("🥽 Starting XR…", true);
         setTimeout(() => update3DHudStatus(getVoiceTooltip()), 2500);
         renderer.setAnimationLoop(onXRFrame);
@@ -1566,20 +1595,23 @@ function getVoiceTooltip() {
       try {
         const res = await fetch("/api/vr/muse-status");
         const data = await res.json();
-        if (data.muse_active) {
+        if (data.state === "live") {
           banner.style.background = "#0d1f0d";
           banner.style.color = "#3fb950";
           banner.style.borderBottom = "1px solid #238636";
           banner.textContent = "🟢 Meta Muse AI Agent active · muse-spark-1.3";
+          if (typeof update3DMuseBanner === "function") update3DMuseBanner("🟢 Meta Muse AI Agent active · muse-spark-1.3", true);
         } else {
           banner.style.background = "#1a1200";
           banner.style.color = "#d29922";
           banner.style.borderBottom = "1px solid #9e6a03";
           banner.textContent = "⚠️ Mock AI agent demo active · Set META_API_KEY env var on Render to enable Muse";
+          if (typeof update3DMuseBanner === "function") update3DMuseBanner("⚠️ Mock AI agent demo active · Set META_API_KEY env var to enable Muse", false);
         }
       } catch {
         banner.style.color = "#f85149";
         banner.textContent = "⚠️ Mock AI agent demo active · Set META_API_KEY env var to enable Muse";
+        if (typeof update3DMuseBanner === "function") update3DMuseBanner("⚠️ Mock AI agent demo active · Set META_API_KEY env var to enable Muse", false);
       }
     })();
   </script>

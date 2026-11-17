@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react'
 import { getKPIs, runWhatIf } from '../api/client'
 import { BarChart2, Zap, X } from 'lucide-react'
+import { useMuseStatus, museStatusLabel } from '../hooks/useMuseStatus'
 
 export default function Analytics({ tenantId = 'Tenant_A' }) {
   const [kpiData, setKpiData] = useState(null)
   const [loading, setLoading] = useState(true)
+  const museStatus = useMuseStatus()
 
   // What-If scenario states
   const [whatIfInput, setWhatIfInput] = useState('')
@@ -115,7 +117,7 @@ export default function Analytics({ tenantId = 'Tenant_A' }) {
         <div className="border-b border-[#30363d] pb-2 flex items-center justify-between">
           <span className="font-semibold text-xs tracking-wider uppercase text-[#e6edf3] flex items-center gap-1.5">
             <Zap size={15} className="text-[#58a6ff]" />
-            <span>What-If Scenario Simulation (Meta Muse-Spark-1.3)</span>
+            <span>What-If Scenario Simulation ({museStatusLabel(museStatus)})</span>
           </span>
         </div>
 

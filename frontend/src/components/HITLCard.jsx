@@ -1,7 +1,9 @@
 import React from 'react'
+import { useMuseStatus, museStatusLabel } from '../hooks/useMuseStatus'
 
 export default function HITLCard({ po, threadId, onApprove, onReject }) {
   if (!po) return null
+  const museStatus = useMuseStatus()
 
   const poId = po.po_id || po.id || "PO-948201"
   const supplier = po.supplier || "Apex Logistics"
@@ -50,7 +52,7 @@ export default function HITLCard({ po, threadId, onApprove, onReject }) {
       {/* Competitive Multi-Supplier Quote Comparison */}
       <div className="mb-4">
         <div className="text-xs font-semibold text-[#58a6ff] mb-2 flex items-center justify-between">
-          <span>🏆 COMPETITIVE SUPPLIER QUOTES (Meta Muse-Spark-1.3)</span>
+          <span>🏆 COMPETITIVE SUPPLIER QUOTES ({museStatusLabel(museStatus)})</span>
           <span className="text-[11px] text-[#8b949e] font-normal">Constraints: max 5 days lead</span>
         </div>
         <div className="overflow-x-auto border border-[#30363d] rounded">
