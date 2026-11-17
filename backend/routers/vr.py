@@ -188,11 +188,29 @@ async def interpret_voice(req: InterpretVoiceRequest):
     if state.get("active_invoice"):
         allowed.append("pay_invoice")
 
-    system = f"""You are SAM, a supply chain SME AI. A warehouse worker spoke a voice command.
-Your job:
-1. Correct speech-to-text errors (the mic may mishear supply chain terms)
+    system = f"""You are SAM (Supply chain Autonomous Manager), a supply chain AI agent running a live warehouse demo.
+
+DEMO WORKFLOW:
+- Step 1 (RESTOCK): Widget-A bin is empty. User says "restock" or "restock Widget-A" → SAM broadcasts RFQ to 3 suppliers (Apex Logistics, Global Parts Co, FastShip Inc), evaluates bids using cost/lead-time/reliability scoring, selects winner, generates draft PO for 500 units.
+- Step 2 (APPROVE or REJECT PO): User reviews Purchase Order PO-2026-847 from Apex Logistics ($8.20/unit, 500 units, $4,100 total, 3-day delivery). User says "approve PO" to authorize → moves to invoice step. Or says "reject PO" / "reject" to cancel.
+- Step 3 (SHOW INVOICE): After PO approved, Widget-A shows as "inbound". User says "open invoice" or "show invoice" or taps Widget-A → SAM scans invoice via Muse image recognition.
+- Step 4 (PAY INVOICE): User reviews scanned invoice. Says "pay invoice" or "pay" → SAM verifies and releases payment. Demo complete: Widget-A restocked to 500 units.
+
+REJECTION PATH: If PO rejected at Step 2, demo resets to Step 1 (restock can be triggered again).
+
+COMMON SPEECH-TO-TEXT ERRORS TO CORRECT:
+- "widget a" / "widget eight" / "widget hey" → "Widget-A"
+- "approve p o" / "approve peo" / "approve" → "approve PO"
+- "reject p o" / "reject peo" → "reject PO"
+- "pay in voice" / "make payment" / "release payment" → "pay invoice"
+- "show in voice" / "open in voice" / "check invoice" → "open invoice"
+- "restock" / "re-stock" / "order more" / "replenish" → "restock"
+- "apex" / "apex logistics" / "apex log" → "Apex Logistics"
+
+YOUR TASK:
+1. Correct speech-to-text errors using your knowledge of this demo's vocabulary
 2. Return the correct intent from ONLY the currently allowed actions: {allowed}
-3. If the transcript doesn't match any allowed action, return intent="unknown"
+3. If the transcript doesn't match any allowed action, return intent="unknown" — do NOT suggest steps the user can't take yet
 
 Respond ONLY with JSON: {{"intent": "<intent>", "corrected": "<corrected transcript>"}}
 Valid intents: restock, approve_po, reject_po, show_invoice, pay_invoice, unknown"""
@@ -223,3 +241,12 @@ Valid intents: restock, approve_po, reject_po, show_invoice, pay_invoice, unknow
         # Only return if allowed
         if intent not in allowed: intent = "unknown"
         return {"intent": intent, "corrected": req.transcript}
+
+
+@router.get("/vr/muse-status")
+async def muse_status():
+    """Reports whether a real Muse API key is configured."""
+    has_key = bool((os.environ.get("META_API_KEY") or os.environ.get("OPENAI_API_KEY") or "").strip())
+    demo = os.environ.get("DEMO_MODE") == "1"
+    active = has_key and not demo
+    return {"muse_active": active}
