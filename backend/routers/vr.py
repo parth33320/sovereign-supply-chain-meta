@@ -1,6 +1,6 @@
 """VR/AR supply chain endpoints — A2A negotiation, invoice scan, payment."""
 
-import os, json
+import os, json, hashlib
 from fastapi import APIRouter
 from pydantic import BaseModel
 from typing import Optional
@@ -10,8 +10,8 @@ from llm_client import get_llm
 
 router = APIRouter()
 
-# Muse status cache
-_muse_cache = None
+# Muse status cache with key hash for invalidation on key change
+_muse_cache = {"data": None, "expires": 0, "key_hash": ""}
 
 # ── Hardcoded fallback data (used when no Muse key or DEMO_MODE=1) ────────────
 
@@ -255,21 +255,25 @@ async def muse_status():
     global _muse_cache
     now = time.time()
 
-    # Check cache first
-    if _muse_cache and now < _muse_cache.get("expires", 0):
+    # Compute hash of current API key for cache invalidation on key change
+    current_key = (os.environ.get("META_API_KEY") or os.environ.get("OPENAI_API_KEY") or "").strip()
+    current_hash = hashlib.md5(current_key.encode()).hexdigest()
+
+    # Check cache first (also invalidate if API key changed)
+    if _muse_cache and _muse_cache.get("data") and now < _muse_cache.get("expires", 0) and _muse_cache.get("key_hash") == current_hash:
         return _muse_cache["data"]
 
-    # No cache or expired
+    # No cache or expired or key changed
     demo = os.environ.get("DEMO_MODE") == "1"
     if demo:
         result = {"muse_active": False, "state": "demo"}
-        _muse_cache = {"data": result, "expires": now + 300}
+        _muse_cache = {"data": result, "expires": now + 300, "key_hash": current_hash}
         return result
 
-    api_key = (os.environ.get("META_API_KEY") or os.environ.get("OPENAI_API_KEY") or "").strip()
+    api_key = current_key
     if not api_key:
         result = {"muse_active": False, "state": "no_key"}
-        _muse_cache = {"data": result, "expires": now + 300}
+        _muse_cache = {"data": result, "expires": now + 300, "key_hash": current_hash}
         return result
 
     # Live check: make a tiny API call
@@ -278,7 +282,7 @@ async def muse_status():
         response = await llm.ainvoke("ping")
         # Success
         result = {"muse_active": True, "state": "live", "model": "muse-spark-1.3"}
-        _muse_cache = {"data": result, "expires": now + 300}
+        _muse_cache = {"data": result, "expires": now + 300, "key_hash": current_hash}
         return result
     except Exception as e:
         # Classify the error
@@ -289,5 +293,5 @@ async def muse_status():
             result = {"muse_active": False, "state": "unreachable"}
         else:
             result = {"muse_active": False, "state": "error"}
-        _muse_cache = {"data": result, "expires": now + 300}
+        _muse_cache = {"data": result, "expires": now + 300, "key_hash": current_hash}
         return result
