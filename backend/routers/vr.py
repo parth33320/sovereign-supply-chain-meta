@@ -303,3 +303,11 @@ async def muse_status():
             result = {"muse_active": False, "state": "error"}
         _muse_cache = {"data": result, "expires": now + 300, "key_hash": current_hash}
         return result
+
+
+@router.post("/vr/muse-status/refresh")
+async def muse_status_refresh():
+    """Manually clear the muse status cache for a fresh check."""
+    global _muse_cache
+    _muse_cache = {}
+    return {"ok": True}
