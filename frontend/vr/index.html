@@ -691,29 +691,30 @@
     // hud3DGroup alias so existing references keep working
     const hud3DGroup = hdrPanel;
 
-    // ── 3D XR Muse Banner (visible in XR mode only, positioned above hdrPanel) ──
+    // ── 3D XR Muse Banner (attached to hdrPanel above hudStatusMesh) ───────────
     const museBanner3DCanvas = document.createElement("canvas");
-    museBanner3DCanvas.width = 768; museBanner3DCanvas.height = 80;
+    museBanner3DCanvas.width = 1024; museBanner3DCanvas.height = 80;
     const museBanner3DCtx = museBanner3DCanvas.getContext("2d");
     const museBanner3DTex = new THREE.CanvasTexture(museBanner3DCanvas);
     const museBanner3DMesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.84, 0.09),
+      new THREE.PlaneGeometry(1.18, 0.095),
       new THREE.MeshBasicMaterial({ map: museBanner3DTex, transparent: true, side: THREE.DoubleSide })
     );
-    museBanner3DMesh.position.set(0, 0.28, 0.01);  // Above hudStatusMesh (y=0.14)
+    museBanner3DMesh.position.set(0, 0.27, 0.01);  // Above hudStatusMesh (y=0.14) inside hdrPanel
     museBanner3DMesh.visible = false;  // Hidden in 2D mode
-    shelfGroup.add(museBanner3DMesh);
+    hdrPanel.add(museBanner3DMesh);
 
     function updateMuseBanner3D(text, isLive) {
-      museBanner3DCtx.clearRect(0, 0, 768, 80);
-      museBanner3DCtx.fillStyle = isLive ? "rgba(13,31,13,0.92)" : "rgba(26,18,0,0.92)";
-      museBanner3DCtx.beginPath();
-      museBanner3DCtx.roundRect(4, 4, 760, 72, 12);
-      museBanner3DCtx.fill();
+      museBanner3DCtx.clearRect(0, 0, 1024, 80);
+      museBanner3DCtx.fillStyle = isLive ? "rgba(13,31,13,0.94)" : "rgba(26,18,0,0.94)";
+      museBanner3DCtx.fillRect(4, 4, 1016, 72);
+      museBanner3DCtx.strokeStyle = isLive ? "#238636" : "#9e6a03";
+      museBanner3DCtx.lineWidth = 4;
+      museBanner3DCtx.strokeRect(4, 4, 1016, 72);
       museBanner3DCtx.fillStyle = isLive ? "#3fb950" : "#d29922";
-      museBanner3DCtx.font = "600 20px sans-serif";
+      museBanner3DCtx.font = "600 22px sans-serif";
       museBanner3DCtx.textAlign = "center";
-      museBanner3DCtx.fillText(text, 384, 50);
+      museBanner3DCtx.fillText(text, 512, 49);
       museBanner3DTex.needsUpdate = true;
     }
     updateMuseBanner3D("⏳ Checking AI agent status…", false);
