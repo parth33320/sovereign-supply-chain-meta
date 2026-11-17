@@ -1,7 +1,7 @@
 import os
 import time
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 
 from backend.routers import vr
 
@@ -41,11 +41,10 @@ class TestMuseStatus:
         monkeypatch.setenv("META_API_KEY", "invalid123")
         monkeypatch.delenv("DEMO_MODE", raising=False)
         import asyncio
-        # Mock get_llm to raise an auth error
-        with patch("backend.routers.vr.get_llm") as mock_get_llm:
-            mock_llm = MagicMock()
-            mock_llm.ainvoke = MagicMock(side_effect=Exception("401 Unauthorized: Invalid API key"))
-            mock_get_llm.return_value = mock_llm
+        with patch("langchain_openai.ChatOpenAI") as mock_chat:
+            mock_instance = MagicMock()
+            mock_instance.ainvoke = AsyncMock(side_effect=Exception("401 Unauthorized: Invalid API key"))
+            mock_chat.return_value = mock_instance
             result = asyncio.run(vr.muse_status())
             assert result["muse_active"] is False
             assert result["state"] == "invalid_key"
@@ -54,10 +53,10 @@ class TestMuseStatus:
         monkeypatch.setenv("META_API_KEY", "validkey123")
         monkeypatch.delenv("DEMO_MODE", raising=False)
         import asyncio
-        with patch("backend.routers.vr.get_llm") as mock_get_llm:
-            mock_llm = MagicMock()
-            mock_llm.ainvoke = MagicMock(side_effect=Exception("Connection timeout: Connection refused"))
-            mock_get_llm.return_value = mock_llm
+        with patch("langchain_openai.ChatOpenAI") as mock_chat:
+            mock_instance = MagicMock()
+            mock_instance.ainvoke = AsyncMock(side_effect=Exception("Connection timeout: Connection refused"))
+            mock_chat.return_value = mock_instance
             result = asyncio.run(vr.muse_status())
             assert result["muse_active"] is False
             assert result["state"] == "unreachable"
@@ -66,14 +65,10 @@ class TestMuseStatus:
         monkeypatch.setenv("META_API_KEY", "validkey123")
         monkeypatch.delenv("DEMO_MODE", raising=False)
         import asyncio
-        with patch("backend.routers.vr.get_llm") as mock_get_llm:
-            mock_llm = MagicMock()
-            mock_llm.ainvoke = MagicMock(return_value=MagicMock(content="pong"))
-            mock_llm.ainvoke = MagicMock(return_value=MagicMock(content="pong"))
-            # Use AsyncMock for async method
-            from unittest.mock import AsyncMock
-            mock_llm.ainvoke = AsyncMock(return_value=MagicMock(content="pong"))
-            mock_get_llm.return_value = mock_llm
+        with patch("langchain_openai.ChatOpenAI") as mock_chat:
+            mock_instance = MagicMock()
+            mock_instance.ainvoke = AsyncMock(return_value=MagicMock(content="pong"))
+            mock_chat.return_value = mock_instance
             result = asyncio.run(vr.muse_status())
             assert result["muse_active"] is True
             assert result["state"] == "live"
@@ -83,28 +78,26 @@ class TestMuseStatus:
         monkeypatch.setenv("META_API_KEY", "validkey123")
         monkeypatch.delenv("DEMO_MODE", raising=False)
         import asyncio
-        with patch("backend.routers.vr.get_llm") as mock_get_llm:
-            from unittest.mock import AsyncMock
-            mock_llm = MagicMock()
-            mock_llm.ainvoke = AsyncMock(return_value=MagicMock(content="pong"))
-            mock_get_llm.return_value = mock_llm
+        with patch("langchain_openai.ChatOpenAI") as mock_chat:
+            mock_instance = MagicMock()
+            mock_instance.ainvoke = AsyncMock(return_value=MagicMock(content="pong"))
+            mock_chat.return_value = mock_instance
             # First call
             result1 = asyncio.run(vr.muse_status())
             assert result1["state"] == "live"
-            # Second call should use cache (llm.ainvoke called only once)
+            # Second call should use cache (ChatOpenAI constructor called only once)
             result2 = asyncio.run(vr.muse_status())
             assert result2["state"] == "live"
-            assert mock_llm.ainvoke.call_count == 1
+            assert mock_chat.call_count == 1
 
     def test_response_never_contains_key(self, monkeypatch):
         monkeypatch.setenv("META_API_KEY", "supersecretkey123")
         monkeypatch.delenv("DEMO_MODE", raising=False)
         import asyncio
-        with patch("backend.routers.vr.get_llm") as mock_get_llm:
-            from unittest.mock import AsyncMock
-            mock_llm = MagicMock()
-            mock_llm.ainvoke = AsyncMock(return_value=MagicMock(content="pong"))
-            mock_get_llm.return_value = mock_llm
+        with patch("langchain_openai.ChatOpenAI") as mock_chat:
+            mock_instance = MagicMock()
+            mock_instance.ainvoke = AsyncMock(return_value=MagicMock(content="pong"))
+            mock_chat.return_value = mock_instance
             result = asyncio.run(vr.muse_status())
             # Ensure the key string doesn't appear anywhere in the response
             result_str = str(result)

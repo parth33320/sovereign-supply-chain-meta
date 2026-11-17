@@ -278,8 +278,16 @@ async def muse_status():
 
     # Live check: make a tiny API call
     try:
-        llm = get_llm()
-        response = await llm.ainvoke("ping")
+        from langchain_openai import ChatOpenAI
+        llm_check = ChatOpenAI(
+            model=os.environ.get("META_MODEL_NAME", "muse-spark-1.3"),
+            api_key=api_key,
+            base_url=os.environ.get("META_API_BASE_URL") or "https://api.meta.ai/v1",
+            temperature=0,
+            request_timeout=10,
+            max_retries=0,
+        )
+        response = await llm_check.ainvoke("ping")
         # Success
         result = {"muse_active": True, "state": "live", "model": "muse-spark-1.3"}
         _muse_cache = {"data": result, "expires": now + 300, "key_hash": current_hash}
