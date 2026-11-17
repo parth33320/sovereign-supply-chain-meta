@@ -658,6 +658,10 @@
   }
   function onXRFrame(time, frame) {
     if (!frame || !xrSession) return;
+    // Auto-place shelf 1.35m in front of user at y=0 on first XR frame (no manual floor placement)
+    if (!shelfPlaced) {
+      autoPlaceShelf();
+    }
     // Pulse Widget-A when empty
     if (widgetAMesh && bins[0] && bins[0].status === "empty") {
       widgetAMesh.material.emissiveIntensity = 0.25 + 0.35 * Math.sin(time * 0.006);
@@ -728,19 +732,7 @@
     if (activeCtrl) {
       const { origin, dir } = getControllerRay(activeCtrl);
       raycaster.set(origin, dir);
-      if (!shelfPlaced) {
-        // Project ray directly onto Guardian floor plane y = 0 (works reliably on Quest 2)
-        const floorHit = new THREE.Vector3();
-        if (raycaster.ray.intersectPlane(floorPlane, floorHit) && floorHit.distanceTo(origin) < 5.0) {
-          reticle.visible = true;
-          reticle.matrix.makeTranslation(floorHit.x, 0, floorHit.z);
-          cursorDot.visible = true;
-          cursorDot.position.copy(floorHit);
-          setStatus("🔵 Floor ring ready · Pinch thumb & index to place shelf");
-        } else {
-          reticle.visible = false;
-        }
-      } else {
+      {
         const targets = [];
         if (spatialCardGroup.visible) targets.push(cardBtnPrimary, cardBtnSecondary);
         if (shelfGroup.visible) targets.push(...shelfGroup.children);
@@ -1073,6 +1065,9 @@
 
   async function resetDemo() {
     closePanel(); // always close any open panel first
+    // If an XR session is active, force shelf to re-anchor 1.35m in front of
+    // the user's current position on the next XR frame
+    if (xrSession) shelfPlaced = false;
     try { await fetch("/api/vr/reset-demo",{method:"POST"}); } catch {}
     bins = JSON.parse(JSON.stringify(INITIAL_BINS));
     pendingPO=null; approvedPO=null; activeInvoice=null;
