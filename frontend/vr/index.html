@@ -534,6 +534,11 @@
     const tempMatrix = new THREE.Matrix4().identity().extractRotation(ctrl.matrixWorld);
     const origin = new THREE.Vector3().setFromMatrixPosition(ctrl.matrixWorld);
     const dir = new THREE.Vector3(0, 0, -1).applyMatrix4(tempMatrix).normalize();
+    // If controller matrix is identity (emulator / hand-tracking), fall back to camera gaze ray
+    if (origin.lengthSq() < 0.0001) {
+      camera.getWorldPosition(origin);
+      camera.getWorldDirection(dir);
+    }
     return { origin, dir };
   }
   function handleSpatialCardHit(hitObj) {
