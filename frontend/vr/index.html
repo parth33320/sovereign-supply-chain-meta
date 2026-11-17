@@ -141,6 +141,7 @@
       <div class="controls-row">
         <button class="btn btn-accent interactive" id="btn-mic">🎤 Voice</button>
         <button class="btn btn-ghost interactive" id="btn-reset">🔄 Reset Demo</button>
+        <button class="btn btn-ghost interactive" id="btn-exit-ar" style="display:none;">🚪 Exit AR</button>
       </div>
       <div class="voice-hints">Say: "restock Widget-A" · "approve PO" · "pay invoice"</div>
     </div>
@@ -638,9 +639,11 @@
         cursorDot.visible = false; spatialCardGroup.visible = false;
         handJointMeshes.forEach(list => list.forEach(m => { m.visible = false; }));
         document.body.classList.remove("xr-active");
+        document.getElementById("btn-exit-ar").style.display = "none";
         setStatus("Supply Chain AR · Ready");
       });
       document.body.classList.add("xr-active");
+      document.getElementById("btn-exit-ar").style.display = "";
       setStatus("🥽 Starting AR…", true);
       renderer.setAnimationLoop(onXRFrame);
     } catch(err) {
@@ -824,7 +827,7 @@
 
   function a2aLogHTML() {
     return `<div style="margin-bottom:10px;">
-      <div style="font-size:11px;font-weight:700;color:var(--accent);letter-spacing:.05em;margin-bottom:6px;">A2A NEGOTIATION LOG · SAM</div>
+      <div style="font-size:11px;font-weight:700;color:var(--accent);letter-spacing:.05em;margin-bottom:6px;">A2A NEGOTIATION LOG · muse-spark-1.3</div>
       ${a2aLog.map(l=>`<div style="font-size:11.5px;padding:3px 0;display:flex;gap:7px;border-bottom:1px solid rgba(48,54,61,.5);">
         <span>${l.icon}</span><span>${l.text}</span></div>`).join("")}
     </div>`;
@@ -910,6 +913,41 @@
     });
     document.getElementById("btn-approve-po")?.addEventListener("click", approveAgentPO);
     document.getElementById("btn-reject-po")?.addEventListener("click", rejectAgentPO);
+
+    // Remove old a2aLog mesh if exists
+    const oldLog = spatialCardGroup.getObjectByName("a2aLogMesh");
+    if (oldLog) {
+      if (oldLog.material.map) oldLog.material.map.dispose();
+      oldLog.material.dispose();
+      spatialCardGroup.remove(oldLog);
+    }
+
+    // Create a2a log panel to the LEFT of PO card
+    const logCanvas = document.createElement("canvas");
+    logCanvas.width = 512; logCanvas.height = 320;
+    const logCtx = logCanvas.getContext("2d");
+    // Draw dark background with rounded corners
+    logCtx.fillStyle = "#0d1117";
+    logCtx.beginPath();
+    logCtx.roundRect(0, 0, 512, 320, 16);
+    logCtx.fill();
+    // Draw header
+    logCtx.fillStyle = "#58a6ff";
+    logCtx.font = "bold 20px monospace";
+    logCtx.textAlign = "left";
+    logCtx.fillText("A2A NEGOTIATION LOG · muse-spark-1.3", 16, 36);
+    // Draw log entries
+    logCtx.font = "16px monospace";
+    logCtx.fillStyle = "#c9d1d9";
+    a2aLog.forEach((l, i) => {
+      logCtx.fillText(l.icon + " " + l.text.replace(/<[^>]+>/g, ""), 16, 70 + i * 36);
+    });
+    const logTex = new THREE.CanvasTexture(logCanvas);
+    const logMat = new THREE.MeshBasicMaterial({ map: logTex, transparent: true, side: THREE.DoubleSide });
+    const logMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.32), logMat);
+    logMesh.name = "a2aLogMesh";
+    logMesh.position.set(-0.55, 0, 0.01);  // left of PO card, slight z-offset to avoid z-fighting
+    spatialCardGroup.add(logMesh);
   }
 
   function approveAgentPO() {
@@ -1108,7 +1146,15 @@
     try {
       const res = await fetch("/api/vr/interpret-voice",{
         method:"POST", headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({transcript})
+        body:JSON.stringify({
+          transcript,
+          workflow_state: {
+            pending_po: !!pendingPO,
+            approved_po: !!approvedPO,
+            active_invoice: !!activeInvoice,
+            bin_status: bins[0]?.status
+          }
+        })
       });
       const data = await res.json();
       if (data?.intent && data.intent!=="unknown") return data.intent;
@@ -1129,6 +1175,18 @@
   const btnMic = document.getElementById("btn-mic");
   const btnReset = document.getElementById("btn-reset");
 
+  function getVoiceTooltip() {
+    if (!pendingPO && (!bins[0] || bins[0].status === "empty"))
+      return 'Say: "restock Widget-A" to trigger A2A procurement';
+    if (pendingPO && !approvedPO)
+      return 'Say: "approve PO" or "reject PO"';
+    if (approvedPO && !activeInvoice)
+      return 'Say: "open invoice" to validate delivery';
+    if (activeInvoice)
+      return 'Say: "pay invoice" to complete payment';
+    return 'Say: "restock Widget-A" to restart demo';
+  }
+
   if (SR) {
     recognition = new SR();
     recognition.lang="en-US"; recognition.interimResults=false;
@@ -1138,10 +1196,25 @@
       const intent = await resolveIntent(transcript);
       showVoiceFeedback(transcript, intent, INTENT_LABELS[intent]||intent);
       handleIntent(intent);
+      // Update HUD with next-step hint
+      setTimeout(() => update3DHudStatus(getVoiceTooltip()), 1500);
     };
     recognition.onend = () => { listening=false; btnMic.textContent="🎤 Voice"; set3DMicListening(false); };
     recognition.onerror = () => { listening=false; btnMic.textContent="🎤 Voice"; set3DMicListening(false); };
   }
+
+  let tooltipEl = null;
+  btnMic.addEventListener("mouseenter", () => {
+    tooltipEl = document.createElement("div");
+    tooltipEl.style.cssText = "position:absolute;bottom:60px;left:50%;transform:translateX(-50%);background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:8px;padding:8px 12px;font-size:12px;white-space:nowrap;z-index:999;pointer-events:none;";
+    tooltipEl.textContent = getVoiceTooltip();
+    btnMic.style.position = "relative";
+    btnMic.parentElement.style.position = "relative";
+    btnMic.parentElement.appendChild(tooltipEl);
+  });
+  btnMic.addEventListener("mouseleave", () => {
+    if (tooltipEl) { tooltipEl.remove(); tooltipEl = null; }
+  });
 
   btnMic.addEventListener("click", () => {
     if (!recognition) { triggerAgentRestock(); return; }
@@ -1150,6 +1223,9 @@
   });
   btnReset.addEventListener("click", resetDemo);
   document.getElementById("btn-enter-ar").addEventListener("click", startARSession);
+  document.getElementById("btn-exit-ar").addEventListener("click", async () => {
+    if (xrSession) { try { await xrSession.end(); } catch(e) {} }
+  });
 
   if (!navigator.xr) setStatus("2D Fallback · Tap Widget-A to begin");
   </script>

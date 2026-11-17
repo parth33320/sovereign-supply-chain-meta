@@ -88,6 +88,11 @@ class NegotiateRequest(BaseModel):
     tenant_id: str = "Tenant_A"
 
 
+class InterpretVoiceRequest(BaseModel):
+    transcript: str
+    workflow_state: dict = {}  # {pending_po, approved_po, active_invoice, bin_status}
+
+
 @router.post("/vr/negotiate")
 async def negotiate(req: NegotiateRequest):
     """
@@ -166,3 +171,55 @@ async def invoice_pay(demo_id: str):
 @router.post("/vr/reset-demo")
 async def reset_demo():
     return {"status": "reset"}
+
+
+@router.post("/vr/interpret-voice")
+async def interpret_voice(req: InterpretVoiceRequest):
+    """muse-spark-1.3 supply chain SME: corrects transcript + returns valid intent given workflow state."""
+    state = req.workflow_state
+    # Build allowed intents based on workflow state
+    allowed = []
+    if not state.get("pending_po"):
+        allowed.append("restock")
+    if state.get("pending_po") and not state.get("approved_po"):
+        allowed += ["approve_po", "reject_po"]
+    if state.get("approved_po") and not state.get("active_invoice"):
+        allowed.append("show_invoice")
+    if state.get("active_invoice"):
+        allowed.append("pay_invoice")
+
+    system = f"""You are SAM, a supply chain SME AI. A warehouse worker spoke a voice command.
+Your job:
+1. Correct speech-to-text errors (the mic may mishear supply chain terms)
+2. Return the correct intent from ONLY the currently allowed actions: {allowed}
+3. If the transcript doesn't match any allowed action, return intent="unknown"
+
+Respond ONLY with JSON: {{"intent": "<intent>", "corrected": "<corrected transcript>"}}
+Valid intents: restock, approve_po, reject_po, show_invoice, pay_invoice, unknown"""
+
+    try:
+        from llm_client import get_llm
+        from langchain_core.messages import SystemMessage, HumanMessage
+        llm = get_llm()
+        response = await llm.ainvoke([
+            SystemMessage(content=system),
+            HumanMessage(content=f"Transcript: {req.transcript}"),
+        ])
+        raw = response.content.strip()
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"): raw = raw[4:]
+        result = json.loads(raw.strip())
+        return {"intent": result.get("intent", "unknown"), "corrected": result.get("corrected", req.transcript)}
+    except Exception as e:
+        # Fallback: keyword match
+        t = req.transcript.lower()
+        if "restock" in t or "widget" in t or "order" in t: intent = "restock"
+        elif "approve" in t or "accept" in t: intent = "approve_po"
+        elif "reject" in t or "cancel" in t: intent = "reject_po"
+        elif "invoice" in t or "bill" in t: intent = "show_invoice"
+        elif "pay" in t or "settle" in t: intent = "pay_invoice"
+        else: intent = "unknown"
+        # Only return if allowed
+        if intent not in allowed: intent = "unknown"
+        return {"intent": intent, "corrected": req.transcript}
