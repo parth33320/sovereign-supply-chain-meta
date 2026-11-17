@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
-  <title>Supply Chain AR Walk — Sovereign</title>
+  <title>Supply Chain XR Walk — Sovereign</title>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
@@ -119,7 +119,7 @@
     <div class="hud-top">
       <div class="status-pill interactive" id="status-pill">
         <span class="status-dot" id="status-dot"></span>
-        <span id="status-text">Supply Chain AR · Ready</span>
+        <span id="status-text">Supply Chain XR · Ready</span>
       </div>
       <div class="voice-feedback interactive" id="voice-feedback"></div>
     </div>
@@ -127,9 +127,9 @@
     <!-- 2D desktop / pre-AR fallback -->
     <div id="ar-scene">
       <div class="hero-card interactive">
-        <div class="hero-title">Supply Chain AR Walk</div>
-        <div class="hero-sub">Floor-Anchored 3D Shelf · WebXR Hit-Test · Muse AI</div>
-        <button class="btn btn-primary interactive" id="btn-enter-ar">🏭 Enter AR Walk</button>
+        <div class="hero-title">Supply Chain XR Walk</div>
+        <div class="hero-sub">Floor-Anchored 3D Shelf · WebXR · Muse AI</div>
+        <button class="btn btn-primary interactive" id="btn-enter-ar">🏭 Enter XR Walk</button>
       </div>
       <div class="shelf-preview interactive">
         <div class="shelf-preview__hdr"><span>Supply Chain Shelf</span><span>Live Sync</span></div>
@@ -191,6 +191,7 @@
   // ── App state ─────────────────────────────────────────────────────────────
   let bins = JSON.parse(JSON.stringify(INITIAL_BINS));
   let pendingPO = null, approvedPO = null, activeInvoice = null;
+let _prevHudHover = false;  // tracks if cursor was over mic button previous frame
   let invoiceLocked = true, isNegotiating = false;
 
   // ── Three.js setup ────────────────────────────────────────────────────────
@@ -341,10 +342,10 @@
     hudStatusCtx.fillStyle = isListening ? "#ff7b72" : "#e6edf3";
     hudStatusCtx.font = "600 26px sans-serif";
     hudStatusCtx.textAlign = "center";
-    hudStatusCtx.fillText(String(msg || "Supply Chain AR · Ready").slice(0, 54), 384, 50);
+    hudStatusCtx.fillText(String(msg || "Supply Chain XR · Ready").slice(0, 54), 384, 50);
     hudStatusTex.needsUpdate = true;
   }
-  update3DHudStatus("Supply Chain AR · Ready");
+  update3DHudStatus("Supply Chain XR · Ready");
 
   // Button row (below status strip)
   const btn3DMicTex = createLabelTexture("🎤 Voice", "Pinch or Poke", "#0d1117", "#58a6ff");
@@ -640,14 +641,14 @@
         handJointMeshes.forEach(list => list.forEach(m => { m.visible = false; }));
         document.body.classList.remove("xr-active");
         document.getElementById("btn-exit-ar").style.display = "none";
-        setStatus("Supply Chain AR · Ready");
+        setStatus("Supply Chain XR · Ready");
       });
       document.body.classList.add("xr-active");
       document.getElementById("btn-exit-ar").style.display = "";
-      setStatus("🥽 Starting AR…", true);
+      setStatus("🥽 Starting XR…", true);
       renderer.setAnimationLoop(onXRFrame);
     } catch(err) {
-      setStatus("AR failed: " + (err?.message || "unknown error") + " · 2D mode", true);
+      setStatus("XR failed: " + (err?.message || "unknown error") + " · 2D mode", true);
     }
   }
   function autoPlaceShelf() {
@@ -744,12 +745,27 @@
       raycaster.set(origin, dir);
       {
         const targets = [];
+        // HUD buttons first (priority over shelf geometry)
+        if (shelfGroup.visible) targets.push(btn3DMic, btn3DReset);
         if (spatialCardGroup.visible) targets.push(cardBtnPrimary, cardBtnSecondary);
         if (shelfGroup.visible) targets.push(...shelfGroup.children);
         const hits = raycaster.intersectObjects(targets, true);
         if (hits.length > 0) {
           cursorDot.visible = true;
           cursorDot.position.copy(hits[0].point);
+          // Show voice tooltip in HUD when gazing at mic button
+          const gazingAtMic = hits[0].object === btn3DMic;
+          if (gazingAtMic && !_prevHudHover) {
+            update3DHudStatus(getVoiceTooltip());
+            _prevHudHover = true;
+          } else if (!gazingAtMic && _prevHudHover) {
+            update3DHudStatus("Supply Chain XR · Ready");
+            _prevHudHover = false;
+          }
+        } else if (_prevHudHover) {
+          // Cursor moved off all targets
+          update3DHudStatus("Supply Chain XR · Ready");
+          _prevHudHover = false;
         }
       }
     }
@@ -946,7 +962,7 @@
     const logMat = new THREE.MeshBasicMaterial({ map: logTex, transparent: true, side: THREE.DoubleSide });
     const logMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.32), logMat);
     logMesh.name = "a2aLogMesh";
-    logMesh.position.set(-0.55, 0, 0.01);  // left of PO card, slight z-offset to avoid z-fighting
+    logMesh.position.set(-0.72, 0, 0.01);  // 0.72m left clears 0.78/2=0.39m half-width of PO card
     spatialCardGroup.add(logMesh);
   }
 
