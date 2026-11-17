@@ -140,7 +140,7 @@
     <div class="hud-bottom">
       <div class="controls-row">
         <button class="btn btn-accent interactive" id="btn-mic">🎤 Voice</button>
-        <button class="btn btn-ghost interactive" id="btn-reset">🔄 Reset</button>
+        <button class="btn btn-ghost interactive" id="btn-reset">🔄 Reset Demo</button>
       </div>
       <div class="voice-hints">Say: "restock Widget-A" · "approve PO" · "pay invoice"</div>
     </div>
@@ -246,7 +246,7 @@
     while (shelfGroup.children.length) shelfGroup.remove(shelfGroup.children[0]);
     binMeshes = {}; widgetAMesh = null;
 
-    const W=1.1, H=1.45, D=0.38;
+    const W=1.1, H=0.87, D=0.38;
     const postGeo = new THREE.BoxGeometry(0.035, H, 0.035);
     const postMat = new THREE.MeshStandardMaterial({color:0x484f58, metalness:0.7, roughness:0.35});
     [[-W/2,H/2,-D/2],[W/2,H/2,-D/2],[-W/2,H/2,D/2],[W/2,H/2,D/2]].forEach(([x,y,z])=>{
@@ -254,11 +254,11 @@
       p.position.set(x,y,z); shelfGroup.add(p);
     });
 
-    // Header sign
-    const hdrTex = createLabelTexture("BAY A-14 · AISLE 3","Tap Widget-A to Restock","#0d1117","#58a6ff");
-    const hdr = new THREE.Mesh(new THREE.BoxGeometry(0.95,0.22,0.02),
+    // Header sign raised high above the Widget-A popup zone
+    const hdrTex = createLabelTexture("Shelf","Tap Widget-A to Restock","#0d1117","#58a6ff");
+    const hdr = new THREE.Mesh(new THREE.BoxGeometry(0.72,0.18,0.02),
       new THREE.MeshBasicMaterial({map:hdrTex}));
-    hdr.position.set(0, H+0.14, 0); shelfGroup.add(hdr);
+    hdr.position.set(0, 1.92, 0); shelfGroup.add(hdr);
 
     // 2 shelf planks + 8 SKU boxes
     const plankGeo = new THREE.BoxGeometry(W+0.02, 0.025, D+0.02);
@@ -297,6 +297,11 @@
       }
     });
   }
+  // Keep 3D HUD bar, spatial card, and connector line anchored to the shelf
+  // across Reset (build3DShelf clears shelfGroup.children on every rebuild)
+  if (typeof hud3DGroup !== "undefined") {
+    shelfGroup.add(hud3DGroup, spatialCardGroup, connectorLine);
+  }
   build3DShelf();
 
   function update3DBin(sku, newQty, newStatus, newColor) {
@@ -314,10 +319,80 @@
     entry.labelMesh.material.needsUpdate = true;
   }
 
-  // ── 3D Spatial Card (renders PO / Invoice / Status inside Quest 2 WebGL) ──
+  // ── 3D WebGL HUD Bar (Voice + Reset + Status for Quest 2 Immersive Mode) ───
+  const hud3DGroup = new THREE.Group();
+  hud3DGroup.position.set(0, 0.14, 0.24);
+  hud3DGroup.rotation.x = -0.28;
+  shelfGroup.add(hud3DGroup);
+
+  const hudStatusCanvas = document.createElement("canvas");
+  hudStatusCanvas.width = 768;
+  hudStatusCanvas.height = 96;
+  const hudStatusCtx = hudStatusCanvas.getContext("2d");
+  const hudStatusTex = new THREE.CanvasTexture(hudStatusCanvas);
+  const hudStatusMesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.84, 0.105),
+    new THREE.MeshBasicMaterial({ map: hudStatusTex, side: THREE.DoubleSide })
+  );
+  hudStatusMesh.position.set(0, 0.11, 0);
+  hud3DGroup.add(hudStatusMesh);
+
+  function update3DHudStatus(msg, isListening=false) {
+    hudStatusCtx.fillStyle = "#0d1117";
+    hudStatusCtx.fillRect(0, 0, 768, 96);
+    hudStatusCtx.strokeStyle = isListening ? "#f85149" : "#30363d";
+    hudStatusCtx.lineWidth = 6;
+    hudStatusCtx.strokeRect(3, 3, 762, 90);
+    hudStatusCtx.fillStyle = isListening ? "#ff7b72" : "#e6edf3";
+    hudStatusCtx.font = "600 28px sans-serif";
+    hudStatusCtx.textAlign = "center";
+    hudStatusCtx.fillText(String(msg || "Ready").slice(0, 52), 384, 58);
+    hudStatusTex.needsUpdate = true;
+  }
+  update3DHudStatus("Supply Chain AR · Ready");
+
+  const btn3DMicTex = createLabelTexture("🎤 Voice", "Pinch or Poke", "#0d1117", "#58a6ff");
+  const btn3DMic = new THREE.Mesh(
+    new THREE.BoxGeometry(0.38, 0.11, 0.025),
+    new THREE.MeshBasicMaterial({ map: btn3DMicTex })
+  );
+  btn3DMic.position.set(-0.21, 0, 0);
+  btn3DMic.userData = { hudAction: "voice" };
+  hud3DGroup.add(btn3DMic);
+
+  const btn3DResetTex = createLabelTexture("🔄 Reset Demo", "Restore Initial State", "#0d1117", "#8b949e");
+  const btn3DReset = new THREE.Mesh(
+    new THREE.BoxGeometry(0.38, 0.11, 0.025),
+    new THREE.MeshBasicMaterial({ map: btn3DResetTex })
+  );
+  btn3DReset.position.set(0.21, 0, 0);
+  btn3DReset.userData = { hudAction: "reset" };
+  hud3DGroup.add(btn3DReset);
+
+  function set3DMicListening(active) {
+    const tex = active
+      ? createLabelTexture("⏹ Listening...", "Speak command", "#2a1215", "#f85149")
+      : createLabelTexture("🎤 Voice", "Pinch or Poke", "#0d1117", "#58a6ff");
+    btn3DMic.material.map.dispose();
+    btn3DMic.material.map = tex;
+    btn3DMic.material.needsUpdate = true;
+  }
+
+  // ── 3D Spatial Card (positioned directly above Widget-A with leader line) ──
   const spatialCardGroup = new THREE.Group();
   spatialCardGroup.visible = false;
-  scene.add(spatialCardGroup);
+  shelfGroup.add(spatialCardGroup);
+
+  const connectorLineGeo = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(-0.39, 1.07, 0.02),
+    new THREE.Vector3(-0.39, 1.24, 0.06)
+  ]);
+  const connectorLine = new THREE.Line(
+    connectorLineGeo,
+    new THREE.LineBasicMaterial({ color: 0x58a6ff })
+  );
+  connectorLine.visible = false;
+  shelfGroup.add(connectorLine);
 
   const cardCanvas = document.createElement("canvas");
   cardCanvas.width = 1024;
@@ -349,6 +424,7 @@
   function renderSpatialCard(spec) {
     if (!spec) {
       spatialCardGroup.visible = false;
+      connectorLine.visible = false;
       cardBtnPrimary.userData.action = null;
       cardBtnSecondary.userData.action = null;
       return;
@@ -400,17 +476,11 @@
       cardCtx.fillText(spec.secondaryLabel, 761, 686);
     }
     cardTex.needsUpdate = true;
-    // Position spatial card beside the shelf facing the user
-    if (shelfGroup.visible) {
-      const camPos = new THREE.Vector3();
-      camera.getWorldPosition(camPos);
-      const rightVec = new THREE.Vector3(1, 0, 0).applyQuaternion(shelfGroup.quaternion);
-      spatialCardGroup.position.copy(shelfGroup.position)
-        .addScaledVector(rightVec, 0.92);
-      spatialCardGroup.position.y = shelfGroup.position.y + 1.15;
-      spatialCardGroup.lookAt(camPos.x, spatialCardGroup.position.y, camPos.z);
-    }
+    // Position spatial card directly above Widget-A (local x = -0.39, y = 1.50) so Widget-A stays clear
+    spatialCardGroup.position.set(-0.39, 1.50, 0.06);
+    spatialCardGroup.rotation.set(0, 0, 0);
     spatialCardGroup.visible = true;
+    connectorLine.visible = true;
   }
 
   // ── Visible Quest-style Hands + Pointer Rays + Cursor Dot ─────────────────
@@ -498,16 +568,27 @@
     }
     const { origin, dir } = getControllerRay(ctrl);
     raycaster.set(origin, dir);
-    // 1. Check 3D Spatial Card buttons first when card is open
+    // 1. Check 3D HUD Voice & Reset buttons
+    if (shelfGroup.visible) {
+      const hudHits = raycaster.intersectObjects([btn3DMic, btn3DReset], false);
+      if (hudHits.length > 0) {
+        const act = hudHits[0].object.userData.hudAction;
+        if (act === "voice") { btnMic.click(); return; }
+        if (act === "reset") { resetDemo(); return; }
+      }
+    }
+
+    // 2. Check 3D Spatial Card buttons when card is open
     if (spatialCardGroup.visible) {
       const cardHits = raycaster.intersectObjects([cardBtnPrimary, cardBtnSecondary], false);
       if (cardHits.length > 0 && handleSpatialCardHit(cardHits[0].object)) {
         return;
       }
     }
-    // 2. Check shelf / Widget-A
-    if (shelfGroup.visible) {
-      const shelfHits = raycaster.intersectObjects(shelfGroup.children, true);
+
+    // 3. Check shelf / Widget-A (ignore header/pillars/hud3DGroup)
+    if (shelfGroup.visible && widgetAMesh) {
+      const shelfHits = raycaster.intersectObject(widgetAMesh, true);
       if (shelfHits.length > 0) {
         onShelfPinch();
       }
@@ -598,9 +679,40 @@
         if (joint && joint.visible) {
           mesh.visible = true;
           mesh.position.copy(joint.position);
-          // Direct index-finger touch on Widget-A (< 14cm)
+          // Direct index-finger touch on 3D buttons or Widget-A
           if (jointName === "index-finger-tip" && shelfPlaced && shelfGroup.visible && time > pokeCooldownUntil) {
-            if (joint.position.distanceTo(widgetWorldPos) < 0.14) {
+            const p = new THREE.Vector3();
+            btn3DMic.getWorldPosition(p);
+            if (joint.position.distanceTo(p) < 0.12) {
+              pokeCooldownUntil = time + 1200;
+              btnMic.click();
+              continue;
+            }
+            btn3DReset.getWorldPosition(p);
+            if (joint.position.distanceTo(p) < 0.12) {
+              pokeCooldownUntil = time + 1200;
+              resetDemo();
+              continue;
+            }
+            if (spatialCardGroup.visible) {
+              if (cardBtnPrimary.userData.action) {
+                cardBtnPrimary.getWorldPosition(p);
+                if (joint.position.distanceTo(p) < 0.13) {
+                  pokeCooldownUntil = time + 1200;
+                  cardBtnPrimary.userData.action();
+                  continue;
+                }
+              }
+              if (cardBtnSecondary.userData.action) {
+                cardBtnSecondary.getWorldPosition(p);
+                if (joint.position.distanceTo(p) < 0.13) {
+                  pokeCooldownUntil = time + 1200;
+                  cardBtnSecondary.userData.action();
+                  continue;
+                }
+              }
+            }
+            if (joint.position.distanceTo(widgetWorldPos) < 0.15) {
               pokeCooldownUntil = time + 1200;
               onShelfPinch();
             }
@@ -659,6 +771,7 @@
   function setStatus(text, isWarn=false) {
     statusText.textContent = text;
     statusDot.classList.toggle("warn", isWarn);
+    if (typeof update3DHudStatus === "function") update3DHudStatus(text, false);
   }
 
   // ── Desktop 2D fallback ───────────────────────────────────────────────────
@@ -975,6 +1088,7 @@
     voiceFB.innerHTML = `<div class="voice-feedback__heard">🎙️ "${transcript}"</div>
       <div class="voice-feedback__intent">⚡ ${label}</div>`;
     voiceFB.classList.add("visible");
+    if (typeof update3DHudStatus === "function") { update3DHudStatus(`🎙️ "${transcript}" → ${label}`, false); }
   }
   function clearVoiceFeedback() { voiceFB.classList.remove("visible"); voiceFB.innerHTML=""; }
 
@@ -1016,15 +1130,15 @@
   if (SR) {
     recognition = new SR();
     recognition.lang="en-US"; recognition.interimResults=false;
-    recognition.onstart = () => { listening=true; clearVoiceFeedback(); btnMic.textContent="⏹ Listening…"; };
+    recognition.onstart = () => { listening=true; clearVoiceFeedback(); btnMic.textContent="⏹ Listening…"; set3DMicListening(true); update3DHudStatus("🎙️ Listening… speak command", true); };
     recognition.onresult = async e => {
       const transcript = e.results[e.results.length-1][0].transcript;
       const intent = await resolveIntent(transcript);
       showVoiceFeedback(transcript, intent, INTENT_LABELS[intent]||intent);
       handleIntent(intent);
     };
-    recognition.onend = () => { listening=false; btnMic.textContent="🎤 Voice"; };
-    recognition.onerror = () => { listening=false; btnMic.textContent="🎤 Voice"; };
+    recognition.onend = () => { listening=false; btnMic.textContent="🎤 Voice"; set3DMicListening(false); };
+    recognition.onerror = () => { listening=false; btnMic.textContent="🎤 Voice"; set3DMicListening(false); };
   }
 
   btnMic.addEventListener("click", () => {
