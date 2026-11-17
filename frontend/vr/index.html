@@ -296,13 +296,12 @@
         if (bin.sku==="Widget-A") widgetAMesh = box;
       }
     });
+    // Keep 3D HUD bar, spatial card, and connector line anchored to the shelf
+    // across Reset (build3DShelf clears shelfGroup.children on every rebuild)
+    if (typeof hud3DGroup !== "undefined") {
+      shelfGroup.add(hud3DGroup, spatialCardGroup, connectorLine);
+    }
   }
-  // Keep 3D HUD bar, spatial card, and connector line anchored to the shelf
-  // across Reset (build3DShelf clears shelfGroup.children on every rebuild)
-  if (typeof hud3DGroup !== "undefined") {
-    shelfGroup.add(hud3DGroup, spatialCardGroup, connectorLine);
-  }
-  build3DShelf();
 
   function update3DBin(sku, newQty, newStatus, newColor) {
     const entry = binMeshes[sku]; if (!entry) return;
@@ -393,6 +392,8 @@
   );
   connectorLine.visible = false;
   shelfGroup.add(connectorLine);
+
+  build3DShelf();
 
   const cardCanvas = document.createElement("canvas");
   cardCanvas.width = 1024;
@@ -528,7 +529,6 @@
   let xrSession = null, xrRefSpace = null;
   let hitTestSource = null, hitTestSourceRequested = false, shelfPlaced = false;
   const raycaster = new THREE.Raycaster();
-  const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0); // Guardian floor y = 0
   document.querySelectorAll(".interactive").forEach(el => {
     el.addEventListener("beforexrselect", ev => ev.preventDefault());
   });
