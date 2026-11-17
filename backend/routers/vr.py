@@ -279,28 +279,52 @@ async def muse_status():
     # Live check: make a tiny API call
     try:
         from langchain_openai import ChatOpenAI
+        base_url = os.environ.get("META_API_BASE_URL") or "https://api.meta.ai/v1"
         llm_check = ChatOpenAI(
             model=os.environ.get("META_MODEL_NAME", "muse-spark-1.3"),
             api_key=api_key,
-            base_url=os.environ.get("META_API_BASE_URL") or "https://api.meta.ai/v1",
+            base_url=base_url,
             temperature=0,
             request_timeout=10,
             max_retries=0,
         )
         response = await llm_check.ainvoke("ping")
         # Success
-        result = {"muse_active": True, "state": "live", "model": "muse-spark-1.3"}
+        result = {
+            "muse_active": True,
+            "state": "live",
+            "model": "muse-spark-1.3",
+            "demo_mode": os.environ.get("DEMO_MODE"),
+            "has_key": bool(api_key),
+            "key_len": len(api_key) if api_key else 0,
+            "base_url": base_url,
+        }
         _muse_cache = {"data": result, "expires": now + 300, "key_hash": current_hash}
         return result
     except Exception as e:
         # Classify the error
         error_str = str(e).lower()
+        result = {
+            "muse_active": False,
+            "demo_mode": os.environ.get("DEMO_MODE"),
+            "has_key": bool(api_key),
+            "key_len": len(api_key) if api_key else 0,
+            "base_url": base_url,
+        }
         if any(kw in error_str for kw in ["401", "403", "auth", "unauthorized", "forbidden", "invalid", "api key", "apikey", "permission"]):
-            result = {"muse_active": False, "state": "invalid_key"}
+            result["state"] = "invalid_key"
         elif any(kw in error_str for kw in ["timeout", "timed out", "connection", "network", "unreachable", "refused", "no route", "host"]):
-            result = {"muse_active": False, "state": "unreachable"}
+            result["state"] = "unreachable"
         else:
-            result = {"muse_active": False, "state": "error"}
+            result["state"] = "error"
+        # Include HTTP status and detail if available from the exception
+        if hasattr(e, 'response') and e.response is not None:
+            result["http_status"] = e.response.status_code
+            result["detail"] = e.response.text[:300]
+        elif hasattr(e, 'status_code'):
+            result["http_status"] = e.status_code
+            if hasattr(e, 'text'):
+                result["detail"] = e.text[:300]
         _muse_cache = {"data": result, "expires": now + 300, "key_hash": current_hash}
         return result
 
