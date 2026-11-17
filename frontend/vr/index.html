@@ -647,9 +647,9 @@
       hudStatusCtx.roundRect(4, 4, 760, 72, 12);
       hudStatusCtx.fill();
       hudStatusCtx.fillStyle = isListening ? "#ff7b72" : "#e6edf3";
-      hudStatusCtx.font = "600 26px sans-serif";
+      hudStatusCtx.font = "600 22px sans-serif";
       hudStatusCtx.textAlign = "center";
-      hudStatusCtx.fillText(String(msg || "Supply Chain XR · Ready").slice(0, 54), 384, 50);
+      hudStatusCtx.fillText(String(msg || "Supply Chain XR · Ready"), 384, 50);
       hudStatusTex.needsUpdate = true;
     }
     update3DHudStatus("Supply Chain XR · Ready");
@@ -1499,17 +1499,17 @@
     const btnMic = document.getElementById("btn-mic");
     const btnReset = document.getElementById("btn-reset");
 
-    function getVoiceTooltip() {
-      if (!pendingPO && (!bins[0] || bins[0].status === "empty"))
-        return 'Say: "restock Widget-A" or pinch Widget-A to trigger A2A procurement';
-      if (pendingPO && !approvedPO)
-        return 'Say or pinch: "approve PO" or "reject PO"';
-      if (approvedPO && !activeInvoice)
-        return 'Say or pinch: "open invoice" to validate delivery';
-      if (activeInvoice)
-        return 'Say or pinch: "pay invoice" to complete payment';
-      return 'Say: "restock Widget-A" or pinch Widget-A to restart demo';
-    }
+function getVoiceTooltip() {
+  if (!pendingPO && (!bins[0] || bins[0].status === "empty"))
+    return 'Say "restock" or pinch Widget-A';
+  if (pendingPO && !approvedPO)
+    return 'Say "approve PO" or pinch Approve';
+  if (approvedPO && !activeInvoice)
+    return 'Say "open invoice" or pinch Widget-A';
+  if (activeInvoice)
+    return 'Say "pay invoice" or pinch Pay';
+  return 'Say "restock" or pinch Widget-A';
+}
 
     if (SR) {
       recognition = new SR();
