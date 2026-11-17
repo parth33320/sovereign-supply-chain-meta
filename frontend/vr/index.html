@@ -705,17 +705,51 @@
     hdrPanel.add(museBanner3DMesh);
 
     function updateMuseBanner3D(text, isLive) {
-      museBanner3DCtx.clearRect(0, 0, 1024, 80);
+      // Dynamic auto-wrap + auto-height: wraps text to 960px, grows canvas and mesh
+      // upward from y=0.24 so long status text never clips or needs a scrollbar.
+      const maxWidth = 960;
+      const lineHeight = 34;
+      museBanner3DCtx.font = "600 22px sans-serif";
+      const words = String(text || "").split(/\s+/);
+      const lines = [];
+      let current = "";
+      for (const w of words) {
+        const test = current ? current + " " + w : w;
+        if (museBanner3DCtx.measureText(test).width > maxWidth && current) {
+          lines.push(current);
+          current = w;
+        } else {
+          current = test;
+        }
+      }
+      if (current) lines.push(current);
+
+      const neededHeight = Math.max(76, 36 + lines.length * lineHeight + 36);
+      if (museBanner3DCanvas.height !== neededHeight) {
+        museBanner3DCanvas.height = neededHeight;
+      }
+      museBanner3DCtx.clearRect(0, 0, 1024, neededHeight);
+
       museBanner3DCtx.fillStyle = isLive ? "rgba(13,31,13,0.94)" : "rgba(26,18,0,0.94)";
-      museBanner3DCtx.fillRect(4, 4, 1016, 72);
+      museBanner3DCtx.fillRect(4, 4, 1016, neededHeight - 8);
       museBanner3DCtx.strokeStyle = isLive ? "#238636" : "#9e6a03";
       museBanner3DCtx.lineWidth = 4;
-      museBanner3DCtx.strokeRect(4, 4, 1016, 72);
+      museBanner3DCtx.strokeRect(4, 4, 1016, neededHeight - 8);
+
       museBanner3DCtx.fillStyle = isLive ? "#3fb950" : "#d29922";
       museBanner3DCtx.font = "600 22px sans-serif";
       museBanner3DCtx.textAlign = "center";
-      museBanner3DCtx.fillText(text, 512, 49);
+      const startY = 36 + lineHeight / 2;
+      lines.forEach((line, i) => {
+        museBanner3DCtx.fillText(line, 512, startY + i * lineHeight);
+      });
+
       museBanner3DTex.needsUpdate = true;
+
+      const planeH = 1.18 * (neededHeight / 1024);
+      if (museBanner3DMesh.geometry) museBanner3DMesh.geometry.dispose();
+      museBanner3DMesh.geometry = new THREE.PlaneGeometry(1.18, planeH);
+      museBanner3DMesh.position.y = 0.24 + planeH / 2;
     }
     updateMuseBanner3D("⏳ Checking AI agent status…", false);
 
@@ -1281,23 +1315,8 @@
       }
 
       // Create wider, multi-line wrapped A2A log panel to the LEFT of PO card
-      const logCanvas = document.createElement("canvas");
-      logCanvas.width = 768; logCanvas.height = 520;
-      const logCtx = logCanvas.getContext("2d");
-
-      logCtx.fillStyle = "#0d1117";
-      logCtx.fillRect(0, 0, 768, 520);
-      logCtx.strokeStyle = "#58a6ff";
-      logCtx.lineWidth = 8;
-      logCtx.strokeRect(4, 4, 760, 512);
-
-      logCtx.fillStyle = "#161b22";
-      logCtx.fillRect(8, 8, 752, 54);
-      logCtx.fillStyle = "#58a6ff";
-      logCtx.font = "bold 22px monospace";
-      logCtx.textAlign = "left";
-      logCtx.fillText("A2A NEGOTIATION LOG · muse-spark-1.3", 22, 42);
-
+      // Dynamic auto-height: pre-measures wrapped lines, then resizes canvas and
+      // mesh so long negotiation logs expand DOWNWARD from y=0.27 without clipping.
       function wrapLogLines(ctx, text, maxWidth) {
         const words = String(text || "").split(/\s+/);
         const lines = [];
@@ -1315,26 +1334,57 @@
         return lines;
       }
 
+      const logCanvas = document.createElement("canvas");
+      logCanvas.width = 768;
+
+      // Pre-measure every wrapped line at 710px to compute total height needed
+      const measureCtx = logCanvas.getContext("2d");
+      measureCtx.font = "20px monospace";
+      let totalWrappedLines = 0;
+      a2aLog.forEach(l => {
+        const cleanText = l.icon + " " + String(l.text || "").replace(/<[^>]+>/g, "");
+        totalWrappedLines += wrapLogLines(measureCtx, cleanText, 710).length;
+      });
+
+      // Header (96) + 28px per wrapped line + 10px gap per entry + 24 bottom pad, min 440
+      const neededHeight = Math.max(440, 96 + totalWrappedLines * 28 + a2aLog.length * 10 + 24);
+      logCanvas.height = neededHeight;
+      const logCtx = logCanvas.getContext("2d");
+
+      logCtx.fillStyle = "#0d1117";
+      logCtx.fillRect(0, 0, 768, neededHeight);
+      logCtx.strokeStyle = "#58a6ff";
+      logCtx.lineWidth = 8;
+      logCtx.strokeRect(4, 4, 760, neededHeight - 8);
+
+      logCtx.fillStyle = "#161b22";
+      logCtx.fillRect(8, 8, 752, 54);
+      logCtx.fillStyle = "#58a6ff";
+      logCtx.font = "bold 22px monospace";
+      logCtx.textAlign = "left";
+      logCtx.fillText("A2A NEGOTIATION LOG · muse-spark-1.3", 22, 42);
+
       logCtx.font = "20px monospace";
       logCtx.fillStyle = "#e6edf3";
       let curY = 92;
       a2aLog.forEach(l => {
         const cleanText = l.icon + " " + String(l.text || "").replace(/<[^>]+>/g, "");
-        const wrapped = wrapLogLines(logCtx, cleanText, 720);
+        const wrapped = wrapLogLines(logCtx, cleanText, 710);
         wrapped.forEach((lineStr, lineIdx) => {
-          if (curY < 498) {
+          if (curY < neededHeight - 24) {
             logCtx.fillText(lineIdx === 0 ? lineStr : "   " + lineStr, 22, curY);
-            curY += 27;
+            curY += 28;
           }
         });
-        curY += 8;
+        curY += 10;
       });
 
+      const planeH = 0.74 * (neededHeight / 768);
       const logTex = new THREE.CanvasTexture(logCanvas);
       const logMat = new THREE.MeshBasicMaterial({ map: logTex, transparent: true, side: THREE.DoubleSide });
-      const logMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.74, 0.50), logMat);
+      const logMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.74, planeH), logMat);
       logMesh.name = "a2aLogMesh";
-      logMesh.position.set(-0.82, 0.02, 0.01);
+      logMesh.position.set(-0.82, 0.27 - planeH / 2, 0.01);
       spatialCardGroup.add(logMesh);
     }
 
