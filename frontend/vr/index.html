@@ -254,11 +254,10 @@
       p.position.set(x,y,z); shelfGroup.add(p);
     });
 
-    // Header sign raised high above the Widget-A popup zone
-    const hdrTex = createLabelTexture("Shelf","Tap Widget-A to Restock","#0d1117","#58a6ff");
-    const hdr = new THREE.Mesh(new THREE.BoxGeometry(0.72,0.18,0.02),
-      new THREE.MeshBasicMaterial({map:hdrTex}));
-    hdr.position.set(0, 1.92, 0); shelfGroup.add(hdr);
+    // Header panel: status text + Voice/Reset buttons (re-add from outer scope on rebuild)
+    if (typeof hdrPanel !== "undefined") {
+      shelfGroup.add(hdrPanel);
+    }
 
     // 2 shelf planks + 8 SKU boxes
     const plankGeo = new THREE.BoxGeometry(W+0.02, 0.025, D+0.02);
@@ -296,10 +295,12 @@
         if (bin.sku==="Widget-A") widgetAMesh = box;
       }
     });
-    // Keep 3D HUD bar, spatial card, and connector line anchored to the shelf
-    // across Reset (build3DShelf clears shelfGroup.children on every rebuild)
-    if (typeof hud3DGroup !== "undefined") {
-      shelfGroup.add(hud3DGroup, spatialCardGroup, connectorLine);
+    // Re-attach header panel + spatial card + connector after shelf rebuild clears children
+    if (typeof hdrPanel !== "undefined") {
+      shelfGroup.add(hdrPanel);
+    }
+    if (typeof spatialCardGroup !== "undefined") {
+      shelfGroup.add(spatialCardGroup, connectorLine);
     }
   }
 
@@ -318,55 +319,55 @@
     entry.labelMesh.material.needsUpdate = true;
   }
 
-  // ── 3D WebGL HUD Bar (Voice + Reset + Status for Quest 2 Immersive Mode) ───
-  const hud3DGroup = new THREE.Group();
-  hud3DGroup.position.set(0, 0.14, 0.24);
-  hud3DGroup.rotation.x = -0.28;
-  shelfGroup.add(hud3DGroup);
+  // ── Unified 3D Header Panel: Status + Voice + Reset (top of shelf, always visible in WebGL) ──
+  const hdrPanel = new THREE.Group();
+  hdrPanel.position.set(0, 1.92, 0);
+  shelfGroup.add(hdrPanel);
 
+  // Status text strip (top row)
   const hudStatusCanvas = document.createElement("canvas");
-  hudStatusCanvas.width = 768;
-  hudStatusCanvas.height = 96;
+  hudStatusCanvas.width = 768; hudStatusCanvas.height = 80;
   const hudStatusCtx = hudStatusCanvas.getContext("2d");
   const hudStatusTex = new THREE.CanvasTexture(hudStatusCanvas);
   const hudStatusMesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.84, 0.105),
-    new THREE.MeshBasicMaterial({ map: hudStatusTex, side: THREE.DoubleSide })
+    new THREE.PlaneGeometry(0.84, 0.09),
+    new THREE.MeshBasicMaterial({ map: hudStatusTex, transparent: true, side: THREE.DoubleSide })
   );
-  hudStatusMesh.position.set(0, 0.11, 0);
-  hud3DGroup.add(hudStatusMesh);
+  hudStatusMesh.position.set(0, 0.14, 0.01);
+  hdrPanel.add(hudStatusMesh);
 
   function update3DHudStatus(msg, isListening=false) {
-    hudStatusCtx.fillStyle = "#0d1117";
-    hudStatusCtx.fillRect(0, 0, 768, 96);
-    hudStatusCtx.strokeStyle = isListening ? "#f85149" : "#30363d";
-    hudStatusCtx.lineWidth = 6;
-    hudStatusCtx.strokeRect(3, 3, 762, 90);
+    hudStatusCtx.clearRect(0, 0, 768, 80);
+    hudStatusCtx.fillStyle = "rgba(13,17,23,0.85)";
+    hudStatusCtx.beginPath();
+    hudStatusCtx.roundRect(4, 4, 760, 72, 12);
+    hudStatusCtx.fill();
     hudStatusCtx.fillStyle = isListening ? "#ff7b72" : "#e6edf3";
-    hudStatusCtx.font = "600 28px sans-serif";
+    hudStatusCtx.font = "600 26px sans-serif";
     hudStatusCtx.textAlign = "center";
-    hudStatusCtx.fillText(String(msg || "Ready").slice(0, 52), 384, 58);
+    hudStatusCtx.fillText(String(msg || "Supply Chain AR · Ready").slice(0, 54), 384, 50);
     hudStatusTex.needsUpdate = true;
   }
   update3DHudStatus("Supply Chain AR · Ready");
 
+  // Button row (below status strip)
   const btn3DMicTex = createLabelTexture("🎤 Voice", "Pinch or Poke", "#0d1117", "#58a6ff");
   const btn3DMic = new THREE.Mesh(
     new THREE.BoxGeometry(0.38, 0.11, 0.025),
     new THREE.MeshBasicMaterial({ map: btn3DMicTex })
   );
-  btn3DMic.position.set(-0.21, 0, 0);
+  btn3DMic.position.set(-0.21, 0, 0.01);
   btn3DMic.userData = { hudAction: "voice" };
-  hud3DGroup.add(btn3DMic);
+  hdrPanel.add(btn3DMic);
 
   const btn3DResetTex = createLabelTexture("🔄 Reset Demo", "Restore Initial State", "#0d1117", "#8b949e");
   const btn3DReset = new THREE.Mesh(
     new THREE.BoxGeometry(0.38, 0.11, 0.025),
     new THREE.MeshBasicMaterial({ map: btn3DResetTex })
   );
-  btn3DReset.position.set(0.21, 0, 0);
+  btn3DReset.position.set(0.21, 0, 0.01);
   btn3DReset.userData = { hudAction: "reset" };
-  hud3DGroup.add(btn3DReset);
+  hdrPanel.add(btn3DReset);
 
   function set3DMicListening(active) {
     const tex = active
@@ -376,6 +377,8 @@
     btn3DMic.material.map = tex;
     btn3DMic.material.needsUpdate = true;
   }
+  // hud3DGroup alias so existing references keep working
+  const hud3DGroup = hdrPanel;
 
   // ── 3D Spatial Card (positioned directly above Widget-A with leader line) ──
   const spatialCardGroup = new THREE.Group();
@@ -628,7 +631,7 @@
       xrSession.addEventListener("end", () => {
         xrControllers.forEach(c => c.removeEventListener("select", onXRSelect));
         xrSession = null; hitTestSource = null;
-        hitTestSourceRequested = false; shelfPlaced = false;
+        hitTestSourceRequested = false; shelfPlaced = false; xrFrameCount = 0;
         shelfGroup.visible = false; reticle.visible = false;
         cursorDot.visible = false; spatialCardGroup.visible = false;
         handJointMeshes.forEach(list => list.forEach(m => { m.visible = false; }));
@@ -636,7 +639,7 @@
         setStatus("Supply Chain AR · Ready");
       });
       document.body.classList.add("xr-active");
-      setStatus("Point hand ray at floor · Pinch when blue ring appears", true);
+      setStatus("🥽 Starting AR…", true);
       renderer.setAnimationLoop(onXRFrame);
     } catch(err) {
       setStatus("AR failed: " + (err?.message || "unknown error") + " · 2D mode", true);
@@ -656,10 +659,12 @@
     reticle.visible = false;
     setStatus("Shelf anchored on floor · Pinch or touch Widget-A");
   }
+  let xrFrameCount = 0;
   function onXRFrame(time, frame) {
     if (!frame || !xrSession) return;
-    // Auto-place shelf 1.35m in front of user at y=0 on first XR frame (no manual floor placement)
     if (!shelfPlaced) {
+      xrFrameCount++;
+      if (xrFrameCount < 60) return;
       autoPlaceShelf();
     }
     // Pulse Widget-A when empty
