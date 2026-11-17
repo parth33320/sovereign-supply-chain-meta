@@ -567,7 +567,8 @@ let _prevHudHover = false;  // tracks if cursor was over mic button previous fra
         shelfGroup.visible = true;
         shelfPlaced = true;
         reticle.visible = false;
-        setStatus("Shelf anchored on floor · Pinch or touch Widget-A");
+setStatus("Shelf anchored on floor · Pinch or touch Widget-A");
+    setTimeout(() => update3DHudStatus(getVoiceTooltip()), 2000);
         return;
       }
       // Auto-place mode: no reticle — fall through to shelf interaction if shelf is visible
@@ -646,6 +647,7 @@ let _prevHudHover = false;  // tracks if cursor was over mic button previous fra
       document.body.classList.add("xr-active");
       document.getElementById("btn-exit-ar").style.display = "";
       setStatus("🥽 Starting XR…", true);
+      setTimeout(() => update3DHudStatus(getVoiceTooltip()), 2500);
       renderer.setAnimationLoop(onXRFrame);
     } catch(err) {
       setStatus("XR failed: " + (err?.message || "unknown error") + " · 2D mode", true);
@@ -663,7 +665,8 @@ let _prevHudHover = false;  // tracks if cursor was over mic button previous fra
     shelfGroup.visible = true;
     shelfPlaced = true;
     reticle.visible = false;
-    setStatus("Shelf anchored on floor · Pinch or touch Widget-A");
+setStatus("Shelf anchored on floor · Pinch or touch Widget-A");
+    setTimeout(() => update3DHudStatus(getVoiceTooltip()), 2000);
   }
   let xrFrameCount = 0;
   function onXRFrame(time, frame) {
@@ -753,18 +756,8 @@ let _prevHudHover = false;  // tracks if cursor was over mic button previous fra
         if (hits.length > 0) {
           cursorDot.visible = true;
           cursorDot.position.copy(hits[0].point);
-          // Show voice tooltip in HUD when gazing at mic button
-          const gazingAtMic = hits[0].object === btn3DMic;
-          if (gazingAtMic && !_prevHudHover) {
-            update3DHudStatus(getVoiceTooltip());
-            _prevHudHover = true;
-          } else if (!gazingAtMic && _prevHudHover) {
-            update3DHudStatus("Supply Chain XR · Ready");
-            _prevHudHover = false;
-          }
+          // gaze-based HUD update removed — tooltip driven by workflow state changes instead
         } else if (_prevHudHover) {
-          // Cursor moved off all targets
-          update3DHudStatus("Supply Chain XR · Ready");
           _prevHudHover = false;
         }
       }
@@ -888,6 +881,7 @@ let _prevHudHover = false;  // tracks if cursor was over mic button previous fra
     const badge = negotiation?.powered_by_muse ? "SAM · Muse Live 🟢" : "SAM · muse-spark-1.3";
     renderPoCard(pendingPO, badge);
     setStatus('PO ready · Approve or reject', true);
+    update3DHudStatus(getVoiceTooltip());
   }
 
   function renderPoCard(po, badge) {
@@ -976,6 +970,7 @@ let _prevHudHover = false;  // tracks if cursor was over mic button previous fra
     renderDesktopBins();
     update3DBin("Widget-A", 0, "awaiting-invoice", "#aa44ff");
     setStatus("PO approved · Tap Widget-A to validate invoice");
+    update3DHudStatus(getVoiceTooltip());
     openPanel(`<div class="card__header">
       <span class="card__title">✅ PO Approved</span>
       <span class="card__badge">AWAITING DELIVERY</span></div>
@@ -1039,6 +1034,7 @@ let _prevHudHover = false;  // tracks if cursor was over mic button previous fra
   async function onInvoicePinch() {
     if (invoiceLocked) { setStatus("Approve PO first", true); return; }
     setStatus("Scanning invoice with Muse Image…");
+    update3DHudStatus(getVoiceTooltip());
     try {
       const res = await fetch("/api/vr/invoice-scan/demo", {method:"POST"});
       activeInvoice = await res.json();
@@ -1137,6 +1133,7 @@ let _prevHudHover = false;  // tracks if cursor was over mic button previous fra
     renderDesktopBins();
     build3DShelf(); // rebuild 3D shelf to initial state
     setStatus("Demo reset · Ready");
+    update3DHudStatus(getVoiceTooltip());
   }
 
   // ── Voice ─────────────────────────────────────────────────────────────────
