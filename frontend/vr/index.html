@@ -457,7 +457,7 @@
         <button class="btn btn-ghost interactive" id="btn-reset">🔄 Reset Demo</button>
         <button class="btn btn-ghost interactive" id="btn-exit-ar" style="display:none;">🚪 Exit AR</button>
       </div>
-      
+
     </div>
 
     <!-- Modal panel INSIDE #overlay — required for WebXR DOM overlay to render it -->
@@ -507,6 +507,8 @@
     let pendingPO = null, approvedPO = null, activeInvoice = null;
     let _prevHudHover = false;  // tracks if cursor was over mic button previous frame
     let invoiceLocked = true, isNegotiating = false;
+    let demoGeneration = 0;
+    let activeAbortController = null;
 
     // ── Three.js setup ────────────────────────────────────────────────────────
     const canvas = document.getElementById("webgl-canvas");
@@ -551,8 +553,9 @@
       ctx.textAlign = "center";
       ctx.fillText(title, 256, 78);
       ctx.fillStyle = borderColor || "#58a6ff";
-      ctx.font = "600 34px sans-serif";
-      ctx.fillText(subtitle, 256, 138);
+      const subStr = String(subtitle || "");
+      ctx.font = subStr.length > 18 ? "600 26px sans-serif" : subStr.length > 14 ? "600 30px sans-serif" : "600 34px sans-serif";
+      ctx.fillText(subStr, 256, 138);
       const tex = new THREE.CanvasTexture(c);
       tex.needsUpdate = true;
       return tex;
@@ -593,10 +596,10 @@
           const box = new THREE.Mesh(boxGeo, boxMat);
           box.position.set(bx, by, 0);
           box.userData = { sku: bin.sku };
-          const sub = bin.status === "empty" ? "0 u · TAP RESTOCK"
-            : bin.status === "inbound" ? "500 u · INBOUND"
+          const sub = bin.status === "empty" ? "0 units · TAP RESTOCK"
+            : bin.status === "inbound" ? "500 units · INBOUND"
               : bin.status === "awaiting-invoice" ? "PO APPROVED · VALIDATE INV"
-                : bin.qty + " u";
+                : bin.qty + " units";
           const labelTex = createLabelTexture(bin.sku, sub, "#0d1117", bin.color);
           const label = new THREE.Mesh(new THREE.PlaneGeometry(0.19, 0.08),
             new THREE.MeshBasicMaterial({ map: labelTex }));
@@ -621,9 +624,9 @@
       entry.mesh.material.color.copy(col3);
       entry.mesh.material.emissive.setHex(newStatus === "empty" ? 0xff3333 : 0);
       entry.mesh.material.emissiveIntensity = newStatus === "empty" ? 0.35 : 0;
-      const sub = newStatus === "inbound" ? "500 u · INBOUND"
+      const sub = newStatus === "inbound" ? "500 units · INBOUND"
         : newStatus === "awaiting-invoice" ? "PO APPROVED · VALIDATE INV"
-          : newStatus === "empty" ? "0 u · TAP RESTOCK" : newQty + " u";
+          : newStatus === "empty" ? "0 units · TAP RESTOCK" : newQty + " units";
       const tex = createLabelTexture(sku, sub, "#0d1117", newColor);
       entry.labelMesh.material.map.dispose();
       entry.labelMesh.material.map = tex;
@@ -662,7 +665,7 @@
     update3DHudStatus("Supply Chain XR · Ready");
 
     // Button row (below status strip)
-    const btn3DMicTex = createLabelTexture("🎤 Voice", "Pinch or Poke", "#0d1117", "#58a6ff");
+    const btn3DMicTex = createLabelTexture("🎤 Voice", "Pinch", "#0d1117", "#58a6ff");
     const btn3DMic = new THREE.Mesh(
       new THREE.BoxGeometry(0.38, 0.11, 0.025),
       new THREE.MeshBasicMaterial({ map: btn3DMicTex })
@@ -683,7 +686,7 @@
     function set3DMicListening(active) {
       const tex = active
         ? createLabelTexture("⏹ Listening...", "Speak command", "#2a1215", "#f85149")
-        : createLabelTexture("🎤 Voice", "Pinch or Poke", "#0d1117", "#58a6ff");
+        : createLabelTexture("🎤 Voice", "Pinch", "#0d1117", "#58a6ff");
       btn3DMic.material.map.dispose();
       btn3DMic.material.map = tex;
       btn3DMic.material.needsUpdate = true;
@@ -1174,9 +1177,9 @@
           ? (invoiceLocked ? "<div class='bin-tile__hint'>👆 Tap to restock</div>"
             : "<div class='bin-tile__hint'>🧾 Tap for invoice</div>")
           : "";
-        const qty = b.status === "inbound" ? "500 u · Inbound"
+        const qty = b.status === "inbound" ? "500 units · Inbound"
           : b.status === "awaiting-invoice" ? "Validate Invoice →"
-            : b.qty + " u";
+            : b.qty + " units";
         return `<div class="bin-tile ${b.status}" data-sku="${b.sku}">
         <div class="bin-tile__top"><span>${b.sku}</span><span style="color:${b.color}">${qty}</span></div>
         ${hint}</div>`;
@@ -1226,6 +1229,7 @@
 
     async function triggerAgentRestock() {
       if (isNegotiating) return;
+      const myGen = demoGeneration;
       isNegotiating = true;
       setStatus("SAM negotiating with suppliers…", true);
       // Show spinner while SAM/Muse evaluates bids
@@ -1247,19 +1251,25 @@
         ]
       });
       let negotiation = null;
+      if (activeAbortController) { try { activeAbortController.abort(); } catch (e) {} }
+      activeAbortController = new AbortController();
       try {
         const res = await fetch("/api/vr/negotiate", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sku: "Widget-A", qty: 500 })
+          body: JSON.stringify({ sku: "Widget-A", qty: 500 }),
+          signal: activeAbortController.signal
         });
         negotiation = await res.json();
+        if (myGen !== demoGeneration) return;
         // Update A2A log from server response (real Muse or fallback)
         if (negotiation.log) a2aLog = negotiation.log;
         if (negotiation.draft_po) pendingPO = negotiation.draft_po;
         else pendingPO = { ...FALLBACK_DRAFT_PO };
-      } catch {
+      } catch (err) {
+        if (err?.name === "AbortError" || myGen !== demoGeneration) { isNegotiating = false; return; }
         pendingPO = { ...FALLBACK_DRAFT_PO };
-      } finally { isNegotiating = false; }
+      } finally { if (myGen === demoGeneration) isNegotiating = false; }
+      if (myGen !== demoGeneration) return;
       const badge = negotiation?.powered_by_muse ? "SAM · Muse Live 🟢" : "SAM · muse-spark-1.3";
       renderPoCard(pendingPO, badge);
       setStatus('PO ready · Approve or reject', true);
@@ -1276,7 +1286,7 @@
         ${a2aLogHTML()}
         <div class="card__box">
           <div class="card__row"><span>Supplier</span><strong>${po.supplier}</strong></div>
-          <div class="card__row"><span>Item</span><strong>${po.sku} × ${po.qty} u</strong></div>
+          <div class="card__row"><span>Item</span><strong>${po.sku} × ${po.qty} units</strong></div>
           <div class="card__row"><span>Unit</span><strong>$${Number(po.unit_price).toFixed(2)}</strong></div>
           <div class="card__row"><span>Total</span><strong style="color:var(--ok)">$${Number(po.total).toLocaleString()}</strong></div>
           <div class="card__row"><span>Delivery</span><strong>${po.delivery_days} days</strong></div>
@@ -1461,12 +1471,19 @@
 
     async function onInvoicePinch() {
       if (invoiceLocked) { setStatus("Approve PO first", true); return; }
+      const myGen = demoGeneration;
       setStatus("Scanning invoice with Muse Image…");
       update3DHudStatus(getVoiceTooltip());
+      if (activeAbortController) { try { activeAbortController.abort(); } catch (e) {} }
+      activeAbortController = new AbortController();
       try {
-        const res = await fetch("/api/vr/invoice-scan/demo", { method: "POST" });
+        const res = await fetch("/api/vr/invoice-scan/demo", { method: "POST", signal: activeAbortController.signal });
         activeInvoice = await res.json();
-      } catch { activeInvoice = { ...FALLBACK_INVOICE }; }
+      } catch (err) {
+        if (err?.name === "AbortError" || myGen !== demoGeneration) return;
+        activeInvoice = { ...FALLBACK_INVOICE };
+      }
+      if (myGen !== demoGeneration) return;
       openPanel(`<div class="card__header">
       <span class="card__title">🧾 Invoice INV-2026-847</span>
       <span class="card__badge">muse-image-1.0</span></div>
@@ -1502,23 +1519,30 @@
     }
 
     async function verifyInvoicePayment() {
-      if (!activeInvoice) await onInvoicePinch();
+      const myGen = demoGeneration;
+      if (!activeInvoice) { await onInvoicePinch(); if (myGen !== demoGeneration) return; }
       setStatus("Releasing payment…");
       // Show inbound state while "payment clears"
       bins[0].status = "inbound"; bins[0].color = "#aa44ff";
       renderDesktopBins(); update3DBin("Widget-A", 500, "inbound", "#aa44ff");
       let newQty = 500; // correct: ordered 500, receive 500
+      if (activeAbortController) { try { activeAbortController.abort(); } catch (e) {} }
+      activeAbortController = new AbortController();
       try {
         const res = await fetch("/api/vr/invoice-pay/demo", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ po: approvedPO || FALLBACK_DRAFT_PO, invoice: activeInvoice })
+          body: JSON.stringify({ po: approvedPO || FALLBACK_DRAFT_PO, invoice: activeInvoice }),
+          signal: activeAbortController.signal
         });
         const data = await res.json();
         if (data.newQty != null) newQty = data.newQty;
-      } catch { }
+      } catch (err) {
+        if (err?.name === "AbortError" || myGen !== demoGeneration) return;
+      }
+      if (myGen !== demoGeneration) return;
       bins[0].qty = newQty; bins[0].status = "ok"; bins[0].color = "#00ff88";
       renderDesktopBins(); update3DBin("Widget-A", newQty, "ok", "#00ff88");
-      setStatus(`✅ Paid · Delivery inbound · Widget-A: ${newQty} u. End of Demo`);
+      setStatus(`✅ Paid · Delivery inbound · Widget-A: ${newQty} units. End of Demo`);
       openPanel(`<div class="card__header">
       <span class="card__title">💸 Payment Released</span>
       <span class="card__badge">COMPLETE</span></div>
@@ -1549,6 +1573,14 @@
     }
 
     async function resetDemo() {
+      demoGeneration++;
+      if (activeAbortController) {
+        try { activeAbortController.abort(); } catch (e) {}
+        activeAbortController = null;
+      }
+      if (recognition && listening) {
+        try { recognition.stop(); } catch (e) {}
+      }
       closePanel(); // always close any open panel first
       // If an XR session is active, force shelf to re-anchor 1.35m in front of
       // the user's current position on the next XR frame
@@ -1584,6 +1616,9 @@
     }
 
     async function resolveIntent(transcript) {
+      const myGen = demoGeneration;
+      if (activeAbortController) { try { activeAbortController.abort(); } catch (e) {} }
+      activeAbortController = new AbortController();
       try {
         const res = await fetch("/api/vr/interpret-voice", {
           method: "POST", headers: { "Content-Type": "application/json" },
@@ -1595,11 +1630,15 @@
               active_invoice: !!activeInvoice,
               bin_status: bins[0]?.status
             }
-          })
+          }),
+          signal: activeAbortController.signal
         });
         const data = await res.json();
+        if (myGen !== demoGeneration) return null;
         if (data?.intent && data.intent !== "unknown") return data.intent;
-      } catch { }
+      } catch (err) {
+        if (err?.name === "AbortError" || myGen !== demoGeneration) return null;
+      }
       return fallbackIntent(transcript);
     }
 
@@ -1616,17 +1655,17 @@
     const btnMic = document.getElementById("btn-mic");
     const btnReset = document.getElementById("btn-reset");
 
-function getVoiceTooltip() {
-  if (!pendingPO && (!bins[0] || bins[0].status === "empty"))
-    return 'Say "restock" or pinch Widget-A';
-  if (pendingPO && !approvedPO)
-    return 'Say "approve PO" or pinch Approve';
-  if (approvedPO && !activeInvoice)
-    return 'Say "open invoice" or pinch Widget-A';
-  if (activeInvoice)
-    return 'Say "pay invoice" or pinch Pay';
-  return 'Say "restock" or pinch Widget-A';
-}
+    function getVoiceTooltip() {
+      if (!pendingPO && (!bins[0] || bins[0].status === "empty"))
+        return 'Say "restock" or pinch Widget-A';
+      if (pendingPO && !approvedPO)
+        return 'Say "approve PO" or pinch Approve';
+      if (approvedPO && !activeInvoice)
+        return 'Say "open invoice" or pinch Widget-A';
+      if (activeInvoice)
+        return 'Say "pay invoice" or pinch Pay';
+      return 'Say "restock" or pinch Widget-A';
+    }
 
     if (SR) {
       recognition = new SR();
@@ -1635,6 +1674,7 @@ function getVoiceTooltip() {
       recognition.onresult = async e => {
         const transcript = e.results[e.results.length - 1][0].transcript;
         const intent = await resolveIntent(transcript);
+        if (intent == null) return;  // demo reset mid-flight — discard stale result
         showVoiceFeedback(transcript, intent, INTENT_LABELS[intent] || intent);
         handleIntent(intent);
         // Update HUD with next-step hint
@@ -1657,8 +1697,21 @@ function getVoiceTooltip() {
       if (tooltipEl) { tooltipEl.remove(); tooltipEl = null; }
     });
 
+    if (!SR) {
+      btnMic.textContent = "🎤 Voice (PC Only)";
+      if (typeof btn3DMic !== "undefined") {
+        const noMicTex = createLabelTexture("🎤 Voice (PC Only)", "Pinch 3D Buttons", "#0d1117", "#8b949e");
+        btn3DMic.material.map.dispose();
+        btn3DMic.material.map = noMicTex;
+        btn3DMic.material.needsUpdate = true;
+      }
+    }
+
     btnMic.addEventListener("click", () => {
-      if (!recognition) { triggerAgentRestock(); return; }
+      if (!recognition) {
+        setStatus("Quest Browser lacks Web Speech API · Pinch 3D card buttons directly", true);
+        return;
+      }
       if (listening) { recognition.stop(); clearVoiceFeedback(); }
       else recognition.start();
     });
@@ -1671,7 +1724,7 @@ function getVoiceTooltip() {
     if (!navigator.xr) setStatus("2D Fallback · Tap Widget-A to begin");
   </script>
   <script>
-    (async function() {
+    (async function () {
       const banner = document.getElementById("muse-banner");
       try {
         const res = await fetch("/api/vr/muse-status");
@@ -1686,13 +1739,13 @@ function getVoiceTooltip() {
           banner.style.background = "#1a1200";
           banner.style.color = "#d29922";
           banner.style.borderBottom = "1px solid #9e6a03";
-          banner.textContent = "⚠️ Mock AI agent demo active · Set META_API_KEY env var on Render to enable Muse";
-          if (typeof updateMuseBanner3D === "function") updateMuseBanner3D("⚠️ Mock AI agent demo active · Set META_API_KEY env var to enable Muse", false);
+          banner.textContent = "⚠️ Simulated Muse mode (Meta API blocks cloud IPs) · Run locally with META_API_KEY for live AI";
+          if (typeof updateMuseBanner3D === "function") updateMuseBanner3D("⚠️ Simulated Muse mode (Meta API blocks cloud IPs) · Run locally with META_API_KEY for live AI", false);
         }
       } catch {
         banner.style.color = "#f85149";
-        banner.textContent = "⚠️ Mock AI agent demo active · Set META_API_KEY env var to enable Muse";
-        if (typeof updateMuseBanner3D === "function") updateMuseBanner3D("⚠️ Mock AI agent demo active · Set META_API_KEY env var to enable Muse", false);
+        banner.textContent = "⚠️ Simulated Muse mode (Meta API blocks cloud IPs) · Run locally with META_API_KEY for live AI";
+        if (typeof updateMuseBanner3D === "function") updateMuseBanner3D("⚠️ Simulated Muse mode (Meta API blocks cloud IPs) · Run locally with META_API_KEY for live AI", false);
       }
     })();
   </script>
