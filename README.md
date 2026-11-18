@@ -26,7 +26,7 @@ A **hands-first Meta Quest mixed reality supply chain copilot** powered by **Met
 
 ### 1. Clone & Configure `.env`
 ```bash
-git clone https://github.com
+git clone https://github.com/parth33320/sovereign-supply-chain-meta
 cd sovereign-supply-chain-meta
 cp .env.example .env
 ```
