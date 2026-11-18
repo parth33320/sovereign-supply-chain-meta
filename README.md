@@ -85,4 +85,4 @@ DEMO_MODE=1 PYTHONPATH=. pytest tests/test_vr_voice_intent.py tests/test_s23_inv
 ```
 
 Once deployed, visit your Render URL:
-[https://sovereign-supply-chain-meta.onrender.com](https://sovereign-supply-chain-meta.onrender.com)
+[https://sovereign-supply-chain-meta.onrender.com](https://sovereign-supply-chain-meta.onrender.com/vr)
