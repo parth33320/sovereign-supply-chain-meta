@@ -34,7 +34,6 @@ Open `.env` and paste your Meta Developer API key:
 ```env
 META_API_KEY=your_meta_api_key_here
 META_API_BASE_URL=https://meta.ai/v1
-META_MODEL_NAME=muse-spark-1.3
 ```
 
 ### 2. Install Dependencies & Start the Server
