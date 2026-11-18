@@ -999,7 +999,9 @@
       const { origin, dir } = getControllerRay(ctrl);
       raycaster.set(origin, dir);
       // 0. Check grab handles FIRST — allows dragging panels before checking buttons
-      if (spatialCardGroup.visible && dragHandles.length > 0) {
+      // Check if either PO card or A2A log is visible
+      const a2aLogVisible = shelfGroup.getObjectByName("a2aLogMesh")?.visible ?? false;
+      if ((spatialCardGroup.visible || a2aLogVisible) && dragHandles.length > 0) {
         const grabHits = raycaster.intersectObjects(dragHandles, false);
         if (grabHits.length > 0) {
           const targetObj = grabHits[0].object.userData.dragTarget;
@@ -1225,10 +1227,9 @@
             if (hasVoiceSupport && typeof btn3DMic !== "undefined" && btn3DMic.visible) targets.push(btn3DMic);
             if (typeof btn3DReset !== "undefined") targets.push(btn3DReset);
           }
-          if (spatialCardGroup.visible) {
-            targets.push(cardBtnPrimary, cardBtnSecondary);
-            targets.push(...dragHandles); // all grab handles visible when card is open
-          }
+          if (spatialCardGroup.visible) targets.push(cardBtnPrimary, cardBtnSecondary);
+          const a2aLog = shelfGroup.getObjectByName("a2aLogMesh");
+          if (spatialCardGroup.visible || (a2aLog && a2aLog.visible)) targets.push(...dragHandles);
           if (shelfGroup.visible) targets.push(...shelfGroup.children);
           const hits = raycaster.intersectObjects(targets, true);
           if (hits.length > 0) {
@@ -1293,6 +1294,16 @@
     function closePanel() {
       panelBD.classList.remove("open");
       renderSpatialCard(null);
+      // Also remove A2A log mesh if it exists (now a direct child of shelfGroup)
+      const existingLog = shelfGroup.getObjectByName("a2aLogMesh");
+      if (existingLog) {
+        if (existingLog.material.map) existingLog.material.map.dispose();
+        existingLog.material.dispose();
+        shelfGroup.remove(existingLog);
+      }
+      // Remove its grab handle from dragHandles
+      const handleIdx = dragHandles.findIndex(h => h.name === "a2aLogGrabHandle");
+      if (handleIdx !== -1) dragHandles.splice(handleIdx, 1);
     }
 
     // ── Supply chain workflows ────────────────────────────────────────────────
@@ -1422,11 +1433,11 @@
       document.getElementById("btn-reject-po")?.addEventListener("click", rejectAgentPO);
 
       // Remove old a2aLog mesh if exists
-      const oldLog = spatialCardGroup.getObjectByName("a2aLogMesh");
+      const oldLog = shelfGroup.getObjectByName("a2aLogMesh");
       if (oldLog) {
         if (oldLog.material.map) oldLog.material.map.dispose();
         oldLog.material.dispose();
-        spatialCardGroup.remove(oldLog);
+        shelfGroup.remove(oldLog);
       }
 
       // Create wider, multi-line wrapped A2A log panel to the LEFT of PO card
@@ -1499,8 +1510,8 @@
       const logMat = new THREE.MeshBasicMaterial({ map: logTex, transparent: true, side: THREE.DoubleSide });
       const logMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.74, planeH), logMat);
       logMesh.name = "a2aLogMesh";
-      logMesh.position.set(-0.82, 0.27 - planeH / 2, 0.01);
-      spatialCardGroup.add(logMesh);
+      logMesh.position.set(-1.21, 1.77 - planeH / 2, 0.07);
+      shelfGroup.add(logMesh);
 
       // Remove any previous a2aLogGrabHandle from dragHandles
       const prevIdx = dragHandles.findIndex(h => h.name === "a2aLogGrabHandle");
