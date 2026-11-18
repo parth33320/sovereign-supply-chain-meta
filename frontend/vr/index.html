@@ -513,7 +513,7 @@
     // ── Voice capability (declared early so getVoiceTooltip / onXRFrame / onXRSelect
     //    can reference them without a Temporal Dead Zone ReferenceError) ──────────
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const isQuestBrowser = /OculusBrowser/i.test(navigator.userAgent);
+    const isQuestBrowser = /OculusBrowser/i.test(navigator.userAgent) && /Android/i.test(navigator.userAgent);
     const hasVoiceSupport = Boolean(SR) && !isQuestBrowser;
 
     // ── Three.js setup ────────────────────────────────────────────────────────

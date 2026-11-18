@@ -4,6 +4,9 @@ VR API Bridge — Sprint S15
 Exposes warehouse_vision and document_vision over HTTP for the Quest WebXR front-end.
 Run alongside Streamlit:  uvicorn vr_api:app --port 8502 --reload
 """
+from dotenv import load_dotenv
+load_dotenv(override=False)
+
 import base64
 import json
 import os
