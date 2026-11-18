@@ -778,6 +778,40 @@
     connectorLine.visible = false;
     shelfGroup.add(connectorLine);
 
+    // ── Quest OS-style Draggable Panel Grab Bars ─────────────────────────────
+    let draggedPanel = null;
+    let activeDragController = null;
+    let dragDistance = 1.2;
+    const dragOffset = new THREE.Vector3();
+    const dragHandles = [];
+
+    function createGrabHandleMesh(width) {
+      const c = document.createElement("canvas");
+      c.width = 512; c.height = 48;
+      const ctx = c.getContext("2d");
+      ctx.fillStyle = "#161b22";
+      ctx.fillRect(0, 0, 512, 48);
+      ctx.strokeStyle = "#58a6ff";
+      ctx.lineWidth = 4;
+      ctx.strokeRect(2, 2, 508, 44);
+      ctx.fillStyle = "#8b949e";
+      ctx.fillRect(196, 17, 120, 4);
+      ctx.fillRect(196, 27, 120, 4);
+      const tex = new THREE.CanvasTexture(c);
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(width, 0.044, 0.016),
+        new THREE.MeshBasicMaterial({ map: tex })
+      );
+      mesh.userData = { isGrabHandle: true };
+      return mesh;
+    }
+
+    const cardGrabHandle = createGrabHandleMesh(0.46);
+    cardGrabHandle.position.set(0, 0.30, 0.005); // Top edge of 0.54m-tall cardPlane
+    cardGrabHandle.userData.dragTarget = spatialCardGroup;
+    spatialCardGroup.add(cardGrabHandle);
+    dragHandles.push(cardGrabHandle);
+
     build3DShelf();
 
     const cardCanvas = document.createElement("canvas");
@@ -964,6 +998,23 @@
       }
       const { origin, dir } = getControllerRay(ctrl);
       raycaster.set(origin, dir);
+      // 0. Check grab handles FIRST — allows dragging panels before checking buttons
+      if (spatialCardGroup.visible && dragHandles.length > 0) {
+        const grabHits = raycaster.intersectObjects(dragHandles, false);
+        if (grabHits.length > 0) {
+          const targetObj = grabHits[0].object.userData.dragTarget;
+          if (targetObj && targetObj.parent) {
+            draggedPanel = targetObj;
+            activeDragController = ctrl;
+            dragDistance = grabHits[0].distance;
+            const targetWorld = new THREE.Vector3();
+            targetObj.getWorldPosition(targetWorld);
+            dragOffset.copy(targetWorld).sub(grabHits[0].point);
+            connectorLine.visible = false;
+            return;
+          }
+        }
+      }
       // 1. Check 3D HUD Voice & Reset buttons
       if (shelfGroup.visible) {
         const voiceTargets = [];
@@ -1027,9 +1078,20 @@
         renderer.xr.setReferenceSpaceType("local-floor");
         await renderer.xr.setSession(xrSession);
         xrRefSpace = await xrSession.requestReferenceSpace("local-floor");
-        xrControllers.forEach(c => c.addEventListener("select", onXRSelect));
+        // Bind to "selectstart" (fires on pinch-down) so dragging begins while holding
+        xrControllers.forEach(c => c.addEventListener("selectstart", onXRSelect));
+        function onXRSelectEnd(event) {
+          if (activeDragController === event.target) {
+            if (draggedPanel === spatialCardGroup && connectorLine) connectorLine.visible = true;
+            draggedPanel = null;
+            activeDragController = null;
+          }
+        }
+        xrControllers.forEach(c => c.addEventListener("selectend", onXRSelectEnd));
         xrSession.addEventListener("end", () => {
-          xrControllers.forEach(c => c.removeEventListener("select", onXRSelect));
+          xrControllers.forEach(c => c.removeEventListener("selectstart", onXRSelect));
+          xrControllers.forEach(c => c.removeEventListener("selectend", onXRSelectEnd));
+          draggedPanel = null; activeDragController = null;
           xrSession = null; hitTestSource = null;
           hitTestSourceRequested = false; shelfPlaced = false; xrFrameCount = 0;
           shelfGroup.visible = false; reticle.visible = false;
@@ -1072,6 +1134,17 @@
         xrFrameCount++;
         if (xrFrameCount < 60) return;
         autoPlaceShelf();
+      }
+      // Update dragged panel position (Quest OS-style drag)
+      if (draggedPanel && activeDragController) {
+        const { origin, dir } = getControllerRay(activeDragController);
+        const newWorldPos = origin.clone().addScaledVector(dir, dragDistance).add(dragOffset);
+        draggedPanel.parent.worldToLocal(newWorldPos);
+        draggedPanel.position.copy(newWorldPos);
+        const camWorld = new THREE.Vector3();
+        camera.getWorldPosition(camWorld);
+        const targetWorldY = draggedPanel.getWorldPosition(new THREE.Vector3()).y;
+        draggedPanel.lookAt(camWorld.x, targetWorldY, camWorld.z);
       }
       // Pulse Widget-A when empty
       if (widgetAMesh && bins[0] && bins[0].status === "empty") {
@@ -1152,7 +1225,10 @@
             if (hasVoiceSupport && typeof btn3DMic !== "undefined" && btn3DMic.visible) targets.push(btn3DMic);
             if (typeof btn3DReset !== "undefined") targets.push(btn3DReset);
           }
-          if (spatialCardGroup.visible) targets.push(cardBtnPrimary, cardBtnSecondary);
+          if (spatialCardGroup.visible) {
+            targets.push(cardBtnPrimary, cardBtnSecondary);
+            targets.push(...dragHandles); // all grab handles visible when card is open
+          }
           if (shelfGroup.visible) targets.push(...shelfGroup.children);
           const hits = raycaster.intersectObjects(targets, true);
           if (hits.length > 0) {
@@ -1425,6 +1501,17 @@
       logMesh.name = "a2aLogMesh";
       logMesh.position.set(-0.82, 0.27 - planeH / 2, 0.01);
       spatialCardGroup.add(logMesh);
+
+      // Remove any previous a2aLogGrabHandle from dragHandles
+      const prevIdx = dragHandles.findIndex(h => h.name === "a2aLogGrabHandle");
+      if (prevIdx !== -1) dragHandles.splice(prevIdx, 1);
+
+      const logGrabHandle = createGrabHandleMesh(0.48);
+      logGrabHandle.name = "a2aLogGrabHandle";
+      logGrabHandle.position.set(0, planeH / 2 + 0.026, 0.005);
+      logGrabHandle.userData.dragTarget = logMesh;
+      logMesh.add(logGrabHandle);
+      dragHandles.push(logGrabHandle);
     }
 
     function approveAgentPO() {
