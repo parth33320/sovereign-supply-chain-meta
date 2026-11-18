@@ -73,7 +73,6 @@ python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
 |---|---|---|---|
 | `META_API_KEY` | Yes (for live AI) | none | Meta Model API key from `dev.meta.ai` |
 | `META_API_BASE_URL` | No | `https://meta.ai/v1` | Meta Model API base URL |
-| `META_MODEL_NAME` | No | `muse-spark-1.3` | Model used for A2A negotiation & voice intent |
 | `DEMO_MODE` | No | `0` | Set to `1` to force deterministic offline/cloud demo mode |
 
 ---
