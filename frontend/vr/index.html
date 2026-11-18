@@ -510,6 +510,12 @@
     let demoGeneration = 0;
     let activeAbortController = null;
 
+    // ── Voice capability (declared early so getVoiceTooltip / onXRFrame / onXRSelect
+    //    can reference them without a Temporal Dead Zone ReferenceError) ──────────
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const isQuestBrowser = /OculusBrowser/i.test(navigator.userAgent);
+    const hasVoiceSupport = Boolean(SR) && !isQuestBrowser;
+
     // ── Three.js setup ────────────────────────────────────────────────────────
     const canvas = document.getElementById("webgl-canvas");
     const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
@@ -935,6 +941,9 @@
       return false;
     }
     function onXRSelect(event) {
+      const now = performance.now();
+      if (now - (window._lastXRSelectTime || 0) < 900) return;
+      window._lastXRSelectTime = now;
       const ctrl = event.target;
       if (!shelfPlaced) {
         if (reticle.visible) {
@@ -957,7 +966,10 @@
       raycaster.set(origin, dir);
       // 1. Check 3D HUD Voice & Reset buttons
       if (shelfGroup.visible) {
-        const hudHits = raycaster.intersectObjects([btn3DMic, btn3DReset], false);
+        const voiceTargets = [];
+        if (hasVoiceSupport && typeof btn3DMic !== "undefined" && btn3DMic.visible) voiceTargets.push(btn3DMic);
+        if (typeof btn3DReset !== "undefined") voiceTargets.push(btn3DReset);
+        const hudHits = raycaster.intersectObjects(voiceTargets, false);
         if (hudHits.length > 0) {
           const act = hudHits[0].object.userData.hudAction;
           if (act === "voice") { btnMic.click(); return; }
@@ -1085,11 +1097,13 @@
             // Direct index-finger touch on 3D buttons or Widget-A
             if (jointName === "index-finger-tip" && shelfPlaced && shelfGroup.visible && time > pokeCooldownUntil) {
               const p = new THREE.Vector3();
-              btn3DMic.getWorldPosition(p);
-              if (joint.position.distanceTo(p) < 0.12) {
-                pokeCooldownUntil = time + 1200;
-                btnMic.click();
-                continue;
+              if (hasVoiceSupport && btn3DMic.visible) {
+                btn3DMic.getWorldPosition(p);
+                if (joint.position.distanceTo(p) < 0.12) {
+                  pokeCooldownUntil = time + 1200;
+                  btnMic.click();
+                  continue;
+                }
               }
               btn3DReset.getWorldPosition(p);
               if (joint.position.distanceTo(p) < 0.12) {
@@ -1134,7 +1148,10 @@
         {
           const targets = [];
           // HUD buttons first (priority over shelf geometry)
-          if (shelfGroup.visible) targets.push(btn3DMic, btn3DReset);
+          if (shelfGroup.visible) {
+            if (hasVoiceSupport && typeof btn3DMic !== "undefined" && btn3DMic.visible) targets.push(btn3DMic);
+            if (typeof btn3DReset !== "undefined") targets.push(btn3DReset);
+          }
           if (spatialCardGroup.visible) targets.push(cardBtnPrimary, cardBtnSecondary);
           if (shelfGroup.visible) targets.push(...shelfGroup.children);
           const hits = raycaster.intersectObjects(targets, true);
@@ -1204,7 +1221,19 @@
 
     // ── Supply chain workflows ────────────────────────────────────────────────
     function onShelfPinch() {
-      if (!invoiceLocked) { onInvoicePinch(); return; }
+      if (isNegotiating) return;
+      if (pendingPO) {
+        setStatus("PO already drafted · Pinch Approve PO or Reject on the card", true);
+        return;
+      }
+      if (!invoiceLocked) {
+        if (bins && bins[0] && bins[0].status === "ok") {
+          setStatus("Widget-A restocked (500 units) · Pinch Reset Demo to run again");
+          return;
+        }
+        onInvoicePinch();
+        return;
+      }
       triggerAgentRestock();
     }
 
@@ -1650,24 +1679,24 @@
       else if (intent === "pay_invoice") verifyInvoicePayment();
     }
 
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     let recognition = null, listening = false;
     const btnMic = document.getElementById("btn-mic");
     const btnReset = document.getElementById("btn-reset");
 
     function getVoiceTooltip() {
+      const noVoice = !hasVoiceSupport;
       if (!pendingPO && (!bins[0] || bins[0].status === "empty"))
-        return 'Say "restock" or pinch Widget-A';
+        return noVoice ? 'Pinch Widget-A to restock' : 'Say "restock" or pinch Widget-A';
       if (pendingPO && !approvedPO)
-        return 'Say "approve PO" or pinch Approve';
+        return noVoice ? 'Pinch Approve PO or Reject' : 'Say "approve PO" or pinch Approve';
       if (approvedPO && !activeInvoice)
-        return 'Say "open invoice" or pinch Widget-A';
+        return noVoice ? 'Pinch Widget-A to open invoice' : 'Say "open invoice" or pinch Widget-A';
       if (activeInvoice)
-        return 'Say "pay invoice" or pinch Pay';
-      return 'Say "restock" or pinch Widget-A';
+        return noVoice ? 'Pinch Verify & Pay' : 'Say "pay invoice" or pinch Pay';
+      return noVoice ? 'Pinch Widget-A to restock' : 'Say "restock" or pinch Widget-A';
     }
 
-    if (SR) {
+    if (hasVoiceSupport) {
       recognition = new SR();
       recognition.lang = "en-US"; recognition.interimResults = false;
       recognition.onstart = () => { listening = true; clearVoiceFeedback(); btnMic.textContent = "⏹ Listening…"; set3DMicListening(true); update3DHudStatus("🎙️ Listening… speak command", true); };
@@ -1682,6 +1711,12 @@
       };
       recognition.onend = () => { listening = false; btnMic.textContent = "🎤 Voice"; set3DMicListening(false); };
       recognition.onerror = () => { listening = false; btnMic.textContent = "🎤 Voice"; set3DMicListening(false); };
+    } else {
+      // No voice support (Quest Browser / unsupported): hide 2D mic, hide 3D mic,
+      // center Reset Demo so the hands-first UI is uncluttered.
+      btnMic.style.display = "none";
+      if (typeof btn3DMic !== "undefined") btn3DMic.visible = false;
+      if (typeof btn3DReset !== "undefined") btn3DReset.position.set(0, 0, 0.01);
     }
 
     let tooltipEl = null;
@@ -1697,18 +1732,8 @@
       if (tooltipEl) { tooltipEl.remove(); tooltipEl = null; }
     });
 
-    if (!SR) {
-      btnMic.textContent = "🎤 Voice (PC Only)";
-      if (typeof btn3DMic !== "undefined") {
-        const noMicTex = createLabelTexture("🎤 Voice (PC Only)", "Pinch 3D Buttons", "#0d1117", "#8b949e");
-        btn3DMic.material.map.dispose();
-        btn3DMic.material.map = noMicTex;
-        btn3DMic.material.needsUpdate = true;
-      }
-    }
-
     btnMic.addEventListener("click", () => {
-      if (!recognition) {
+      if (!hasVoiceSupport) {
         setStatus("Quest Browser lacks Web Speech API · Pinch 3D card buttons directly", true);
         return;
       }
