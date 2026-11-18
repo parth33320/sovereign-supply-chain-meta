@@ -1,6 +1,6 @@
 # 🏭 Sovereign Supply Chain XR Walk
 
-[![Live WebXR Demo](https://shields.io)](https://onrender.com)
+[![Live WebXR Demo](https://shields.io)](https://sovereign-supply-chain-meta.onrender.com/vr)
 [![Python](https://shields.io)](https://python.org)
 [![Powered by Meta AI](https://shields.io)](https://meta.ai)
 
