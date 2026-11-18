@@ -10,7 +10,7 @@ A **hands-first Meta Quest mixed reality supply chain copilot** powered by **Met
 
 ## 🚀 Live WebXR Demo (Zero Setup)
 
-> **[👉 https://onrender.com](https://onrender.com)**
+> **[👉 https://onrender.com](https://onrender.com)](https://sovereign-supply-chain-meta.onrender.com/vr)**
 
 1. Open the link in **Meta Quest Browser** (or desktop Chrome with the **Immersive Web Emulator** extension).
 2. Tap **🏭 Enter XR Walk** — the 3D shelf auto-anchors `1.35m` in front of you at floor level (`y=0`) within comfortable seated reach.
