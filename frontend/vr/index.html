@@ -1367,7 +1367,7 @@
         ]
       });
       let negotiation = null;
-      if (activeAbortController) { try { activeAbortController.abort(); } catch (e) {} }
+      if (activeAbortController) { try { activeAbortController.abort(); } catch (e) { } }
       activeAbortController = new AbortController();
       try {
         const res = await fetch("/api/vr/negotiate", {
@@ -1601,7 +1601,7 @@
       const myGen = demoGeneration;
       setStatus("Scanning invoice with Muse Image…");
       update3DHudStatus(getVoiceTooltip());
-      if (activeAbortController) { try { activeAbortController.abort(); } catch (e) {} }
+      if (activeAbortController) { try { activeAbortController.abort(); } catch (e) { } }
       activeAbortController = new AbortController();
       try {
         const res = await fetch("/api/vr/invoice-scan/demo", { method: "POST", signal: activeAbortController.signal });
@@ -1653,7 +1653,7 @@
       bins[0].status = "inbound"; bins[0].color = "#aa44ff";
       renderDesktopBins(); update3DBin("Widget-A", 500, "inbound", "#aa44ff");
       let newQty = 500; // correct: ordered 500, receive 500
-      if (activeAbortController) { try { activeAbortController.abort(); } catch (e) {} }
+      if (activeAbortController) { try { activeAbortController.abort(); } catch (e) { } }
       activeAbortController = new AbortController();
       try {
         const res = await fetch("/api/vr/invoice-pay/demo", {
@@ -1702,11 +1702,11 @@
     async function resetDemo() {
       demoGeneration++;
       if (activeAbortController) {
-        try { activeAbortController.abort(); } catch (e) {}
+        try { activeAbortController.abort(); } catch (e) { }
         activeAbortController = null;
       }
       if (recognition && listening) {
-        try { recognition.stop(); } catch (e) {}
+        try { recognition.stop(); } catch (e) { }
       }
       closePanel(); // always close any open panel first
       // If an XR session is active, force shelf to re-anchor 1.35m in front of
@@ -1744,7 +1744,7 @@
 
     async function resolveIntent(transcript) {
       const myGen = demoGeneration;
-      if (activeAbortController) { try { activeAbortController.abort(); } catch (e) {} }
+      if (activeAbortController) { try { activeAbortController.abort(); } catch (e) { } }
       activeAbortController = new AbortController();
       try {
         const res = await fetch("/api/vr/interpret-voice", {
@@ -1862,13 +1862,13 @@
           banner.style.background = "#1a1200";
           banner.style.color = "#d29922";
           banner.style.borderBottom = "1px solid #9e6a03";
-          banner.textContent = "⚠️ Simulated Muse mode (Meta API blocks cloud IPs) · Run locally with META_API_KEY for live AI";
-          if (typeof updateMuseBanner3D === "function") updateMuseBanner3D("⚠️ Simulated Muse mode (Meta API blocks cloud IPs) · Run locally with META_API_KEY for live AI", false);
+          banner.textContent = "⚠️ Simulated Muse mode (Meta API blocks cloud IPs) · Run locally with META_API_KEY env var for live AI";
+          if (typeof updateMuseBanner3D === "function") updateMuseBanner3D("⚠️ Simulated Muse mode (Meta API blocks cloud IPs) · Run locally with META_API_KEY env var for live AI", false);
         }
       } catch {
         banner.style.color = "#f85149";
-        banner.textContent = "⚠️ Simulated Muse mode (Meta API blocks cloud IPs) · Run locally with META_API_KEY for live AI";
-        if (typeof updateMuseBanner3D === "function") updateMuseBanner3D("⚠️ Simulated Muse mode (Meta API blocks cloud IPs) · Run locally with META_API_KEY for live AI", false);
+        banner.textContent = "⚠️ Simulated Muse mode (Meta API blocks cloud IPs) · Run locally with META_API_KEY env var for live AI";
+        if (typeof updateMuseBanner3D === "function") updateMuseBanner3D("⚠️ Simulated Muse mode (Meta API blocks cloud IPs) · Run locally with META_API_KEY env var for live AI", false);
       }
     })();
   </script>
